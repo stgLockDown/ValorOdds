@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Railway.com startup script for Medical Device Website
+# Railway.com startup script
 
-echo "🚀 Starting Medical Device Website on Railway..."
+echo "🚀 Starting Valor Odds Website on Railway..."
 
 # Install http-server globally if not already installed
 if ! command -v http-server &> /dev/null
