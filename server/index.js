@@ -32,15 +32,15 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// ── Start ──────────────────────────────────────────────
-(async () => {
-  try {
-    await initDB();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`⚡ Valor Odds server listening on port ${PORT}`);
+// ── Start server FIRST, then initialise DB ─────────────
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`⚡ Valor Odds server listening on port ${PORT}`);
+
+  // Initialise DB in the background – don't block the server
+  initDB()
+    .then(() => console.log('✅ Database initialised'))
+    .catch((err) => {
+      console.error('⚠️  Database init failed (server still running):', err.message);
+      console.error('   Auth endpoints will fail until a valid DATABASE_URL is configured.');
     });
-  } catch (err) {
-    console.error('Failed to start server:', err);
-    process.exit(1);
-  }
-})();
+});

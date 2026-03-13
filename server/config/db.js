@@ -1,24 +1,39 @@
 const { Pool } = require('pg');
 
-// Railway injects DATABASE_URL automatically when a Postgres plugin is attached
-const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+// Railway can inject the connection string under several variable names
+const connectionString =
+  process.env.DATABASE_URL ||
+  process.env.DATABASE_PRIVATE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_PRIVATE_URL ||
+  process.env.DATABASE_PUBLIC_URL ||
+  process.env.POSTGRES_PUBLIC_URL;
 
 if (!connectionString) {
-  console.warn('WARNING: No DATABASE_URL found. Database operations will fail.');
+  console.warn('WARNING: No DATABASE_URL (or similar) found. Database operations will fail.');
+  console.warn('Available env vars:', Object.keys(process.env).filter(k => k.includes('DATABASE') || k.includes('POSTGRES') || k.includes('PG')).join(', ') || '(none)');
 }
 
-const pool = new Pool({
-  connectionString,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  connectionTimeoutMillis: 10000,
-  max: 20,
-});
+const pool = connectionString
+  ? new Pool({
+      connectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 10000,
+      max: 20,
+    })
+  : null;
 
-pool.on('error', (err) => {
-  console.error('Unexpected PostgreSQL pool error:', err);
-});
+if (pool) {
+  pool.on('error', (err) => {
+    console.error('Unexpected PostgreSQL pool error:', err);
+  });
+}
 
 const initDB = async () => {
+  if (!pool) {
+    throw new Error('No database connection string configured. Set DATABASE_URL in Railway environment variables.');
+  }
+
   const client = await pool.connect();
   try {
     console.log('🔌 Connected to PostgreSQL');
@@ -50,7 +65,6 @@ const initDB = async () => {
       "SELECT id FROM users WHERE role = 'admin' LIMIT 1"
     );
     if (adminCheck.rows.length === 0) {
-      // Auto-create default admin  (password: admin123)
       const bcrypt = require('bcryptjs');
       const hash = await bcrypt.hash('admin123', 10);
       await client.query(
