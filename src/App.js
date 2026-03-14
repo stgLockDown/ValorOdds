@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import HomePage from './components/HomePage';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Dashboard from './components/Dashboard';
@@ -19,6 +20,13 @@ function PublicRoute({ children }) {
   if (loading) return <SplashLoader />;
   if (user) return <Navigate to="/dashboard" replace />;
   return children;
+}
+
+function HomeRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <SplashLoader />;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <HomePage />;
 }
 
 function SplashLoader() {
@@ -40,12 +48,12 @@ function SplashLoader() {
 function AppRoutes() {
   return (
     <Routes>
+      <Route path="/" element={<HomeRoute />} />
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/admin/marketing-agent" element={<ProtectedRoute adminOnly><ValorMarketingAgent /></ProtectedRoute>} />
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
