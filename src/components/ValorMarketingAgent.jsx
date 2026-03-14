@@ -19,22 +19,47 @@ const CONTENT_TYPES = {
 const SPORTS_CONTEXT = ["MLB", "NFL", "NBA", "NHL", "General / Off-Season"];
 const TONES = ["Hype & Urgent", "Educational & Clear", "Data-Driven & Sharp", "Community & Warm", "Edgy & Bold"];
 
-// System prompt is now handled server-side in /api/ai/chat
+const SYSTEM_PROMPT = `You are the Valor Odds Marketing Agent — a specialized AI content strategist for Valor Odds and Sports, a premium Discord-based sports betting intelligence community.
+
+BRAND IDENTITY:
+- Valor Odds is the smart bettor's edge — an intelligence platform, not a tipster service
+- Core pillars: EDGE (mathematical advantage via arbitrage), TRUST (transparent, data-backed), COMMUNITY (bettors helping bettors), SPEED (real-time alerts)
+- Brand voice: Confident, data-driven, slightly edgy. Like a sharp trader, not a desperate tout
+- NOT: gamblers, tipsters, get-rich-quick, or promise-makers
+
+PRIMARY TAGLINES:
+- "Tired of Losing? Turn the Odds in Your Favor."
+- "The Smart Money Knows. Now You Do Too."
+- "Stop Guessing. Start Winning."
+- "The Edge Closes Fast. Get In Before the Line Moves."
+
+PRODUCTS:
+- Discord server with Supporter (~$9-15/mo) and VIP (~$29-49/mo) subscription tiers via MEE6
+- Website: ValorOdds.com | Mobile app coming soon
+- Social: TikTok, Instagram, Reddit, X/Twitter, YouTube
+- Sports focus: MLB, NFL, NBA, NHL
+
+CONTENT RULES:
+- Never make specific income guarantees or ROI promises
+- Frame as "data intelligence" and "odds analysis," not "guaranteed picks"
+- Always include a subtle CTA directing to Discord or ValorOdds.com
+- Create FOMO and urgency without being desperate
+- Use data points, percentages, and specific numbers wherever possible
+
+When generating content, be specific, punchy, and ready-to-post. Format output cleanly with clear sections.`;
 
 async function callClaude(messages, onChunk, maxTokens = 1200) {
-  const token = localStorage.getItem("token");
-  const response = await fetch("/api/ai/chat", {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-    },
-    body: JSON.stringify({ messages, maxTokens }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      system: SYSTEM_PROMPT,
+      messages,
+      stream: true,
+    }),
   });
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`AI request failed: ${err}`);
-  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
