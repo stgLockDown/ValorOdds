@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { sb, an, sportKey, espnLeague } = require('../lib/apis');
+const {
+  sb, an, sportKey, espnLeague,
+  extractTodayGames, extractScoreboardGames, extractNewsArticles, normalizeGame,
+} = require('../lib/apis');
 
 // GET /api/games — list games with optional sport filter
 router.get('/', async (req, res) => {
@@ -14,50 +17,47 @@ router.get('/', async (req, res) => {
       // Fetch from ESPN scoreboard for specific league
       const league = espnLeague(sport);
       const data = await an.scoreboard(league);
-      if (data) {
-        const events = data.events || data.games || (Array.isArray(data) ? data : []);
-        events.forEach(ev => {
-          const comp = ev.competitions?.[0];
-          const home = comp?.competitors?.find(c => c.homeAway === 'home');
-          const away = comp?.competitors?.find(c => c.homeAway === 'away');
-          allGames.push({
-            id: ev.id,
-            game_id: ev.id,
-            sport_key: league,
-            home_team: home?.team?.displayName || home?.team?.name || '',
-            away_team: away?.team?.displayName || away?.team?.name || '',
-            home_score: home?.score || null,
-            away_score: away?.score || null,
-            status: ev.status?.type?.description || comp?.status?.type?.description || 'scheduled',
-            status_detail: ev.status?.type?.detail || comp?.status?.type?.detail || '',
-            is_live: ev.status?.type?.state === 'in' || false,
-            is_final: ev.status?.type?.completed || false,
-            commence_time: ev.date || ev.startDate || '',
-            venue: comp?.venue?.fullName || '',
-          });
-        });
-      }
+      const games = extractScoreboardGames(data);
+      allGames = games.map(g => normalizeGame(g));
 
       // Also try sportsbook events for odds data
       const sbKey = sportKey(sport);
       const sbData = await sb.events(sbKey);
-      if (sbData && Array.isArray(sbData)) {
-        sbData.forEach(ev => {
+      if (sbData && Array.isArray(sbData.events)) {
+        sbData.events.forEach(ev => {
           // Only add if not already present from ESPN
           const exists = allGames.find(g =>
-            g.home_team.toLowerCase().includes((ev.home_team || '').toLowerCase().slice(0, 6))
+            g.home_team.toLowerCase().includes((ev.home_team || '').toLowerCase().slice(0, 8))
           );
           if (!exists) {
             allGames.push({
-              id: ev.id || ev.event_id,
-              game_id: ev.id || ev.event_id,
-              sport_key: ev.sport_key || sbKey,
+              id: ev.event_id || Math.random().toString(36).slice(2),
+              game_id: ev.event_id || '',
+              sport_key: sbKey,
+              league: ev.league || '',
+              name: `${ev.away_team || ''} at ${ev.home_team || ''}`,
+              short_name: '',
               home_team: ev.home_team || '',
               away_team: ev.away_team || '',
-              commence_time: ev.commence_time || '',
-              status: 'scheduled',
-              is_live: false,
-              bookmakers: ev.bookmakers || [],
+              home_abbreviation: '',
+              away_abbreviation: '',
+              home_score: null,
+              away_score: null,
+              home_record: '',
+              away_record: '',
+              home_logo: '',
+              away_logo: '',
+              status: ev.is_live ? 'In Progress' : 'Scheduled',
+              completed: false,
+              is_live: ev.is_live || false,
+              is_final: false,
+              period: null,
+              clock: null,
+              commence_time: ev.start_time || '',
+              venue: '',
+              broadcast: '',
+              has_odds: true,
+              num_sportsbooks: ev.num_sportsbooks || 0,
             });
           }
         });
@@ -65,19 +65,8 @@ router.get('/', async (req, res) => {
     } else {
       // No sport filter — get today's games from ESPN
       const data = await an.today();
-      if (data) {
-        if (Array.isArray(data)) {
-          allGames = data.map(g => normalizeGame(g));
-        } else if (data.games) {
-          allGames = (Array.isArray(data.games) ? data.games : []).map(g => normalizeGame(g));
-        } else {
-          Object.entries(data).forEach(([league, games]) => {
-            if (Array.isArray(games)) {
-              games.forEach(g => allGames.push(normalizeGame({ ...g, league })));
-            }
-          });
-        }
-      }
+      const games = extractTodayGames(data);
+      allGames = games.map(g => normalizeGame(g));
     }
 
     res.json(allGames.slice(0, limit));
@@ -100,29 +89,34 @@ router.get('/scores', async (req, res) => {
     const allScores = [];
     for (const league of leagues) {
       const data = await an.scoreboard(league);
-      if (!data) continue;
-
-      const events = data.events || data.games || (Array.isArray(data) ? data : []);
-      events.forEach(ev => {
-        const comp = ev.competitions?.[0];
-        const home = comp?.competitors?.find(c => c.homeAway === 'home');
-        const away = comp?.competitors?.find(c => c.homeAway === 'away');
+      const games = extractScoreboardGames(data);
+      games.forEach(g => {
+        const home = g.home || {};
+        const away = g.away || {};
         allScores.push({
-          id: ev.id,
+          id: g.id,
           sport_key: league,
-          home_team: home?.team?.displayName || home?.team?.name || '',
-          away_team: away?.team?.displayName || away?.team?.name || '',
-          home_score: home?.score || '0',
-          away_score: away?.score || '0',
-          status: ev.status?.type?.description || 'scheduled',
-          status_detail: ev.status?.type?.detail || '',
-          is_live: ev.status?.type?.state === 'in',
-          is_final: ev.status?.type?.completed || false,
-          period: ev.status?.period || null,
-          clock: ev.status?.displayClock || null,
-          last_update: ev.date || new Date().toISOString(),
-          venue: comp?.venue?.fullName || '',
-          broadcast: comp?.broadcasts?.[0]?.names?.[0] || '',
+          league: g.league || league.toUpperCase(),
+          name: g.name || '',
+          short_name: g.short_name || '',
+          home_team: home.team || '',
+          away_team: away.team || '',
+          home_abbreviation: home.abbreviation || '',
+          away_abbreviation: away.abbreviation || '',
+          home_score: home.score || '0',
+          away_score: away.score || '0',
+          home_record: home.record || '',
+          away_record: away.record || '',
+          home_logo: home.logo || '',
+          away_logo: away.logo || '',
+          status: g.status || 'Scheduled',
+          is_live: g.status === 'In Progress' || g.status === 'Halftime',
+          is_final: g.completed || g.status === 'Final',
+          period: g.period || null,
+          clock: g.clock || null,
+          last_update: g.date || new Date().toISOString(),
+          venue: g.venue || '',
+          broadcast: Array.isArray(g.broadcast) ? g.broadcast.join(', ') : (g.broadcast || ''),
         });
       });
     }
@@ -147,19 +141,19 @@ router.get('/news', async (req, res) => {
     const allNews = [];
     for (const league of leagues) {
       const data = await an.news(league);
-      if (!data) continue;
-
-      const articles = data.articles || (Array.isArray(data) ? data : []);
+      const articles = extractNewsArticles(data);
       articles.forEach(a => {
         allNews.push({
-          id: a.id || Math.random().toString(36).slice(2),
+          id: Math.random().toString(36).slice(2),
           sport_key: league,
-          headline: a.headline || a.title || '',
-          description: a.description || a.summary || '',
-          link: a.links?.web?.href || a.link || a.url || '',
-          image: a.images?.[0]?.url || a.image || '',
-          published_at: a.published || a.date || new Date().toISOString(),
-          source: a.source || 'ESPN',
+          headline: a.headline || '',
+          description: a.description || '',
+          link: a.url || '',
+          image: '',
+          published_at: a.published || new Date().toISOString(),
+          author: a.author || '',
+          categories: a.categories || [],
+          source: 'ESPN',
         });
       });
     }
@@ -186,18 +180,14 @@ router.get('/weather', async (_req, res) => {
 router.get('/bookmakers', async (_req, res) => {
   try {
     const data = await sb.sportsbooks();
-    if (Array.isArray(data)) {
-      res.json(data.map(b => ({
-        id: b.key || b.id || b.name,
-        name: b.title || b.name || b.key || '',
-        key: b.key || '',
-        active: true,
-      })));
-    } else if (data && data.sportsbooks) {
+    // Response: { total, sportsbooks: [{ name, type, region, description }] }
+    if (data && Array.isArray(data.sportsbooks)) {
       res.json(data.sportsbooks.map(b => ({
-        id: b.key || b.id || b.name,
-        name: b.title || b.name || b.key || '',
-        key: b.key || '',
+        id: b.name,
+        name: b.name || '',
+        type: b.type || '',
+        region: b.region || '',
+        description: b.description || '',
         active: true,
       })));
     } else {
@@ -208,46 +198,5 @@ router.get('/bookmakers', async (_req, res) => {
     res.json([]);
   }
 });
-
-// Helper: normalise various game formats to a standard shape
-function normalizeGame(g) {
-  // ESPN event format
-  if (g.competitions) {
-    const comp = g.competitions[0];
-    const home = comp?.competitors?.find(c => c.homeAway === 'home');
-    const away = comp?.competitors?.find(c => c.homeAway === 'away');
-    return {
-      id: g.id,
-      game_id: g.id,
-      sport_key: g.league || g.sport || '',
-      home_team: home?.team?.displayName || '',
-      away_team: away?.team?.displayName || '',
-      home_score: home?.score || null,
-      away_score: away?.score || null,
-      status: g.status?.type?.description || 'scheduled',
-      status_detail: g.status?.type?.detail || '',
-      is_live: g.status?.type?.state === 'in',
-      is_final: g.status?.type?.completed || false,
-      commence_time: g.date || '',
-      venue: comp?.venue?.fullName || '',
-    };
-  }
-  // Simple flat format
-  return {
-    id: g.id || g.game_id || Math.random().toString(36).slice(2),
-    game_id: g.id || g.game_id || '',
-    sport_key: g.league || g.sport || g.sport_key || '',
-    home_team: g.home_team || g.homeTeam || g.home || '',
-    away_team: g.away_team || g.awayTeam || g.away || '',
-    home_score: g.home_score || g.homeScore || null,
-    away_score: g.away_score || g.awayScore || null,
-    status: g.status || g.state || 'scheduled',
-    status_detail: g.status_detail || '',
-    is_live: g.is_live || g.isLive || false,
-    is_final: g.is_final || g.isFinal || false,
-    commence_time: g.commence_time || g.date || g.start_time || '',
-    venue: g.venue || '',
-  };
-}
 
 module.exports = router;

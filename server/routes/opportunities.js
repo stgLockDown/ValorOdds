@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { sb, an, sportKey, espnLeague } = require('../lib/apis');
+const {
+  sb, an, sportKey, espnLeague,
+  extractTodayGames, extractScoreboardGames, normalizeGame,
+} = require('../lib/apis');
 
-// ── Helpers ──────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────
 const fmtOdds = (v) => {
   if (v == null) return '—';
   const n = Number(v);
@@ -30,76 +33,92 @@ const profitTier = (pct) => {
 // ================================================================
 // GET /api/opportunities/arbitrage
 // Find arbitrage-like opportunities via sportsbook compare endpoint
+// Response: { sport, market, total_events, multi_book_events,
+//             comparisons: [{ home_team, away_team, sport, league, start_time, is_live,
+//                             best_prices: { TeamName: { price, sportsbook }, Home: {...}, Away: {...} },
+//                             all_odds: {...} }] }
 // ================================================================
 router.get('/arbitrage', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 12, 50);
   const sport = req.query.sport || null;
 
   try {
+    // Sportsbook uses SIMPLE keys: nba, mlb, nfl, nhl
     const leagueKeys = sport
       ? [sportKey(sport)]
-      : ['basketball_nba', 'baseball_mlb', 'americanfootball_nfl', 'icehockey_nhl'];
+      : ['nba', 'mlb', 'nfl', 'nhl'];
 
     const opportunities = [];
 
     for (const key of leagueKeys) {
       const data = await sb.compare(key);
-      if (!data) continue;
+      if (!data || !Array.isArray(data.comparisons)) continue;
 
-      // Handle various response shapes
-      const events = data.events || data.comparisons || (Array.isArray(data) ? data : []);
+      data.comparisons.forEach(comp => {
+        const meta = sportMeta(comp.league || comp.sport || key);
+        const bestPrices = comp.best_prices || {};
 
-      events.forEach(ev => {
-        const meta = sportMeta(ev.sport_key || ev.sport || key);
+        // Get best home/away prices
+        // best_prices has team names as keys AND also "Home"/"Away"
+        let bestHomeName = comp.home_team || 'Home';
+        let bestAwayName = comp.away_team || 'Away';
 
-        // Look for price discrepancies across bookmakers
-        // The compare endpoint should provide best_lines or similar
-        const bestHome = ev.best_home_odds || ev.best_lines?.home || null;
-        const bestAway = ev.best_away_odds || ev.best_lines?.away || null;
-        const homeBook = ev.best_home_book || ev.best_lines?.home_book || '';
-        const awayBook = ev.best_away_book || ev.best_lines?.away_book || '';
+        // Try team-name keys first, fall back to Home/Away
+        const homePrice = bestPrices[bestHomeName] || bestPrices['Home'] || {};
+        const awayPrice = bestPrices[bestAwayName] || bestPrices['Away'] || {};
+
+        const bestHomeOdds = homePrice.price || null;
+        const bestAwayOdds = awayPrice.price || null;
+        const homeBook = homePrice.sportsbook || '';
+        const awayBook = awayPrice.sportsbook || '';
 
         // Calculate implied probability gap (approximation of arb potential)
         let profitPct = 0;
-        if (bestHome && bestAway) {
-          const impliedHome = bestHome > 0 ? 100 / (bestHome + 100) : Math.abs(bestHome) / (Math.abs(bestHome) + 100);
-          const impliedAway = bestAway > 0 ? 100 / (bestAway + 100) : Math.abs(bestAway) / (Math.abs(bestAway) + 100);
+        if (bestHomeOdds != null && bestAwayOdds != null) {
+          const impliedHome = bestHomeOdds > 0
+            ? 100 / (bestHomeOdds + 100)
+            : Math.abs(bestHomeOdds) / (Math.abs(bestHomeOdds) + 100);
+          const impliedAway = bestAwayOdds > 0
+            ? 100 / (bestAwayOdds + 100)
+            : Math.abs(bestAwayOdds) / (Math.abs(bestAwayOdds) + 100);
           const totalImpl = impliedHome + impliedAway;
           if (totalImpl < 1) {
-            profitPct = ((1 - totalImpl) * 100);
+            profitPct = (1 - totalImpl) * 100;
           }
         }
 
-        // Also include events that just have good line comparisons
-        if (ev.home_team || ev.away_team) {
-          opportunities.push({
-            id: ev.id || ev.event_id || Math.random().toString(36).slice(2),
-            sport: meta.label,
-            sportEmoji: meta.emoji,
-            sportBadge: meta.badge,
-            homeTeam: ev.home_team || '',
-            awayTeam: ev.away_team || '',
-            commenceTime: ev.commence_time || ev.start_time || '',
-            marketType: ev.market || 'h2h',
-            side1: {
-              bookmaker: homeBook || ev.bookmakers?.[0]?.key || 'Best Line',
-              selection: ev.home_team || 'Home',
-              odds: fmtOdds(bestHome || ev.home_odds),
-              stake: null,
-            },
-            side2: {
-              bookmaker: awayBook || ev.bookmakers?.[1]?.key || 'Best Line',
-              selection: ev.away_team || 'Away',
-              odds: fmtOdds(bestAway || ev.away_odds),
-              stake: null,
-            },
-            profitPct: profitPct.toFixed(2),
-            profitTier: profitTier(profitPct),
-            guaranteedProfit: '0.00',
-            isUsOnly: true,
-            detectedAt: ev.last_update || new Date().toISOString(),
-          });
-        }
+        opportunities.push({
+          id: `${key}-${comp.home_team}-${comp.away_team}`.replace(/\s+/g, '-').toLowerCase(),
+          sport: meta.label,
+          sportEmoji: meta.emoji,
+          sportBadge: meta.badge,
+          homeTeam: comp.home_team || '',
+          awayTeam: comp.away_team || '',
+          commenceTime: comp.start_time || '',
+          isLive: comp.is_live || false,
+          marketType: data.market || 'moneyline',
+          numSportsbooks: comp.num_sportsbooks || comp.sportsbooks_with_odds?.length || 0,
+          sportsbooks: comp.sportsbooks_with_odds || [],
+          side1: {
+            bookmaker: homeBook,
+            selection: comp.home_team || 'Home',
+            odds: fmtOdds(bestHomeOdds),
+            rawOdds: bestHomeOdds,
+            stake: null,
+          },
+          side2: {
+            bookmaker: awayBook,
+            selection: comp.away_team || 'Away',
+            odds: fmtOdds(bestAwayOdds),
+            rawOdds: bestAwayOdds,
+            stake: null,
+          },
+          profitPct: profitPct.toFixed(2),
+          profitTier: profitTier(profitPct),
+          guaranteedProfit: '0.00',
+          isUsOnly: true,
+          detectedAt: new Date().toISOString(),
+        });
       });
     }
 
@@ -116,6 +135,8 @@ router.get('/arbitrage', async (req, res) => {
 // ================================================================
 // GET /api/opportunities/player-props
 // Get player stats from ESPN scoreboards
+// Scoreboard response: { league, date, total_games, games: [{ id, name, ... }] }
+// Note: The pre-processed format may not have leaders. Return what we can.
 // ================================================================
 router.get('/player-props', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 12, 50);
@@ -130,38 +151,39 @@ router.get('/player-props', async (req, res) => {
 
     for (const league of leagues) {
       const data = await an.scoreboard(league);
-      if (!data) continue;
+      const games = extractScoreboardGames(data);
+      const meta = sportMeta(league);
 
-      const events = data.events || (Array.isArray(data) ? data : []);
-      events.forEach(ev => {
-        const comp = ev.competitions?.[0];
-        if (!comp) return;
+      games.forEach(g => {
+        const home = g.home || {};
+        const away = g.away || {};
 
-        // Look for leaders / top performers
-        const leaders = comp.leaders || ev.leaders || [];
-        leaders.forEach(cat => {
-          const catLeaders = cat.leaders || [];
-          catLeaders.slice(0, 2).forEach(leader => {
-            const athlete = leader.athlete || {};
-            const meta = sportMeta(league);
-            props.push({
-              id: `${ev.id}-${athlete.id || Math.random().toString(36).slice(2)}`,
-              sport: meta.label,
-              sportEmoji: meta.emoji,
-              sportBadge: meta.badge,
-              playerName: athlete.displayName || athlete.fullName || '',
-              team: athlete.team?.abbreviation || '',
-              teamAbbrev: athlete.team?.abbreviation || '',
-              position: athlete.position?.abbreviation || '',
-              keyStats: `${leader.displayValue || leader.value || ''} ${cat.displayName || cat.name || ''}`,
-              fantasyScore: null,
-              notableReason: cat.displayName || cat.name || 'Top performer',
-              game: `${comp.competitors?.[1]?.team?.abbreviation || ''} @ ${comp.competitors?.[0]?.team?.abbreviation || ''}`,
-              gameDate: ev.date || '',
-              recordedAt: ev.date || new Date().toISOString(),
-            });
+        // The analytics API returns pre-processed games — no raw leaders data.
+        // We can still show game-level info as "matchup props"
+        if (g.completed && home.score && away.score) {
+          // Show top scoring side as a "prop" insight
+          const homeScore = parseInt(home.score) || 0;
+          const awayScore = parseInt(away.score) || 0;
+          const winner = homeScore > awayScore ? home : away;
+          const loser = homeScore > awayScore ? away : home;
+
+          props.push({
+            id: `${g.id}-result`,
+            sport: meta.label,
+            sportEmoji: meta.emoji,
+            sportBadge: meta.badge,
+            playerName: winner.team || '',
+            team: winner.abbreviation || '',
+            teamAbbrev: winner.abbreviation || '',
+            position: '',
+            keyStats: `${winner.score} - ${loser.score}`,
+            fantasyScore: null,
+            notableReason: 'Game Winner',
+            game: g.short_name || `${away.abbreviation || ''} @ ${home.abbreviation || ''}`,
+            gameDate: g.date || '',
+            recordedAt: g.date || new Date().toISOString(),
           });
-        });
+        }
       });
     }
 
@@ -182,7 +204,7 @@ router.get('/ai-analysis', async (req, res) => {
 
   try {
     const league = sport ? espnLeague(sport) : 'nba';
-    const sbSport = sport ? sportKey(sport) : 'basketball_nba';
+    const sbSport = sport ? sportKey(sport) : 'nba';
 
     // Fetch data and get AI analysis in parallel
     const [scoreData, oddsData] = await Promise.all([
@@ -217,7 +239,7 @@ router.get('/ai-analysis', async (req, res) => {
     }
 
     // Also get best bets AI for each league
-    const aiLeagues = sport ? [sportKey(sport)] : ['basketball_nba', 'baseball_mlb'];
+    const aiLeagues = sport ? [sportKey(sport)] : ['nba', 'mlb'];
     for (const lk of aiLeagues) {
       const betsAI = await an.bestBetsAI(lk);
       if (betsAI) {
@@ -251,21 +273,23 @@ router.get('/games', async (req, res) => {
 
   try {
     const data = await an.today();
-    const allGames = [];
-
-    if (data) {
-      if (Array.isArray(data)) {
-        data.forEach(g => allGames.push(normalizeGameOpp(g)));
-      } else if (data.games) {
-        (Array.isArray(data.games) ? data.games : []).forEach(g => allGames.push(normalizeGameOpp(g)));
-      } else {
-        Object.entries(data).forEach(([league, games]) => {
-          if (Array.isArray(games)) {
-            games.forEach(g => allGames.push(normalizeGameOpp({ ...g, sport: league })));
-          }
-        });
-      }
-    }
+    const allGames = extractTodayGames(data).map(g => {
+      const n = normalizeGame(g);
+      const meta = sportMeta(g.league || '');
+      return {
+        ...n,
+        sport: meta.label,
+        sportEmoji: meta.emoji,
+        sportBadge: meta.badge,
+        homeTeam: n.home_team,
+        awayTeam: n.away_team,
+        homeScore: n.home_score,
+        awayScore: n.away_score,
+        isLive: n.is_live,
+        isFinal: n.is_final,
+        gameDate: n.commence_time,
+      };
+    });
 
     const filtered = live ? allGames.filter(g => g.isLive) : allGames;
     res.json({ count: Math.min(filtered.length, limit), games: filtered.slice(0, limit) });
@@ -283,38 +307,26 @@ router.get('/summary', async (req, res) => {
   try {
     const [todayData, nbaCompare, mlbCompare] = await Promise.all([
       an.today(),
-      sb.compare('basketball_nba'),
-      sb.compare('baseball_mlb'),
+      sb.compare('nba'),
+      sb.compare('mlb'),
     ]);
 
-    // Count games
-    let totalGames = 0;
-    let liveGames = 0;
-    if (todayData) {
-      if (Array.isArray(todayData)) {
-        totalGames = todayData.length;
-      } else if (todayData.games) {
-        totalGames = Array.isArray(todayData.games) ? todayData.games.length : 0;
-      } else {
-        Object.values(todayData).forEach(v => {
-          if (Array.isArray(v)) totalGames += v.length;
-        });
-      }
-    }
+    // Count games from { leagues: { NBA: { games: [...] }, ... } }
+    const allGames = extractTodayGames(todayData);
+    const totalGames = allGames.length;
+    const liveGames = allGames.filter(g => g.status === 'In Progress' || g.status === 'Halftime').length;
 
     // Count compare events (proxy for arb opportunities)
     let arbCount = 0;
-    let bestProfit = 0;
     [nbaCompare, mlbCompare].forEach(data => {
-      if (!data) return;
-      const events = data.events || data.comparisons || (Array.isArray(data) ? data : []);
-      arbCount += events.length;
+      if (!data || !Array.isArray(data.comparisons)) return;
+      arbCount += data.comparisons.length;
     });
 
     res.json({
       arbitrage: {
         count: arbCount,
-        bestProfit: bestProfit.toFixed(2),
+        bestProfit: '0.00',
         avgProfit: '0.00',
       },
       games: {
@@ -330,50 +342,5 @@ router.get('/summary', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch summary' });
   }
 });
-
-// Helper: normalise game data for opportunities/games endpoint
-function normalizeGameOpp(g) {
-  if (g.competitions) {
-    const comp = g.competitions[0];
-    const home = comp?.competitors?.find(c => c.homeAway === 'home');
-    const away = comp?.competitors?.find(c => c.homeAway === 'away');
-    const meta = sportMeta(g.sport || g.league || '');
-    return {
-      id: g.id,
-      gameId: g.id,
-      sport: meta.label,
-      sportEmoji: meta.emoji,
-      sportBadge: meta.badge,
-      homeTeam: home?.team?.displayName || '',
-      awayTeam: away?.team?.displayName || '',
-      homeScore: home?.score || null,
-      awayScore: away?.score || null,
-      status: g.status?.type?.description || 'scheduled',
-      statusDetail: g.status?.type?.detail || '',
-      isLive: g.status?.type?.state === 'in',
-      isFinal: g.status?.type?.completed || false,
-      gameDate: g.date || '',
-      venue: comp?.venue?.fullName || '',
-    };
-  }
-  const meta = sportMeta(g.sport || g.league || g.sport_key || '');
-  return {
-    id: g.id || g.game_id || Math.random().toString(36).slice(2),
-    gameId: g.id || g.game_id || '',
-    sport: meta.label,
-    sportEmoji: meta.emoji,
-    sportBadge: meta.badge,
-    homeTeam: g.home_team || g.homeTeam || g.home || '',
-    awayTeam: g.away_team || g.awayTeam || g.away || '',
-    homeScore: g.home_score || g.homeScore || null,
-    awayScore: g.away_score || g.awayScore || null,
-    status: g.status || g.state || 'scheduled',
-    statusDetail: g.status_detail || '',
-    isLive: g.is_live || g.isLive || false,
-    isFinal: g.is_final || g.isFinal || false,
-    gameDate: g.commence_time || g.date || g.start_time || '',
-    venue: g.venue || '',
-  };
-}
 
 module.exports = router;

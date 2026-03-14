@@ -1,41 +1,25 @@
-# Wire Entire Site to External APIs
+# Fix Dashboard Data Mapping
 
-## APIs
-- ANALYTICS: https://sports-analytics-api-production.up.railway.app
-- SPORTSBOOK: https://sportsbook-api-production-296e.up.railway.app
+## API Response Formats (Verified)
 
-## Phase 1: Rewrite Server Routes
-- [ ] Rewrite server/routes/dashboard.js → pull stats from SPORTSBOOK /odds + ANALYTICS /espn/today
-- [ ] Rewrite server/routes/games.js → /espn/scoreboard, /espn/news, SPORTSBOOK /odds, /events
-- [ ] Rewrite server/routes/opportunities.js → SPORTSBOOK /odds, /compare, /live, best-bets + ANALYTICS AI endpoints
-- [ ] Create shared helper (server/lib/apis.js) for fetching from both APIs
+### Analytics API (`sports-analytics-api-production.up.railway.app`)
+- `/espn/today` → `{ date, leagues: { NBA: { league, total_games, games: [...] }, MLB: {...}, ... }, total_games }`
+- `/espn/scoreboard/{league}` → `{ league, date, total_games, games: [...] }`
+- `/espn/news/{league}` → `{ league, total, articles: [{ headline, description, published, url, author, categories }] }`
+- Game format: `{ id, name, short_name, date, status, completed, period, clock, home: { team, abbreviation, score, record, logo }, away: { team, abbreviation, score, record, logo }, venue, broadcast: [], league }`
 
-## Phase 2: Build & Test
-- [ ] Build frontend (no frontend changes needed — same API contract)
-- [ ] Commit and push
+### Sportsbook API (`sportsbook-api-production-296e.up.railway.app`)
+- Sport keys are SIMPLE: `nba`, `nfl`, `mlb`, `nhl` (NOT `basketball_nba`)
+- `/sports` → `{ total_sports, total_sportsbooks, sports: [{ key, sport, league, sportsbooks: [], sportsbook_count }] }`
+- `/health` → `{ status, version, sportsbooks: [], sportsbook_count, sport_count, cache }`
+- `/compare/{sport}` → `{ sport, market, total_events, multi_book_events, comparisons: [{ home_team, away_team, sport, league, start_time, is_live, sportsbooks_with_odds, num_sportsbooks, best_prices: { TeamName: { price, sportsbook }, Home: {...}, Away: {...} }, all_odds: {...} }] }`
+- `/events/{sport}` → `{ sport, total_events, events: [{ home_team, away_team, sport, league, start_time, is_live, num_sportsbooks, sportsbooks: { BookName: { event_id, markets: [{ market_type, name, outcomes }] } } }] }`
+- `/sportsbooks` → `{ total, sportsbooks: [{ name, type, region, description }] }`
 
-## Endpoint Mapping
-Dashboard stats:
-  - activeArbs → SPORTSBOOK /compare/{sport} count opportunities
-  - gamesToday → ANALYTICS /espn/today
-  - sportsCovered → SPORTSBOOK /sports count
-  - aiAnalyses → count from /espn/scoreboard aggregation
+## Tasks
 
-Games:
-  - /api/games → ANALYTICS /espn/today + SPORTSBOOK /events/{sport}
-  - /api/games/scores → ANALYTICS /espn/scoreboard/{league}
-  - /api/games/news → ANALYTICS /espn/news/{league}
-  - /api/games/injuries → (not available, return empty or simulate)
-  - /api/games/weather → (not available, return empty)
-  - /api/games/bookmakers → SPORTSBOOK /sportsbooks
-
-Opportunities:
-  - /api/opportunities/arbitrage → SPORTSBOOK /compare/{sport} (find arb gaps)
-  - /api/opportunities/player-props → ANALYTICS /espn/scoreboard (player data)
-  - /api/opportunities/ai-analysis → ANALYTICS POST /analyze
-  - /api/opportunities/summary → aggregate from multiple endpoints
-  - /api/opportunities/games → ANALYTICS /espn/today
-
-Odds Comparison:
-  - /api/games (with sport) → SPORTSBOOK /events/{sport}
-  - /api/games/bookmakers → SPORTSBOOK /sportsbooks
+- [x] Fix `server/lib/apis.js` - Update SPORT_MAP to use simple keys (nba, nfl, etc.)
+- [x] Fix `server/routes/dashboard.js` - Parse `todayData.leagues` correctly, fix sportsbook sport keys
+- [x] Fix `server/routes/games.js` - Parse scoreboard `data.games[]` flat format, fix `normalizeGame()`, fix today parsing
+- [x] Fix `server/routes/opportunities.js` - Parse compare `data.comparisons[]`, fix today parsing, fix scoreboard parsing
+- [ ] Push to git and verify
