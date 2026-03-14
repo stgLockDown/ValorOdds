@@ -1,4 +1,5 @@
 const express = require('express');
+const https = require('https');
 const router = express.Router();
 
 const SYSTEM_PROMPT = `You are the Valor Odds Marketing Agent — a specialized AI content strategist for Valor Odds and Sports, a premium Discord-based sports betting intelligence community.
@@ -30,12 +31,12 @@ CONTENT RULES:
 
 When generating content, be specific, punchy, and ready-to-post. Format output cleanly with clear sections.`;
 
-// POST /api/ai/chat  — streaming proxy to Anthropic
-router.post('/chat', async (req, res) => {
+// POST /api/ai/chat — streaming proxy to Anthropic
+router.post('/chat', (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
 
-  // Verify JWT (lightweight check — just ensure token exists and user is admin)
+  // Verify JWT
   try {
     const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET || 'dev-secret');
@@ -45,59 +46,74 @@ router.post('/chat', async (req, res) => {
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' });
 
   const { messages, maxTokens = 1200 } = req.body;
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'messages array required' });
   }
 
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: maxTokens,
-        system: SYSTEM_PROMPT,
-        messages,
-        stream: true,
-      }),
-    });
+  const postData = JSON.stringify({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: maxTokens,
+    system: SYSTEM_PROMPT,
+    messages,
+    stream: true,
+  });
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.error('Anthropic API error:', response.status, err);
-      return res.status(response.status).json({ error: 'Anthropic API error', details: err });
+  const options = {
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Length': Buffer.byteLength(postData),
+    },
+  };
+
+  const proxyReq = https.request(options, (proxyRes) => {
+    if (proxyRes.statusCode !== 200) {
+      let errorBody = '';
+      proxyRes.on('data', (chunk) => { errorBody += chunk; });
+      proxyRes.on('end', () => {
+        console.error('Anthropic API error:', proxyRes.statusCode, errorBody);
+        if (!res.headersSent) {
+          res.status(proxyRes.statusCode).json({ error: 'Anthropic API error', details: errorBody });
+        }
+      });
+      return;
     }
 
-    // Stream the response through to the client
+    // Stream SSE through to client
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
+    proxyRes.on('data', (chunk) => {
       res.write(chunk);
-    }
-    res.end();
-  } catch (err) {
-    console.error('AI proxy error:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'AI proxy error' });
-    } else {
+    });
+
+    proxyRes.on('end', () => {
       res.end();
+    });
+
+    proxyRes.on('error', (err) => {
+      console.error('Proxy response error:', err);
+      res.end();
+    });
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('AI proxy request error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'AI proxy error', details: err.message });
     }
-  }
+  });
+
+  proxyReq.write(postData);
+  proxyReq.end();
 });
 
 module.exports = router;

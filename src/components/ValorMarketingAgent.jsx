@@ -49,7 +49,7 @@ CONTENT RULES:
 When generating content, be specific, punchy, and ready-to-post. Format output cleanly with clear sections.`;
 
 async function callClaude(messages, onChunk, maxTokens = 1200) {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem("vo_token");
   const response = await fetch("/api/ai/chat", {
     method: "POST",
     headers: {
