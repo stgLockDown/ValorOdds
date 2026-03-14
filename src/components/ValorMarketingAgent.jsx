@@ -48,38 +48,78 @@ CONTENT RULES:
 
 When generating content, be specific, punchy, and ready-to-post. Format output cleanly with clear sections.`;
 
+const ANALYTICS_API = "https://sports-analytics-api-production.up.railway.app";
+const SPORTSBOOK_API = "https://sportsbook-api-production-296e.up.railway.app";
+
+// Route AI calls through Sports Analytics API instead of Anthropic directly
 async function callClaude(messages, onChunk, maxTokens = 1200) {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  // Build a single prompt from the messages array
+  const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+  const prompt = lastUserMsg ? lastUserMsg.content : messages.map(m => m.content).join("\n");
+
+  const response = await fetch(`${ANALYTICS_API}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: maxTokens,
-      system: SYSTEM_PROMPT,
-      messages,
-      stream: true,
+      question: prompt,
+      context: SYSTEM_PROMPT,
     }),
   });
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const lines = decoder.decode(value).split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const data = JSON.parse(line.slice(6));
-          if (data.type === "content_block_delta" && data.delta?.text) {
-            fullText += data.delta.text;
-            onChunk(fullText);
-          }
-        } catch {}
-      }
-    }
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Analytics API error (${response.status}): ${err}`);
   }
-  return fullText;
+
+  const data = await response.json();
+  // The API returns { answer: "..." } or { result: "..." } or { content: "..." }
+  const text = data.answer || data.result || data.content || data.text || JSON.stringify(data);
+  onChunk(text);
+  return text;
+}
+
+// Helper: fetch sportsbook best bets and generate content
+async function fetchBestBetsContent(sport, onChunk) {
+  const lowerSport = (sport || "nba").toLowerCase().replace(/\s+/g, "_");
+  const response = await fetch(`${ANALYTICS_API}/sportsbook/best-bets-ai/${lowerSport}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ context: SYSTEM_PROMPT }),
+  });
+  if (!response.ok) throw new Error(`Best bets API error: ${response.status}`);
+  const data = await response.json();
+  const text = data.answer || data.result || data.content || data.text || JSON.stringify(data);
+  onChunk(text);
+  return text;
+}
+
+// Helper: fetch live odds + AI analysis
+async function fetchLiveOddsContent(sport, onChunk) {
+  const lowerSport = (sport || "nba").toLowerCase().replace(/\s+/g, "_");
+  const response = await fetch(`${ANALYTICS_API}/sportsbook/live-ai/${lowerSport}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ context: SYSTEM_PROMPT }),
+  });
+  if (!response.ok) throw new Error(`Live odds API error: ${response.status}`);
+  const data = await response.json();
+  const text = data.answer || data.result || data.content || data.text || JSON.stringify(data);
+  onChunk(text);
+  return text;
+}
+
+// Helper: summarize/generate ready-to-post content
+async function generateReadyToPost(prompt, onChunk) {
+  const response = await fetch(`${ANALYTICS_API}/summarize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: prompt, context: SYSTEM_PROMPT }),
+  });
+  if (!response.ok) throw new Error(`Summarize API error: ${response.status}`);
+  const data = await response.json();
+  const text = data.answer || data.result || data.content || data.summary || data.text || JSON.stringify(data);
+  onChunk(text);
+  return text;
 }
 
 // ── ICONS ──
