@@ -495,6 +495,153 @@ class GLMSportsClient:
             raise GLMAPIError(result.error or "Predictions failed")
         return result.result
 
+    # ── ESPN Live Data Methods ─────────────────────────────────────────────────
+
+    def espn_scoreboard(self, league: str, date: str = None) -> dict:
+        """
+        Get live ESPN scoreboard for any league.
+
+        Args:
+            league: nba | nfl | mlb | nhl | ncaab | ncaaf | epl | mls | etc.
+            date:   Optional YYYY-MM-DD (default: today)
+
+        Example:
+            games = client.espn_scoreboard("nba")
+            for game in games["games"]:
+                print(f"{game['away']['team']} @ {game['home']['team']} — {game['status']}")
+        """
+        params = {}
+        if date:
+            params["date"] = date
+        return self._request("GET", f"/espn/scoreboard/{league}", params=params)
+
+    def espn_news(self, league: str, limit: int = 10) -> dict:
+        """
+        Get latest ESPN news for a league.
+
+        Args:
+            league: nba | nfl | mlb | nhl | etc.
+            limit:  Number of articles (default: 10)
+
+        Example:
+            news = client.espn_news("nba", limit=5)
+            for article in news["articles"]:
+                print(article["headline"])
+        """
+        return self._request("GET", f"/espn/news/{league}", params={"limit": limit})
+
+    def espn_standings(self, league: str) -> dict:
+        """
+        Get current standings for a league.
+
+        Example:
+            standings = client.espn_standings("nba")
+        """
+        return self._request("GET", f"/espn/standings/{league}")
+
+    def espn_teams(self, league: str) -> dict:
+        """Get all teams in a league."""
+        return self._request("GET", f"/espn/teams/{league}")
+
+    def espn_team(self, league: str, team: str) -> dict:
+        """
+        Get specific team info.
+
+        Args:
+            league: nba | nfl | etc.
+            team:   Team abbreviation (e.g. 'lal', 'kc', 'bos')
+        """
+        return self._request("GET", f"/espn/team/{league}/{team}")
+
+    def espn_game(self, league: str, game_id: str) -> dict:
+        """
+        Get full game summary and box score.
+
+        Args:
+            league:  nba | nfl | etc.
+            game_id: ESPN game ID (from scoreboard data)
+        """
+        return self._request("GET", f"/espn/game/{league}/{game_id}")
+
+    def espn_today(self, leagues: str = "nba,nfl,mlb,nhl") -> dict:
+        """
+        Get all games today across multiple leagues.
+
+        Args:
+            leagues: Comma-separated league names (default: nba,nfl,mlb,nhl)
+
+        Example:
+            today = client.espn_today("nba,nfl")
+            print(f"{today['total_games']} games today")
+        """
+        return self._request("GET", "/espn/today", params={"leagues": leagues})
+
+    def espn_athlete(self, league: str, athlete_id: str) -> dict:
+        """Get player stats by ESPN athlete ID."""
+        return self._request("GET", f"/espn/athlete/{league}/{athlete_id}")
+
+    # ── ESPN + AI Combo Shortcuts ──────────────────────────────────────────────
+
+    def live_scores_summary(self, league: str, platform: str = "general", tone: str = "informative") -> str:
+        """
+        Shortcut: Fetch live ESPN scoreboard + auto AI summary in one call.
+
+        Returns ready-to-post text.
+
+        Example:
+            post = client.live_scores_summary("nba", platform="twitter", tone="hype")
+            twitter_api.post(post)
+        """
+        result = self._request(
+            "POST", f"/espn/scoreboard-ai/{league}",
+            params={"platform": platform, "tone": tone}
+        )
+        return result.get("result", "")
+
+    def news_summary(self, league: str, platform: str = "general", tone: str = "informative", limit: int = 5) -> str:
+        """
+        Shortcut: Fetch latest ESPN news + auto AI summary in one call.
+
+        Returns ready-to-post text.
+
+        Example:
+            post = client.news_summary("nfl", platform="discord", tone="analytical")
+            discord.send(post)
+        """
+        result = self._request(
+            "POST", f"/espn/news-ai/{league}",
+            params={"platform": platform, "tone": tone, "limit": limit}
+        )
+        return result.get("result", "")
+
+    def game_ai_recap(self, league: str, game_id: str, platform: str = "general") -> str:
+        """
+        Shortcut: Fetch ESPN game data + auto AI recap in one call.
+
+        Returns ready-to-post recap text.
+        """
+        result = self._request(
+            "POST", f"/espn/game-ai/{league}/{game_id}",
+            params={"report_type": "recap", "platform": platform}
+        )
+        return result.get("result", "")
+
+    def daily_digest(self, leagues: str = "nba,nfl,mlb,nhl", platform: str = "general", tone: str = "informative") -> str:
+        """
+        Shortcut: Get full AI-written daily sports digest across all leagues.
+
+        Returns a comprehensive summary of everything happening today.
+
+        Example:
+            digest = client.daily_digest(platform="discord")
+            discord.send(digest)
+        """
+        result = self._request(
+            "POST", "/espn/today-ai",
+            params={"leagues": leagues, "platform": platform, "tone": tone}
+        )
+        return result.get("result", "")
+
     # ── Context Manager Support ────────────────────────────────────────────────
 
     def __enter__(self):
