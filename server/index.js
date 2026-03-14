@@ -9,6 +9,7 @@ const opportunitiesRoutes = require('./routes/opportunities');
 const dashboardRoutes = require('./routes/dashboard');
 const gamesRoutes = require('./routes/games');
 const userRoutes = require('./routes/user');
+const aiRoutes = require('./routes/ai');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -29,6 +30,7 @@ app.use('/api/opportunities', opportunitiesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/games', gamesRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
