@@ -1,0 +1,507 @@
+"""
+GLM Sports Analytics SDK - Main Client
+The primary interface for interacting with the GLM Sports Analytics API
+"""
+
+import os
+import time
+import logging
+from typing import Any, Optional, List, Union
+import httpx
+
+from .exceptions import (
+    GLMSportsError,
+    GLMAuthError,
+    GLMRateLimitError,
+    GLMAPIError,
+    GLMConnectionError,
+    GLMTimeoutError,
+)
+from .models import (
+    AnalysisResult,
+    SummaryResult,
+    OddsResult,
+    AskResult,
+    ESPNResult,
+    BatchResult,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class GLMSportsClient:
+    """
+    Python client for the GLM Sports Analytics API.
+
+    Usage:
+        from glm_sports import GLMSportsClient
+
+        client = GLMSportsClient(
+            base_url="https://your-app.up.railway.app",
+            api_key="your_service_api_key"   # optional
+        )
+
+        # Analyze a game
+        result = client.analyze({"game": "Lakers vs Warriors", "score": "112-108"})
+        print(result)
+
+        # Generate a tweet
+        tweet = client.summarize(data, platform="twitter", tone="hype")
+        print(tweet)
+
+        # Analyze odds
+        picks = client.odds(odds_data, sport="nba", analysis_type="value")
+        print(picks)
+    """
+
+    def __init__(
+        self,
+        base_url: str = None,
+        api_key: str = None,
+        timeout: int = 60,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+    ):
+        """
+        Initialize the GLM Sports Analytics client.
+
+        Args:
+            base_url:     Your Railway deployment URL (or set GLM_BASE_URL env var)
+            api_key:      Your SERVICE_API_KEY (or set GLM_API_KEY env var) — optional
+            timeout:      Request timeout in seconds (default: 60)
+            max_retries:  Number of retries on failure (default: 3)
+            retry_delay:  Seconds between retries (default: 1.0)
+        """
+        self.base_url = (base_url or os.getenv("GLM_BASE_URL", "")).rstrip("/")
+        if not self.base_url:
+            raise GLMSportsError(
+                "base_url is required. Pass it directly or set the GLM_BASE_URL environment variable."
+            )
+
+        self.api_key = api_key or os.getenv("GLM_API_KEY")
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+        self._headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            self._headers["X-API-Key"] = self.api_key
+
+        logger.info(f"GLMSportsClient initialized → {self.base_url}")
+
+    # ── Internal HTTP ──────────────────────────────────────────────────────────
+
+    def _request(self, method: str, endpoint: str, **kwargs) -> dict:
+        """Make an HTTP request with retry logic and error handling"""
+        url = f"{self.base_url}{endpoint}"
+        last_error = None
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                logger.debug(f"[Attempt {attempt}] {method.upper()} {url}")
+                with httpx.Client(timeout=self.timeout) as client:
+                    response = client.request(
+                        method=method,
+                        url=url,
+                        headers=self._headers,
+                        **kwargs
+                    )
+
+                # Handle specific HTTP errors
+                if response.status_code == 403:
+                    raise GLMAuthError()
+                if response.status_code == 429:
+                    raise GLMRateLimitError()
+                if response.status_code >= 500:
+                    raise GLMAPIError(
+                        f"Server error: {response.text}",
+                        status_code=response.status_code
+                    )
+                if response.status_code >= 400:
+                    raise GLMAPIError(
+                        f"Request error: {response.text}",
+                        status_code=response.status_code
+                    )
+
+                return response.json()
+
+            except (GLMAuthError, GLMRateLimitError):
+                raise  # Don't retry auth/rate limit errors
+            except httpx.ConnectError:
+                raise GLMConnectionError(self.base_url)
+            except httpx.TimeoutException:
+                raise GLMTimeoutError(self.timeout)
+            except GLMAPIError as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    logger.warning(f"Attempt {attempt} failed: {e}. Retrying in {self.retry_delay}s...")
+                    time.sleep(self.retry_delay * attempt)
+            except Exception as e:
+                last_error = GLMSportsError(str(e))
+                if attempt < self.max_retries:
+                    logger.warning(f"Attempt {attempt} failed: {e}. Retrying in {self.retry_delay}s...")
+                    time.sleep(self.retry_delay * attempt)
+
+        raise last_error or GLMSportsError("Request failed after all retries")
+
+    # ── Health Check ───────────────────────────────────────────────────────────
+
+    def health(self) -> dict:
+        """
+        Check if the API is running.
+
+        Returns:
+            dict with status, version, and model info
+        """
+        return self._request("GET", "/health")
+
+    def is_alive(self) -> bool:
+        """Quick check — returns True if API is reachable"""
+        try:
+            result = self.health()
+            return result.get("status") == "healthy"
+        except Exception:
+            return False
+
+    # ── Core Methods ───────────────────────────────────────────────────────────
+
+    def analyze(
+        self,
+        data: Any,
+        context: str = None,
+        output_format: str = "summary"
+    ) -> AnalysisResult:
+        """
+        Analyze sports data and get AI-powered insights.
+
+        Args:
+            data:          Any sports data — dict, list, string, or raw JSON
+            context:       Optional context e.g. "NBA Playoffs Game 5"
+            output_format: "summary" | "bullets" | "post" | "report"
+
+        Returns:
+            AnalysisResult with .result containing the analysis text
+
+        Example:
+            result = client.analyze(
+                data={"game": "Lakers vs Warriors", "score": "112-108", "lebron_pts": 34},
+                context="NBA Playoffs",
+                output_format="bullets"
+            )
+            print(result.result)
+        """
+        payload = {
+            "data": data,
+            "context": context,
+            "output_format": output_format
+        }
+        response = self._request("POST", "/analyze", json=payload)
+        return AnalysisResult(
+            success=response.get("success", False),
+            result=response.get("result"),
+            model_used=response.get("model_used"),
+            tokens_used=response.get("tokens_used"),
+            error=response.get("error"),
+            context=context,
+            output_format=output_format
+        )
+
+    def summarize(
+        self,
+        data: Any,
+        platform: str = "general",
+        tone: str = "informative",
+        max_length: int = None
+    ) -> SummaryResult:
+        """
+        Generate a ready-to-post summary from sports data.
+
+        Args:
+            data:        Sports data to summarize
+            platform:    "twitter" | "instagram" | "discord" | "general"
+            tone:        "informative" | "hype" | "analytical" | "casual"
+            max_length:  Optional character limit
+
+        Returns:
+            SummaryResult with .result containing post-ready text
+
+        Example:
+            tweet = client.summarize(
+                data={"game": "Chiefs vs Eagles", "score": "27-21"},
+                platform="twitter",
+                tone="hype",
+                max_length=280
+            )
+            print(tweet.result)           # The tweet text
+            print(tweet.character_count)  # Auto-calculated length
+        """
+        payload = {
+            "data": data,
+            "platform": platform,
+            "tone": tone,
+            "max_length": max_length
+        }
+        response = self._request("POST", "/summarize", json=payload)
+        return SummaryResult(
+            success=response.get("success", False),
+            result=response.get("result"),
+            model_used=response.get("model_used"),
+            tokens_used=response.get("tokens_used"),
+            error=response.get("error"),
+            platform=platform,
+            tone=tone
+        )
+
+    def odds(
+        self,
+        odds_data: Any,
+        sport: str = None,
+        analysis_type: str = "value"
+    ) -> OddsResult:
+        """
+        Analyze sportsbook odds and find value picks.
+
+        Args:
+            odds_data:     Sportsbook odds data (any format)
+            sport:         "nba" | "nfl" | "mlb" | "nhl" | "soccer" | etc.
+            analysis_type: "value" | "prediction" | "comparison" | "movement"
+
+        Returns:
+            OddsResult with .result containing odds analysis
+
+        Example:
+            picks = client.odds(
+                odds_data={"game": "Celtics vs Heat", "moneyline": {"cel": -220, "heat": +185}},
+                sport="nba",
+                analysis_type="value"
+            )
+            print(picks.result)
+        """
+        payload = {
+            "odds_data": odds_data,
+            "sport": sport,
+            "analysis_type": analysis_type
+        }
+        response = self._request("POST", "/odds", json=payload)
+        return OddsResult(
+            success=response.get("success", False),
+            result=response.get("result"),
+            model_used=response.get("model_used"),
+            tokens_used=response.get("tokens_used"),
+            error=response.get("error"),
+            sport=sport,
+            analysis_type=analysis_type
+        )
+
+    def ask(
+        self,
+        question: str,
+        context: Any = None,
+        sport: str = None
+    ) -> AskResult:
+        """
+        Ask any sports question with optional data context.
+
+        Args:
+            question: Your sports question
+            context:  Optional data to reference in the answer
+            sport:    Optional sport context ("nba", "nfl", etc.)
+
+        Returns:
+            AskResult with .result containing the answer
+
+        Example:
+            answer = client.ask(
+                question="Who leads the NBA in scoring this season?",
+                sport="nba"
+            )
+            print(answer.result)
+
+            # With data context
+            answer = client.ask(
+                question="Based on these stats, who is the MVP candidate?",
+                context={"players": [{"name": "Luka", "ppg": 34.2}, {"name": "SGA", "ppg": 31.8}]},
+                sport="nba"
+            )
+        """
+        payload = {
+            "question": question,
+            "context": context,
+            "sport": sport
+        }
+        response = self._request("POST", "/ask", json=payload)
+        return AskResult(
+            success=response.get("success", False),
+            result=response.get("result"),
+            model_used=response.get("model_used"),
+            tokens_used=response.get("tokens_used"),
+            error=response.get("error"),
+            question=question,
+            sport=sport
+        )
+
+    def espn(
+        self,
+        espn_data: Any,
+        report_type: str = "recap",
+        platform: str = "general"
+    ) -> ESPNResult:
+        """
+        Process ESPN data into publishable sports content.
+
+        Args:
+            espn_data:   Raw ESPN API response data
+            report_type: "recap" | "preview" | "standings" | "stats"
+            platform:    Where the content will be posted
+
+        Returns:
+            ESPNResult with .result containing publishable content
+
+        Example:
+            recap = client.espn(
+                espn_data=espn_api_response,
+                report_type="recap",
+                platform="discord"
+            )
+            post_to_discord(recap.result)
+        """
+        payload = {
+            "espn_data": espn_data,
+            "report_type": report_type,
+            "platform": platform
+        }
+        response = self._request("POST", "/espn", json=payload)
+        return ESPNResult(
+            success=response.get("success", False),
+            result=response.get("result"),
+            model_used=response.get("model_used"),
+            tokens_used=response.get("tokens_used"),
+            error=response.get("error"),
+            report_type=report_type,
+            platform=platform
+        )
+
+    def batch(
+        self,
+        items: List[Any],
+        analysis_type: str = "summarize",
+        platform: str = "general"
+    ) -> BatchResult:
+        """
+        Process multiple sports data items in one request (max 20).
+
+        Args:
+            items:         List of data items to process
+            analysis_type: "summarize" | "analyze" | "odds"
+            platform:      Platform for output formatting
+
+        Returns:
+            BatchResult — iterable, supports len(), indexing
+
+        Example:
+            games = [
+                {"game": "Lakers vs Warriors", "score": "112-108"},
+                {"game": "Celtics vs Heat", "score": "98-95"},
+                {"game": "Nuggets vs Suns", "score": "118-102"}
+            ]
+            results = client.batch(games, analysis_type="summarize", platform="twitter")
+            for item in results:
+                print(item)
+        """
+        if len(items) > 20:
+            raise GLMSportsError("Maximum 20 items per batch request")
+
+        response = self._request(
+            "POST",
+            f"/batch?analysis_type={analysis_type}&platform={platform}",
+            json=items
+        )
+        return BatchResult(
+            success=response.get("success", False),
+            total=response.get("total", 0),
+            results=response.get("results", []),
+            error=response.get("error")
+        )
+
+    # ── Convenience Methods ────────────────────────────────────────────────────
+
+    def tweet(self, data: Any, tone: str = "hype") -> str:
+        """
+        Shortcut: Generate a tweet-ready post (max 280 chars).
+
+        Returns just the text string, ready to post.
+
+        Example:
+            text = client.tweet({"game": "Chiefs vs Eagles", "score": "27-21"})
+            twitter_api.post(text)
+        """
+        result = self.summarize(data, platform="twitter", tone=tone, max_length=280)
+        if not result.success:
+            raise GLMAPIError(result.error or "Tweet generation failed")
+        return result.result
+
+    def instagram_caption(self, data: Any, tone: str = "hype") -> str:
+        """
+        Shortcut: Generate an Instagram caption with hashtags.
+
+        Returns just the caption string, ready to post.
+        """
+        result = self.summarize(data, platform="instagram", tone=tone)
+        if not result.success:
+            raise GLMAPIError(result.error or "Caption generation failed")
+        return result.result
+
+    def discord_post(self, data: Any, tone: str = "informative") -> str:
+        """
+        Shortcut: Generate a Discord-formatted post with markdown.
+
+        Returns just the post string, ready to send.
+        """
+        result = self.summarize(data, platform="discord", tone=tone)
+        if not result.success:
+            raise GLMAPIError(result.error or "Discord post generation failed")
+        return result.result
+
+    def game_recap(self, espn_data: Any, platform: str = "general") -> str:
+        """
+        Shortcut: Generate a game recap from ESPN data.
+
+        Returns just the recap string.
+        """
+        result = self.espn(espn_data, report_type="recap", platform=platform)
+        if not result.success:
+            raise GLMAPIError(result.error or "Recap generation failed")
+        return result.result
+
+    def best_bets(self, odds_data: Any, sport: str = None) -> str:
+        """
+        Shortcut: Find the best value bets from odds data.
+
+        Returns just the analysis string.
+        """
+        result = self.odds(odds_data, sport=sport, analysis_type="value")
+        if not result.success:
+            raise GLMAPIError(result.error or "Odds analysis failed")
+        return result.result
+
+    def predictions(self, odds_data: Any, sport: str = None) -> str:
+        """
+        Shortcut: Get AI predictions from odds data.
+
+        Returns just the predictions string.
+        """
+        result = self.odds(odds_data, sport=sport, analysis_type="prediction")
+        if not result.success:
+            raise GLMAPIError(result.error or "Predictions failed")
+        return result.result
+
+    # ── Context Manager Support ────────────────────────────────────────────────
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+    def __repr__(self):
+        return f"<GLMSportsClient url={self.base_url} authenticated={bool(self.api_key)}>"
