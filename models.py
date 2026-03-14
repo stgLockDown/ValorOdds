@@ -40,3 +40,28 @@ class APIResponse(BaseModel):
     error: Optional[str] = None
     model_used: Optional[str] = None
     tokens_used: Optional[int] = None
+
+
+# ─────────────────────────────────────────
+# Sportsbook Models
+# ─────────────────────────────────────────
+
+class SportsbookOddsAIRequest(BaseModel):
+    sport: str  # nba, nfl, mlb, nhl, soccer, etc.
+    sportsbook: Optional[str] = None  # filter to specific sportsbook
+    analysis_type: Optional[str] = "value"  # value, best_lines, comparison, live, picks
+    platform: Optional[str] = "general"  # twitter, instagram, discord, general
+
+
+class SportsbookCompareAIRequest(BaseModel):
+    sport: str
+    platform: Optional[str] = "general"
+
+
+class SportsbookBestBetsRequest(BaseModel):
+    sport: str
+    platform: Optional[str] = "general"  # twitter, instagram, discord, general
+
+
+class SportsbookLiveAIRequest(BaseModel):
+    sport: str

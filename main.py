@@ -20,10 +20,15 @@ from models import (
     OddsRequest,
     AskRequest,
     ESPNRequest,
-    APIResponse
+    APIResponse,
+    SportsbookOddsAIRequest,
+    SportsbookCompareAIRequest,
+    SportsbookBestBetsRequest,
+    SportsbookLiveAIRequest,
 )
 from services.analytics import SportsAnalyticsService
 from services.espn import ESPNService
+from services.sportsbook import SportsbookService
 
 load_dotenv()
 
@@ -46,17 +51,21 @@ def get_api_key(api_key: str = Security(api_key_header)):
 # ── App Lifecycle ─────────────────────────────────────────────────────────────
 analytics_service: SportsAnalyticsService = None
 espn_service: ESPNService = None
+sportsbook_service: SportsbookService = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global analytics_service, espn_service
+    global analytics_service, espn_service, sportsbook_service
     logger.info("Starting GLM Sports Analytics API...")
     analytics_service = SportsAnalyticsService()
     espn_service = ESPNService()
+    sportsbook_service = SportsbookService()
     logger.info("✅ Analytics service ready")
     logger.info("✅ ESPN service ready")
+    logger.info("✅ Sportsbook service ready")
     yield
     logger.info("Shutting down GLM Sports Analytics API...")
+    await sportsbook_service.close()
 
 # ── FastAPI App ───────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -112,7 +121,19 @@ async def root():
             "GET /espn/today": "All games today across all leagues",
             "POST /espn/scoreboard-ai/{league}": "Live scoreboard + AI analysis",
             "POST /espn/news-ai/{league}": "Latest news + AI summary",
-            "POST /espn/game-ai/{league}/{game_id}": "Game summary + AI recap"
+            "POST /espn/game-ai/{league}/{game_id}": "Game summary + AI recap",
+            "GET /sportsbook/sports": "List all 24 supported sports",
+            "GET /sportsbook/books": "List all 34 sportsbooks",
+            "GET /sportsbook/odds/{sport}": "Raw odds across all sportsbooks",
+            "GET /sportsbook/odds/{sport}/{book}": "Odds from one sportsbook",
+            "GET /sportsbook/compare/{sport}": "Best lines comparison across all books",
+            "GET /sportsbook/events/{sport}": "All events grouped by matchup",
+            "GET /sportsbook/live/{sport}": "Live in-game odds",
+            "GET /sportsbook/best-bets/{sport}": "Top value bet opportunities",
+            "POST /sportsbook/odds-ai/{sport}": "Auto-fetch odds + AI analysis",
+            "POST /sportsbook/compare-ai/{sport}": "Auto-fetch comparison + AI insights",
+            "POST /sportsbook/live-ai/{sport}": "Auto-fetch live odds + AI breakdown",
+            "POST /sportsbook/best-bets-ai/{sport}": "Auto-find best bets + AI content"
         }
     }
 
@@ -685,6 +706,319 @@ async def espn_today_ai(
     except Exception as e:
         logger.error(f"/espn/today-ai error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Sportsbook Data Endpoints ──────────────────────────────────────────────────
+
+@app.get("/sportsbook/sports")
+async def sportsbook_sports(authorized: bool = Depends(get_api_key)):
+    """List all 24 supported sports with available sportsbooks."""
+    result = await sportsbook_service.get_sports()
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/sportsbook/books")
+async def sportsbook_books(authorized: bool = Depends(get_api_key)):
+    """List all 34 supported sportsbooks."""
+    result = await sportsbook_service.get_sportsbooks()
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/sportsbook/odds/{sport}")
+async def sportsbook_odds(
+    sport: str,
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Get raw aggregated odds for a sport across all sportsbooks.
+
+    - **sport**: nba | nfl | mlb | nhl | ncaaf | ncaab | soccer | mma | boxing | tennis | golf | etc.
+    """
+    result = await sportsbook_service.get_odds(sport)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/sportsbook/odds/{sport}/{book}")
+async def sportsbook_odds_by_book(
+    sport: str,
+    book: str,
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Get odds for a sport from one specific sportsbook.
+
+    - **sport**: nba | nfl | mlb | nhl | etc.
+    - **book**: Sportsbook name (e.g. Bovada, FanDuel, DraftKings, BetMGM)
+    """
+    result = await sportsbook_service.get_odds(sport, book)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/sportsbook/compare/{sport}")
+async def sportsbook_compare(
+    sport: str,
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Compare odds across all sportsbooks for a sport.
+    Returns best prices, line shopping data, and full odds breakdown per event.
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    """
+    result = await sportsbook_service.get_compare(sport)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/sportsbook/events/{sport}")
+async def sportsbook_events(
+    sport: str,
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Get all events for a sport, grouped by matchup with multi-book odds view.
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    """
+    result = await sportsbook_service.get_events(sport)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/sportsbook/live/{sport}")
+async def sportsbook_live(
+    sport: str,
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Get live/in-progress events and odds for a sport.
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    """
+    result = await sportsbook_service.get_live(sport)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/sportsbook/best-bets/{sport}")
+async def sportsbook_best_bets(
+    sport: str,
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Find top value bet opportunities by comparing lines across all sportsbooks.
+    Returns events with biggest line discrepancies (most line shopping value).
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    """
+    result = await sportsbook_service.get_best_bets(sport)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+# ── Sportsbook + AI Combo Endpoints ─────────────────────────────────────────────
+
+@app.post("/sportsbook/odds-ai/{sport}", response_model=APIResponse)
+async def sportsbook_odds_ai(
+    sport: str,
+    request: SportsbookOddsAIRequest = SportsbookOddsAIRequest(sport="nba"),
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Auto-fetch live odds from all sportsbooks + run AI analysis in one call.
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    - **sportsbook**: Optional - filter to one sportsbook
+    - **analysis_type**: value | best_lines | comparison | live | picks
+    - **platform**: twitter | instagram | discord | general
+    """
+    try:
+        from services.prompts import get_sportsbook_odds_prompt
+        raw_odds = await sportsbook_service.get_odds(sport, request.sportsbook)
+        if "error" in raw_odds:
+            raise HTTPException(status_code=502, detail=raw_odds["error"])
+
+        parsed = sportsbook_service._parse_odds_for_ai(raw_odds)
+        prompt = get_sportsbook_odds_prompt(parsed, sport, request.analysis_type)
+        result = analytics_service.ask(question=prompt, sport=sport)
+
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error"))
+
+        return APIResponse(
+            success=True,
+            result=result["result"],
+            model_used=result["model_used"],
+            tokens_used=result["tokens_used"],
+            data={
+                "sport": sport,
+                "analysis_type": request.analysis_type,
+                "total_events": parsed["total_events"],
+                "sportsbooks_queried": parsed["sportsbooks_queried"],
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/sportsbook/odds-ai error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sportsbook/compare-ai/{sport}", response_model=APIResponse)
+async def sportsbook_compare_ai(
+    sport: str,
+    request: SportsbookCompareAIRequest = SportsbookCompareAIRequest(sport="nba"),
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Auto-fetch odds comparison across all sportsbooks + AI line-shopping analysis.
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    - **platform**: twitter | instagram | discord | general
+    """
+    try:
+        from services.prompts import get_sportsbook_compare_prompt
+        compare_data = await sportsbook_service.get_compare(sport)
+        if "error" in compare_data:
+            raise HTTPException(status_code=502, detail=compare_data["error"])
+
+        parsed = sportsbook_service._parse_compare_for_ai(compare_data)
+        prompt = get_sportsbook_compare_prompt(parsed, sport, request.platform)
+        result = analytics_service.ask(question=prompt, sport=sport)
+
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error"))
+
+        return APIResponse(
+            success=True,
+            result=result["result"],
+            model_used=result["model_used"],
+            tokens_used=result["tokens_used"],
+            data={
+                "sport": sport,
+                "total_events": parsed["total_events"],
+                "multi_book_events": parsed["multi_book_events"],
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/sportsbook/compare-ai error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sportsbook/live-ai/{sport}", response_model=APIResponse)
+async def sportsbook_live_ai(
+    sport: str,
+    request: SportsbookLiveAIRequest = SportsbookLiveAIRequest(sport="nba"),
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Auto-fetch live in-game odds + AI real-time betting breakdown.
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    """
+    try:
+        from services.prompts import get_sportsbook_live_prompt
+        live_data = await sportsbook_service.get_live(sport)
+        if "error" in live_data:
+            raise HTTPException(status_code=502, detail=live_data["error"])
+
+        live_count = live_data.get("live_count", 0)
+        if live_count == 0:
+            return APIResponse(
+                success=True,
+                result=f"No live {sport.upper()} games at the moment. Check back when games are in progress.",
+                model_used="none",
+                tokens_used=0,
+                data={"sport": sport, "live_count": 0}
+            )
+
+        parsed = sportsbook_service._parse_live_for_ai(live_data)
+        prompt = get_sportsbook_live_prompt(parsed, sport)
+        result = analytics_service.ask(question=prompt, sport=sport)
+
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error"))
+
+        return APIResponse(
+            success=True,
+            result=result["result"],
+            model_used=result["model_used"],
+            tokens_used=result["tokens_used"],
+            data={"sport": sport, "live_count": live_count}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/sportsbook/live-ai error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sportsbook/best-bets-ai/{sport}", response_model=APIResponse)
+async def sportsbook_best_bets_ai(
+    sport: str,
+    request: SportsbookBestBetsRequest = SportsbookBestBetsRequest(sport="nba"),
+    authorized: bool = Depends(get_api_key)
+):
+    """
+    Auto-find best value bets across 34 sportsbooks + AI content generation.
+    Returns ready-to-post best bets content for your platform.
+
+    - **sport**: nba | nfl | mlb | nhl | soccer | etc.
+    - **platform**: twitter | instagram | discord | general
+    """
+    try:
+        from services.prompts import get_sportsbook_best_bets_prompt
+        best_bets = await sportsbook_service.get_best_bets(sport)
+        if "error" in best_bets:
+            raise HTTPException(status_code=502, detail=best_bets["error"])
+
+        if best_bets.get("total_opportunities", 0) == 0:
+            return APIResponse(
+                success=True,
+                result=f"No significant line discrepancies found for {sport.upper()} right now. Markets appear sharp.",
+                model_used="none",
+                tokens_used=0,
+                data={"sport": sport, "opportunities": 0}
+            )
+
+        prompt = get_sportsbook_best_bets_prompt(best_bets, sport, request.platform)
+        result = analytics_service.ask(question=prompt, sport=sport)
+
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error"))
+
+        return APIResponse(
+            success=True,
+            result=result["result"],
+            model_used=result["model_used"],
+            tokens_used=result["tokens_used"],
+            data={
+                "sport": sport,
+                "platform": request.platform,
+                "total_opportunities": best_bets["total_opportunities"],
+                "top_bets_count": len(best_bets.get("top_bets", [])),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/sportsbook/best-bets-ai error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # ── Error Handlers ────────────────────────────────────────────────────────────
