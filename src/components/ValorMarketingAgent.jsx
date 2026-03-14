@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const BRAND = {
   orange: "#E8820C", orangeLight: "#F5A03A", navy: "#0E1B35",
@@ -49,19 +49,17 @@ CONTENT RULES:
 When generating content, be specific, punchy, and ready-to-post. Format output cleanly with clear sections.`;
 
 async function callClaude(messages, onChunk, maxTokens = 1200) {
-  const token = localStorage.getItem("vo_token");
-  const response = await fetch("/api/ai/chat", {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-    },
-    body: JSON.stringify({ messages, maxTokens }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      system: SYSTEM_PROMPT,
+      messages,
+      stream: true,
+    }),
   });
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`AI request failed (${response.status}): ${errText}`);
-  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
@@ -195,33 +193,45 @@ const TABS = [
   { id:"automation",label:"Automation Export",     icon:"code"     },
 ];
 
-// ── MARKETING AGENT (embedded in DashboardLayout) ──
-export default function ValorMarketingAgent() {
+// ── APP ──
+export default function App() {
   const [activeTab, setActiveTab] = useState("generate");
+  const [mobileNav, setMobileNav] = useState(false);
 
   return (
-    <div className="dash-page" style={{ fontFamily:"'DM Sans','Segoe UI',sans-serif", color:BRAND.white }}>
+    <div style={{ minHeight:"100vh", background:BRAND.navy,
+      fontFamily:"'DM Sans','Segoe UI',sans-serif", color:BRAND.white }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Oswald:wght@600;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:5px}
+        ::-webkit-scrollbar-track{background:${BRAND.navy}}
+        ::-webkit-scrollbar-thumb{background:${BRAND.navyLight};border-radius:3px}
         @keyframes pulse{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         @keyframes glow{0%,100%{box-shadow:0 0 20px ${BRAND.orange}44}50%{box-shadow:0 0 40px ${BRAND.orange}88}}
         @keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
         .hoverable:hover{filter:brightness(1.08);transform:translateY(-1px)}
-        .mktg-tab:hover{background:${BRAND.navyMid}!important;color:${BRAND.white}!important}
+        .nav-item:hover{background:${BRAND.navyMid}!important;color:${BRAND.white}!important}
         textarea:focus,select:focus,input:focus{outline:none;border-color:${BRAND.orange}!important;box-shadow:0 0 0 2px ${BRAND.orange}33}
         .score-bar{transition:width 0.8s cubic-bezier(.4,0,.2,1)}
-        .mktg-tabs-bar{display:flex;gap:6px;padding:12px 0 16px;overflow-x:auto;flex-wrap:wrap}
-        .mktg-tabs-bar::-webkit-scrollbar{height:0}
       `}</style>
 
-      {/* PAGE HEADER */}
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4 }}>
-        <div>
-          <h1 style={{ fontSize:22,fontWeight:700,fontFamily:"Oswald,sans-serif",letterSpacing:1,margin:0 }}>
-            Marketing Agent
-          </h1>
-          <p style={{ fontSize:12,color:BRAND.gray,margin:"4px 0 0" }}>AI-powered content strategy & creation</p>
+      {/* HEADER */}
+      <div style={{ background:`linear-gradient(135deg,${BRAND.navyMid},${BRAND.navy})`,
+        borderBottom:`1px solid ${BRAND.navyLight}`, padding:"14px 20px",
+        display:"flex",alignItems:"center",justifyContent:"space-between",gap:16 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+          <div style={{ width:40,height:40,borderRadius:10,flexShrink:0,
+            background:`linear-gradient(135deg,${BRAND.orange},${BRAND.orangeLight})`,
+            display:"flex",alignItems:"center",justifyContent:"center",
+            animation:"glow 3s ease-in-out infinite" }}>
+            <Icon name="trophy" size={20} color={BRAND.white}/>
+          </div>
+          <div>
+            <div style={{ fontFamily:"Oswald,sans-serif",fontSize:18,fontWeight:700,letterSpacing:1 }}>VALOR ODDS</div>
+            <div style={{ fontSize:10,color:BRAND.orange,fontWeight:700,letterSpacing:2,textTransform:"uppercase" }}>Marketing Agent v2</div>
+          </div>
         </div>
         <div style={{ display:"flex",alignItems:"center",gap:8 }}>
           <div style={{ width:7,height:7,borderRadius:"50%",background:BRAND.green,boxShadow:`0 0 8px ${BRAND.green}` }}/>
@@ -229,36 +239,42 @@ export default function ValorMarketingAgent() {
         </div>
       </div>
 
-      {/* HORIZONTAL TAB BAR */}
-      <div className="mktg-tabs-bar">
-        {TABS.map(tab => (
-          <button key={tab.id} className="mktg-tab" onClick={() => setActiveTab(tab.id)} style={{
-            display:"flex",alignItems:"center",gap:7,padding:"8px 14px",
-            background: activeTab===tab.id ? BRAND.navy : "transparent",
-            border: activeTab===tab.id ? `1px solid ${BRAND.navyLight}` : "1px solid transparent",
-            borderBottom: activeTab===tab.id ? `2px solid ${BRAND.orange}` : "2px solid transparent",
-            borderRadius:8,color: activeTab===tab.id ? BRAND.white : BRAND.gray,
-            cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",
-            whiteSpace:"nowrap",transition:"all 0.15s",flexShrink:0,
-          }}>
-            <Icon name={tab.icon} size={13} color={activeTab===tab.id ? BRAND.orange : BRAND.gray}/>
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <div style={{ display:"flex", minHeight:"calc(100vh - 68px)" }}>
+        {/* SIDEBAR NAV */}
+        <div style={{ width:200,flexShrink:0,background:BRAND.navyMid,
+          borderRight:`1px solid ${BRAND.navyLight}`,padding:"12px 8px",
+          display:"flex",flexDirection:"column",gap:2 }}>
+          {TABS.map(tab => (
+            <button key={tab.id} className="nav-item" onClick={() => setActiveTab(tab.id)} style={{
+              display:"flex",alignItems:"center",gap:9,padding:"9px 12px",width:"100%",
+              background: activeTab===tab.id ? BRAND.navy : "transparent",
+              border: activeTab===tab.id ? `1px solid ${BRAND.navyLight}` : "1px solid transparent",
+              borderLeft: activeTab===tab.id ? `3px solid ${BRAND.orange}` : "3px solid transparent",
+              borderRadius:8,color: activeTab===tab.id ? BRAND.white : BRAND.gray,
+              cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",
+              textAlign:"left",transition:"all 0.15s",
+            }}>
+              <Icon name={tab.icon} size={14} color={activeTab===tab.id ? BRAND.orange : BRAND.gray}/>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-      {/* MAIN CONTENT */}
-      <div style={{ animation:"fadeIn 0.3s ease", maxWidth:1200 }}>
-        {activeTab==="generate"   && <ContentGenerator/>}
-        {activeTab==="chat"       && <StrategyChat/>}
-        {activeTab==="calendar"   && <WeeklyCalendar/>}
-        {activeTab==="hooks"      && <HookLibrary/>}
-        {activeTab==="season"     && <SeasonCalendar/>}
-        {activeTab==="discord"    && <DiscordWriter/>}
-        {activeTab==="abtest"     && <ABTester/>}
-        {activeTab==="intel"      && <CompetitorIntel/>}
-        {activeTab==="perf"       && <PerformanceTracker/>}
-        {activeTab==="automation" && <AutomationExport/>}
+        {/* MAIN CONTENT */}
+        <div style={{ flex:1,overflow:"auto",padding:24 }}>
+          <div style={{ animation:"fadeIn 0.3s ease", maxWidth:1200, margin:"0 auto" }}>
+            {activeTab==="generate"   && <ContentGenerator/>}
+            {activeTab==="chat"       && <StrategyChat/>}
+            {activeTab==="calendar"   && <WeeklyCalendar/>}
+            {activeTab==="hooks"      && <HookLibrary/>}
+            {activeTab==="season"     && <SeasonCalendar/>}
+            {activeTab==="discord"    && <DiscordWriter/>}
+            {activeTab==="abtest"     && <ABTester/>}
+            {activeTab==="intel"      && <CompetitorIntel/>}
+            {activeTab==="perf"       && <PerformanceTracker/>}
+            {activeTab==="automation" && <AutomationExport/>}
+          </div>
+        </div>
       </div>
     </div>
   );
