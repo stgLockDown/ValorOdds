@@ -1,19 +1,32 @@
-# Today's Opportunities - Live Data from Bot DB
+# Rebuild Dashboard to Match Base44 App
 
-## Backend API Routes
-- [ ] Create server/routes/opportunities.js with endpoints:
-  - GET /api/opportunities/arbitrage (recent arb opportunities from arbitrage_opportunities table)
-  - GET /api/opportunities/player-props (player stats from player_stats table)  
-  - GET /api/opportunities/ai-analysis (AI analysis from ai_analysis table)
-  - GET /api/opportunities/games (today's games from games table)
-- [ ] Register routes in server/index.js
+## Phase 1: Layout & Navigation
+- [ ] Create sidebar Layout component with categorized navigation matching Base44
+- [ ] Update App.js routing with all new pages
+- [ ] Create shared UI components (Card, Badge, Tabs, etc.)
 
-## Frontend Components
-- [ ] Create OpportunitiesSection React component that fetches live data
-- [ ] Update HomePage.jsx to use live OpportunitiesSection instead of hardcoded examples
-- [ ] Add loading states and empty-state fallbacks
-- [ ] Style to match existing design
+## Phase 2: Dashboard Page
+- [ ] Rebuild Dashboard.jsx with stats cards (Active Opps, Avg Profit, Low Risk, Ideal Plays)
+- [ ] Add tier/plan badge section
+- [ ] Add Arbitrage Intelligence section with Strategy Matches
+- [ ] Add Quick Action cards (Browse Arbitrage, Track Bets, Ban Risk, Weather)
+- [ ] Add summary widgets area
 
-## Build & Deploy
+## Phase 3: Core Pages
+- [ ] Arbitrage page - list/filter arb opportunities from DB
+- [ ] Live Scores page - games from DB with live status
+- [ ] Player Props page - player stats with search/filters
+- [ ] AI Analysis page - AI picks and analysis from DB
+- [ ] Odds Comparison page - compare odds across sportsbooks
+- [ ] Settings page - user profile management
+
+## Phase 4: Additional Pages
+- [ ] Alerts page - notification preferences
+- [ ] Bet Tracker page - log and track bets
+- [ ] Weather page - weather impact on games
+- [ ] Leaderboard page
+- [ ] Achievements page
+
+## Phase 5: Build & Deploy
 - [ ] Build React app
 - [ ] Commit and push to react-app branch

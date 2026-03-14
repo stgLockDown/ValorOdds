@@ -6,6 +6,9 @@ const { initDB } = require('./config/db');
 const authRoutes = require('./routes/auth');
 const stripeRoutes = require('./routes/stripe');
 const opportunitiesRoutes = require('./routes/opportunities');
+const dashboardRoutes = require('./routes/dashboard');
+const gamesRoutes = require('./routes/games');
+const userRoutes = require('./routes/user');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,6 +26,9 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/opportunities', opportunitiesRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/games', gamesRoutes);
+app.use('/api/user', userRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
