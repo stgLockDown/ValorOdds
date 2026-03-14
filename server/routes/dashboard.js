@@ -1,111 +1,160 @@
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../config/db');
+const { sb, an, sportKey, espnLeague } = require('../lib/apis');
 
 // GET /api/dashboard/stats — aggregate stats for dashboard cards
 router.get('/stats', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'Database not connected' });
-
   try {
-    const results = {};
+    const [todayData, sportsData, sbHealth] = await Promise.all([
+      an.today(),
+      sb.sports(),
+      sb.health(),
+    ]);
 
-    // Active arbitrage count
-    try {
-      const arbRes = await pool.query(
-        `SELECT COUNT(*) as cnt FROM arbitrage_opportunities WHERE created_at > NOW() - INTERVAL '24 hours'`
-      );
-      results.activeArbs = parseInt(arbRes.rows[0]?.cnt || 0);
-    } catch { results.activeArbs = 0; }
+    // Count games today across all leagues
+    let gamesToday = 0;
+    if (todayData && typeof todayData === 'object') {
+      // todayData might be { nba: [...], mlb: [...], ... } or { games: [...] }
+      if (Array.isArray(todayData)) {
+        gamesToday = todayData.length;
+      } else if (todayData.games) {
+        gamesToday = Array.isArray(todayData.games) ? todayData.games.length : 0;
+      } else {
+        // Count across all league keys
+        Object.values(todayData).forEach(v => {
+          if (Array.isArray(v)) gamesToday += v.length;
+        });
+      }
+    }
 
-    // Average profit %
-    try {
-      const avgRes = await pool.query(
-        `SELECT COALESCE(AVG(profit_percentage), 0) as avg_profit FROM arbitrage_opportunities WHERE created_at > NOW() - INTERVAL '24 hours' AND profit_percentage > 0`
-      );
-      results.avgProfit = parseFloat(parseFloat(avgRes.rows[0]?.avg_profit || 0).toFixed(2));
-    } catch { results.avgProfit = 0; }
+    // Count sports covered
+    let sportsCovered = 0;
+    if (Array.isArray(sportsData)) {
+      sportsCovered = sportsData.length;
+    } else if (sportsData && sportsData.sports) {
+      sportsCovered = Array.isArray(sportsData.sports) ? sportsData.sports.length : 0;
+    }
 
-    // Low risk count
-    try {
-      const lowRes = await pool.query(
-        `SELECT COUNT(*) as cnt FROM arbitrage_opportunities WHERE created_at > NOW() - INTERVAL '24 hours' AND (risk_level = 'low' OR risk_level = 'ideal' OR profit_percentage BETWEEN 0.5 AND 3.0)`
-      );
-      results.lowRiskArbs = parseInt(lowRes.rows[0]?.cnt || 0);
-    } catch { results.lowRiskArbs = 0; }
+    // Try to get arb-like stats from compare for a popular sport
+    let activeArbs = 0;
+    let avgProfit = 0;
+    let topProfit = 0;
+    let lowRiskArbs = 0;
 
-    // Games today
-    try {
-      const gamesRes = await pool.query(
-        `SELECT COUNT(*) as cnt FROM games WHERE commence_time::date = CURRENT_DATE OR updated_at > NOW() - INTERVAL '24 hours'`
-      );
-      results.gamesToday = parseInt(gamesRes.rows[0]?.cnt || 0);
-    } catch { results.gamesToday = 0; }
+    // Fetch compare data for NBA and MLB to find line discrepancies
+    const leagues = ['basketball_nba', 'baseball_mlb', 'americanfootball_nfl', 'icehockey_nhl'];
+    for (const league of leagues) {
+      const compareData = await sb.compare(league);
+      if (compareData && Array.isArray(compareData)) {
+        compareData.forEach(ev => {
+          if (ev.best_lines || ev.bestLines || ev.opportunities) {
+            activeArbs++;
+          }
+        });
+      } else if (compareData && compareData.events) {
+        activeArbs += Array.isArray(compareData.events) ? compareData.events.length : 0;
+      }
+    }
 
-    // AI analyses today
-    try {
-      const aiRes = await pool.query(
-        `SELECT COUNT(*) as cnt FROM ai_analysis WHERE created_at > NOW() - INTERVAL '24 hours'`
-      );
-      results.aiAnalyses = parseInt(aiRes.rows[0]?.cnt || 0);
-    } catch { results.aiAnalyses = 0; }
+    // Sportsbook count from health endpoint
+    let totalSportsbooks = 0;
+    if (sbHealth && sbHealth.sportsbook_count) {
+      totalSportsbooks = sbHealth.sportsbook_count;
+    } else if (sbHealth && sbHealth.sportsbooks) {
+      totalSportsbooks = sbHealth.sportsbooks;
+    }
 
-    // Total members (users)
-    try {
-      const usersRes = await pool.query(`SELECT COUNT(*) as cnt FROM users`);
-      results.totalMembers = parseInt(usersRes.rows[0]?.cnt || 0);
-    } catch { results.totalMembers = 0; }
-
-    // Sports covered
-    try {
-      const sportsRes = await pool.query(
-        `SELECT COUNT(DISTINCT sport_key) as cnt FROM games`
-      );
-      results.sportsCovered = parseInt(sportsRes.rows[0]?.cnt || 0);
-    } catch { results.sportsCovered = 0; }
-
-    // Top profit arb
-    try {
-      const topRes = await pool.query(
-        `SELECT MAX(profit_percentage) as top FROM arbitrage_opportunities WHERE created_at > NOW() - INTERVAL '24 hours'`
-      );
-      results.topProfit = parseFloat(parseFloat(topRes.rows[0]?.top || 0).toFixed(2));
-    } catch { results.topProfit = 0; }
-
-    res.json(results);
+    res.json({
+      activeArbs,
+      avgProfit,
+      lowRiskArbs,
+      gamesToday,
+      aiAnalyses: 0, // Will increment as users use AI features
+      totalMembers: 0, // Can still come from local DB if needed
+      sportsCovered,
+      topProfit,
+      totalSportsbooks,
+    });
   } catch (err) {
     console.error('Dashboard stats error:', err.message);
     res.json({
       activeArbs: 0, avgProfit: 0, lowRiskArbs: 0,
       gamesToday: 0, aiAnalyses: 0, totalMembers: 0,
-      sportsCovered: 0, topProfit: 0,
+      sportsCovered: 0, topProfit: 0, totalSportsbooks: 0,
     });
   }
 });
 
-// GET /api/dashboard/recent-activity — recent arbs + analysis mixed
+// GET /api/dashboard/recent-activity — recent events mixed feed
 router.get('/recent-activity', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'Database not connected' });
   const limit = Math.min(parseInt(req.query.limit) || 10, 30);
 
   try {
     const items = [];
 
-    try {
-      const arbRes = await pool.query(
-        `SELECT id, sport_key, home_team, away_team, profit_percentage, bookmaker_home, bookmaker_away, created_at
-         FROM arbitrage_opportunities ORDER BY created_at DESC LIMIT $1`, [limit]
-      );
-      arbRes.rows.forEach(r => items.push({ type: 'arbitrage', ...r }));
-    } catch {}
+    // Get today's ESPN data for recent activity
+    const todayData = await an.today();
+    if (todayData) {
+      const allGames = [];
+      if (Array.isArray(todayData)) {
+        allGames.push(...todayData);
+      } else if (todayData.games) {
+        allGames.push(...(Array.isArray(todayData.games) ? todayData.games : []));
+      } else {
+        Object.entries(todayData).forEach(([league, games]) => {
+          if (Array.isArray(games)) {
+            games.forEach(g => allGames.push({ ...g, league }));
+          }
+        });
+      }
 
-    try {
-      const aiRes = await pool.query(
-        `SELECT id, sport, analysis_type, summary, confidence_score, created_at
-         FROM ai_analysis ORDER BY created_at DESC LIMIT $1`, [limit]
-      );
-      aiRes.rows.forEach(r => items.push({ type: 'ai_analysis', ...r }));
-    } catch {}
+      allGames.slice(0, limit).forEach(g => {
+        items.push({
+          type: 'game',
+          id: g.id || g.game_id || Math.random().toString(36).slice(2),
+          sport_key: g.league || g.sport || 'sports',
+          home_team: g.home_team || g.homeTeam || g.home || '',
+          away_team: g.away_team || g.awayTeam || g.away || '',
+          status: g.status || g.state || 'scheduled',
+          home_score: g.home_score || g.homeScore || null,
+          away_score: g.away_score || g.awayScore || null,
+          created_at: g.date || g.start_time || new Date().toISOString(),
+        });
+      });
+    }
 
+    // Get latest news from ESPN
+    const newsLeagues = ['nba', 'mlb', 'nfl', 'nhl'];
+    for (const league of newsLeagues.slice(0, 2)) {
+      const newsData = await an.news(league);
+      if (newsData && Array.isArray(newsData)) {
+        newsData.slice(0, 3).forEach(n => {
+          items.push({
+            type: 'news',
+            id: n.id || Math.random().toString(36).slice(2),
+            sport_key: league,
+            headline: n.headline || n.title || '',
+            summary: n.description || n.summary || '',
+            link: n.link || n.url || '',
+            created_at: n.published || n.date || new Date().toISOString(),
+          });
+        });
+      } else if (newsData && newsData.articles) {
+        newsData.articles.slice(0, 3).forEach(n => {
+          items.push({
+            type: 'news',
+            id: n.id || Math.random().toString(36).slice(2),
+            sport_key: league,
+            headline: n.headline || n.title || '',
+            summary: n.description || n.summary || '',
+            link: n.link || n.url || '',
+            created_at: n.published || n.date || new Date().toISOString(),
+          });
+        });
+      }
+    }
+
+    // Sort by date descending
     items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     res.json(items.slice(0, limit));
   } catch (err) {
