@@ -4,16 +4,23 @@ const cors = require('cors');
 const path = require('path');
 const { initDB } = require('./config/db');
 const authRoutes = require('./routes/auth');
+const stripeRoutes = require('./routes/stripe');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ── Middleware ──────────────────────────────────────────
 app.use(cors());
+
+// Stripe webhook needs raw body – must come BEFORE express.json()
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
+// JSON body parser for everything else
 app.use(express.json());
 
 // ── API Routes ─────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/stripe', stripeRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });

@@ -64,10 +64,50 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const updateUser = (updatedFields) => {
+    setUser((prev) => (prev ? { ...prev, ...updatedFields } : prev));
+  };
+
+  // Stripe: create checkout session
+  const createCheckout = async (plan) => {
+    try {
+      const { data } = await api().post('/api/stripe/create-checkout', { plan });
+      return { success: true, url: data.url };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.error || 'Failed to create checkout' };
+    }
+  };
+
+  // Stripe: open customer portal
+  const openPortal = async () => {
+    try {
+      const { data } = await api().post('/api/stripe/create-portal');
+      return { success: true, url: data.url };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.error || 'Failed to open portal' };
+    }
+  };
+
+  // Refresh subscription info
+  const refreshSubscription = async () => {
+    try {
+      const { data } = await api().get('/api/stripe/subscription');
+      setUser((prev) => (prev ? { ...prev, ...data } : prev));
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
-      user, token, loading, login, register, logout,
+      user, token, loading,
+      login, register, logout, updateUser,
       isAdmin: user?.role === 'admin',
+      plan: user?.plan || 'free',
+      subscriptionActive: user?.subscription_status === 'active' || user?.role === 'admin',
+      createCheckout, openPortal, refreshSubscription,
+      api,
     }}>
       {children}
     </AuthContext.Provider>

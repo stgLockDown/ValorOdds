@@ -1,8 +1,8 @@
-import React from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-/* ── tiny stat card ─────────────────────────────── */
+/* ── tiny stat card ─────────────────────────────────── */
 const Stat = ({ icon, value, label, color }) => (
   <div className="card card-hover" style={{ textAlign: 'center' }}>
     <div style={{ fontSize: 36, marginBottom: 8 }}>{icon}</div>
@@ -11,7 +11,7 @@ const Stat = ({ icon, value, label, color }) => (
   </div>
 );
 
-/* ── feature card ───────────────────────────────── */
+/* ── feature card ───────────────────────────────────── */
 const Feature = ({ icon, title, desc }) => (
   <div className="card card-hover" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 12 }}>
     <div style={{ fontSize: 42 }}>{icon}</div>
@@ -20,8 +20,8 @@ const Feature = ({ icon, title, desc }) => (
   </div>
 );
 
-/* ── live example card ──────────────────────────── */
-const ArbExample = ({ sport, badge, team1, odds1, book1, team2, odds2, book2, profit, risk, confidence, note }) => (
+/* ── live example card ──────────────────────────────── */
+const ArbExample = ({ badge, team1, odds1, book1, team2, odds2, book2, profit, risk, confidence, note }) => (
   <div className="card card-hover">
     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
       <span className="badge badge-primary">{badge}</span>
@@ -42,16 +42,54 @@ const ArbExample = ({ sport, badge, team1, odds1, book1, team2, odds2, book2, pr
 
 const rowStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0e1a', padding: '10px 14px', borderRadius: 8 };
 
-/* ══════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════
    DASHBOARD
-   ══════════════════════════════════════════════════ */
+   ══════════════════════════════════════════════════════ */
 export default function Dashboard() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, plan, subscriptionActive, createCheckout, openPortal, refreshSubscription } = useAuth();
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [checkoutMsg, setCheckoutMsg] = useState(null);
+  const [loadingPlan, setLoadingPlan] = useState(null);
+
+  // Check for checkout result in URL params
+  useEffect(() => {
+    const checkout = searchParams.get('checkout');
+    const planParam = searchParams.get('plan');
+    if (checkout === 'success') {
+      setCheckoutMsg({ type: 'success', text: `🎉 Welcome to ${planParam || 'your new plan'}! Your subscription is now active.` });
+      refreshSubscription();
+      // Clean URL
+      window.history.replaceState({}, '', '/dashboard');
+    } else if (checkout === 'cancelled') {
+      setCheckoutMsg({ type: 'info', text: 'Checkout was cancelled. You can try again anytime.' });
+      window.history.replaceState({}, '', '/dashboard');
+    }
+  }, [searchParams, refreshSubscription]);
+
+  const handleSubscribe = async (planId) => {
+    setLoadingPlan(planId);
+    const result = await createCheckout(planId);
+    if (result.success && result.url) {
+      window.location.href = result.url;
+    } else {
+      setCheckoutMsg({ type: 'error', text: result.error || 'Failed to start checkout' });
+    }
+    setLoadingPlan(null);
+  };
+
+  const handleManageSubscription = async () => {
+    const result = await openPortal();
+    if (result.success && result.url) {
+      window.location.href = result.url;
+    } else {
+      setCheckoutMsg({ type: 'error', text: result.error || 'Failed to open subscription portal' });
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0e1a' }}>
-      {/* ── NAV ─────────────────────────────────── */}
+      {/* ── NAV ─────────────────────────────────────── */}
       <nav style={navStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 28 }}>⚡</span>
@@ -62,19 +100,39 @@ export default function Dashboard() {
           <span style={{ color: '#b9bbbe', fontSize: 14 }} className="hide-mobile">
             {user?.name || user?.email}
           </span>
+          {plan !== 'free' && (
+            <span className="badge badge-green" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+              {plan}
+            </span>
+          )}
           {isAdmin && (
             <Link to="/admin/marketing-agent" className="btn btn-orange btn-sm">
               🤖 Marketing Agent
             </Link>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={() => { logout(); nav('/login'); }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => { logout(); nav('/'); }}>
             Logout
           </button>
         </div>
       </nav>
 
-      {/* ── CONTENT ─────────────────────────────── */}
+      {/* ── CONTENT ─────────────────────────────────── */}
       <div className="container fade-in" style={{ paddingTop: 100, paddingBottom: 60 }}>
+
+        {/* Checkout message */}
+        {checkoutMsg && (
+          <div style={{
+            padding: '16px 24px', borderRadius: 12, marginBottom: 24,
+            background: checkoutMsg.type === 'success' ? 'rgba(87,242,135,0.1)' :
+                        checkoutMsg.type === 'error' ? 'rgba(237,66,69,0.1)' : 'rgba(88,101,242,0.1)',
+            border: `1px solid ${checkoutMsg.type === 'success' ? '#57F287' : checkoutMsg.type === 'error' ? '#ED4245' : '#5865F2'}`,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>{checkoutMsg.text}</span>
+            <button onClick={() => setCheckoutMsg(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 18 }}>×</button>
+          </div>
+        )}
+
         {/* Hero */}
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div className="badge badge-primary" style={{ marginBottom: 16, fontSize: 13 }}>
@@ -136,15 +194,34 @@ export default function Dashboard() {
         <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, textAlign: 'center' }}>
           Choose Your Plan
         </h2>
-        <p style={{ color: '#b9bbbe', textAlign: 'center', marginBottom: 24 }}>Join via Discord and manage your subscription with MEE6</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 56 }}>
-          <PricingCard title="Free Trial" price="$0" period="/7 days"
-            features={['Access to summary channel', 'Daily top 5 opportunities', 'Basic AI analysis', 'Community support']} />
-          <PricingCard title="Premium" price="$29" period="/month" featured
-            features={['All 14 arbitrage channels', 'Unlimited opportunities', 'Full AI analysis', 'Player props (4 sports)', 'Custom AI commands', 'Priority support', 'Mobile notifications']} />
-          <PricingCard title="VIP" price="$79" period="/month"
-            features={['Everything in Premium', 'Early access to opportunities', 'Exclusive VIP channel', 'Direct input on bot functions', 'Live meetings with dev team', 'Beta access to mobile app']} />
+        <p style={{ color: '#b9bbbe', textAlign: 'center', marginBottom: 24 }}>
+          {subscriptionActive && plan !== 'free'
+            ? `You're on the ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan ✅`
+            : 'Upgrade your account to unlock all features'}
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 24 }}>
+          <PricingCard title="Free Trial" planId="free" price="$0" period="/7 days" currentPlan={plan}
+            features={['Access to summary channel', 'Daily top 5 opportunities', 'Basic AI analysis', 'Community support']}
+            onSubscribe={handleSubscribe} loadingPlan={loadingPlan} subscriptionActive={subscriptionActive} />
+          <PricingCard title="Premium" planId="premium" price="$29" period="/month" featured currentPlan={plan}
+            features={['All 14 arbitrage channels', 'Unlimited opportunities', 'Full AI analysis', 'Player props (4 sports)', 'Custom AI commands', 'Priority support', 'Mobile notifications']}
+            onSubscribe={handleSubscribe} loadingPlan={loadingPlan} subscriptionActive={subscriptionActive} />
+          <PricingCard title="VIP" planId="vip" price="$79" period="/month" currentPlan={plan}
+            features={['Everything in Premium', 'Early access to opportunities', 'Exclusive VIP channel', 'Direct input on bot functions', 'Live meetings with dev team', 'Beta access to mobile app']}
+            onSubscribe={handleSubscribe} loadingPlan={loadingPlan} subscriptionActive={subscriptionActive} />
         </div>
+
+        {/* Manage subscription button */}
+        {subscriptionActive && plan !== 'free' && (
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <button className="btn btn-secondary" onClick={handleManageSubscription}>
+              ⚙️ Manage Subscription
+            </button>
+            <p style={{ color: '#b9bbbe', fontSize: 13, marginTop: 8 }}>
+              Update payment method, change plan, or cancel
+            </p>
+          </div>
+        )}
 
         {/* Discord CTA */}
         <div className="card" style={{ textAlign: 'center', padding: '3rem 2rem', background: 'linear-gradient(135deg,rgba(88,101,242,0.12),#1a1f35)', border: '1px solid rgba(88,101,242,0.3)' }}>
@@ -165,7 +242,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── FOOTER ──────────────────────────────── */}
+      {/* ── FOOTER ────────────────────────────────── */}
       <footer style={{ background: '#1a1f35', borderTop: '1px solid #2d3350', padding: '40px 0 24px', marginTop: 40 }}>
         <div className="container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 32, marginBottom: 32 }}>
           <div>
@@ -196,12 +273,27 @@ export default function Dashboard() {
   );
 }
 
-/* ── Pricing Card sub-component ─────────────────── */
-function PricingCard({ title, price, period, features, featured }) {
+/* ── Pricing Card sub-component ─────────────────────── */
+function PricingCard({ title, planId, price, period, features, featured, currentPlan, onSubscribe, loadingPlan, subscriptionActive }) {
+  const isCurrent = currentPlan === planId && (subscriptionActive || planId === 'free');
+  const isLoading = loadingPlan === planId;
+
+  const getButtonText = () => {
+    if (isCurrent) return '✓ Current Plan';
+    if (isLoading) return 'Redirecting…';
+    if (planId === 'free') return 'Free Plan';
+    return `Subscribe to ${title}`;
+  };
+
+  const handleClick = () => {
+    if (isCurrent || planId === 'free' || isLoading) return;
+    onSubscribe(planId);
+  };
+
   return (
     <div className="card" style={{
       position: 'relative', textAlign: 'center',
-      border: featured ? '2px solid #5865F2' : '1px solid #2d3350',
+      border: featured ? '2px solid #5865F2' : isCurrent ? '2px solid #57F287' : '1px solid #2d3350',
       background: featured ? 'linear-gradient(135deg,rgba(88,101,242,0.08),#1a1f35)' : undefined,
     }}>
       {featured && (
@@ -213,7 +305,16 @@ function PricingCard({ title, price, period, features, featured }) {
           Most Popular
         </div>
       )}
-      <h3 style={{ fontSize: 22, marginBottom: 4, marginTop: featured ? 8 : 0 }}>{title}</h3>
+      {isCurrent && !featured && (
+        <div style={{
+          position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg, #57F287, #43B581)', padding: '4px 16px', borderRadius: 20,
+          fontSize: 12, fontWeight: 700, color: '#0a0e1a'
+        }}>
+          Current Plan
+        </div>
+      )}
+      <h3 style={{ fontSize: 22, marginBottom: 4, marginTop: (featured || isCurrent) ? 8 : 0 }}>{title}</h3>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 2, marginBottom: 20 }}>
         <span style={{
           fontSize: 40, fontWeight: 800,
@@ -228,10 +329,17 @@ function PricingCard({ title, price, period, features, featured }) {
           </li>
         ))}
       </ul>
-      <a href="https://discord.gg/MfD933h9jb" target="_blank" rel="noreferrer"
-        className={`btn btn-block ${featured ? 'btn-primary' : 'btn-secondary'}`}>
-        {title === 'Free Trial' ? 'Start Free Trial' : `Join ${title}`}
-      </a>
+      <button
+        onClick={handleClick}
+        disabled={isCurrent || isLoading || planId === 'free'}
+        className={`btn btn-block ${isCurrent ? 'btn-success' : featured ? 'btn-primary' : 'btn-secondary'}`}
+        style={{
+          opacity: isCurrent || planId === 'free' ? 0.7 : 1,
+          cursor: isCurrent || planId === 'free' ? 'default' : 'pointer',
+        }}
+      >
+        {getButtonText()}
+      </button>
     </div>
   );
 }
