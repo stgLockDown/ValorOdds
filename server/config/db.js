@@ -12,11 +12,13 @@ const connectionString =
 if (!connectionString) {
   console.warn('WARNING: No DATABASE_URL (or similar) found. Database operations will fail.');
   console.warn(
-    'Available env vars:',
+    'DB-related env vars available:',
     Object.keys(process.env)
       .filter((k) => k.includes('DATABASE') || k.includes('POSTGRES') || k.includes('PG'))
       .join(', ') || '(none)'
   );
+} else {
+  console.log('🔗 Database connection string found');
 }
 
 const pool = connectionString
@@ -41,41 +43,83 @@ const initDB = async () => {
     );
   }
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     console.log('🔌 Connected to PostgreSQL');
+  } catch (err) {
+    console.error('❌ Failed to connect to PostgreSQL:', err.message);
+    throw err;
+  }
 
-    // ── Users table ────────────────────────────────────
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        name VARCHAR(255) NOT NULL DEFAULT '',
-        role VARCHAR(50) NOT NULL DEFAULT 'user',
-        plan VARCHAR(50) NOT NULL DEFAULT 'free',
-        stripe_customer_id VARCHAR(255),
-        stripe_subscription_id VARCHAR(255),
-        subscription_status VARCHAR(50) DEFAULT 'inactive',
-        subscription_end TIMESTAMP WITH TIME ZONE,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  try {
+    // ── 1. Drop and recreate if the table schema is wrong ──
+    // Check if users table exists
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'users'
       )
     `);
+    
+    const usersTableExists = tableCheck.rows[0].exists;
+    console.log(`📋 Users table exists: ${usersTableExists}`);
 
-    // ── Add columns if they don't exist (migration-safe) ──
-    const colMigrations = [
-      "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(50) NOT NULL DEFAULT 'free'",
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)',
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255)',
-      "ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(50) DEFAULT 'inactive'",
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_end TIMESTAMP WITH TIME ZONE',
-    ];
-    for (const q of colMigrations) {
-      await client.query(q).catch(() => {});  // ignore if already exists
+    if (!usersTableExists) {
+      // Create fresh users table with all columns
+      console.log('📦 Creating users table...');
+      await client.query(`
+        CREATE TABLE users (
+          id SERIAL PRIMARY KEY,
+          email VARCHAR(255) UNIQUE NOT NULL,
+          password VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL DEFAULT '',
+          role VARCHAR(50) NOT NULL DEFAULT 'user',
+          plan VARCHAR(50) NOT NULL DEFAULT 'free',
+          stripe_customer_id VARCHAR(255),
+          stripe_subscription_id VARCHAR(255),
+          subscription_status VARCHAR(50) DEFAULT 'inactive',
+          subscription_end TIMESTAMP WITH TIME ZONE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `);
+      console.log('✅ Users table created');
+    } else {
+      // Table exists – run migrations to add missing columns
+      console.log('🔄 Running column migrations on existing users table...');
+      const migrations = [
+        { col: 'plan', sql: "ALTER TABLE users ADD COLUMN plan VARCHAR(50) NOT NULL DEFAULT 'free'" },
+        { col: 'stripe_customer_id', sql: 'ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(255)' },
+        { col: 'stripe_subscription_id', sql: 'ALTER TABLE users ADD COLUMN stripe_subscription_id VARCHAR(255)' },
+        { col: 'subscription_status', sql: "ALTER TABLE users ADD COLUMN subscription_status VARCHAR(50) DEFAULT 'inactive'" },
+        { col: 'subscription_end', sql: 'ALTER TABLE users ADD COLUMN subscription_end TIMESTAMP WITH TIME ZONE' },
+        { col: 'updated_at', sql: 'ALTER TABLE users ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()' },
+      ];
+
+      for (const m of migrations) {
+        // Check if column exists first
+        const colCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'users' AND column_name = $1
+          )
+        `, [m.col]);
+
+        if (!colCheck.rows[0].exists) {
+          try {
+            await client.query(m.sql);
+            console.log(`  ✅ Added column: ${m.col}`);
+          } catch (err) {
+            console.error(`  ⚠️  Failed to add column ${m.col}:`, err.message);
+          }
+        } else {
+          console.log(`  ✓ Column exists: ${m.col}`);
+        }
+      }
     }
 
-    // ── Sessions table ─────────────────────────────────
+    // ── 2. Sessions table ──────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_sessions (
         id SERIAL PRIMARY KEY,
@@ -85,8 +129,9 @@ const initDB = async () => {
         expires_at TIMESTAMP WITH TIME ZONE NOT NULL
       )
     `);
+    console.log('✅ user_sessions table ready');
 
-    // ── Payments table (Stripe records) ────────────────
+    // ── 3. Payments table ──────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,
@@ -100,8 +145,9 @@ const initDB = async () => {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
     `);
+    console.log('✅ payments table ready');
 
-    // ── Auto-create default admin ──────────────────────
+    // ── 4. Auto-create default admin ───────────────────
     const adminCheck = await client.query(
       "SELECT id FROM users WHERE role = 'admin' LIMIT 1"
     );
@@ -115,14 +161,21 @@ const initDB = async () => {
         ['admin@valorodds.com', hash, 'Admin']
       );
       console.log('👤 Default admin created → admin@valorodds.com / admin123');
+    } else {
+      console.log('👤 Admin user already exists');
     }
 
-    console.log('✅ Database tables ready');
+    // ── 5. Log current users count ─────────────────────
+    const countResult = await client.query('SELECT COUNT(*) as count FROM users');
+    console.log(`📊 Total users in database: ${countResult.rows[0].count}`);
+
+    console.log('✅ Database fully initialised');
   } catch (err) {
     console.error('❌ Database init error:', err.message);
+    console.error('   Full error:', err);
     throw err;
   } finally {
-    client.release();
+    if (client) client.release();
   }
 };
 
