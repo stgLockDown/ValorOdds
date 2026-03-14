@@ -49,17 +49,19 @@ CONTENT RULES:
 When generating content, be specific, punchy, and ready-to-post. Format output cleanly with clear sections.`;
 
 async function callClaude(messages, onChunk, maxTokens = 1200) {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const token = localStorage.getItem("token");
+  const response = await fetch("/api/ai/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: maxTokens,
-      system: SYSTEM_PROMPT,
-      messages,
-      stream: true,
-    }),
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({ messages, maxTokens }),
   });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`AI request failed (${response.status}): ${errText}`);
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
