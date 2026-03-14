@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import './HomePage.css';
+import OpportunitiesSection from './OpportunitiesSection';
 
 const HomePage = () => {
   return (
@@ -14,7 +15,7 @@ const HomePage = () => {
           </Link>
           <div className="hp-nav-links">
             <a href="#features">Features</a>
-            <a href="#examples">Live Examples</a>
+            <a href="#opportunities">Live Data</a>
             <a href="#pricing">Pricing</a>
             <Link to="/login" className="hp-btn-primary">Login</Link>
           </div>
@@ -41,8 +42,8 @@ const HomePage = () => {
               <a href="https://discord.gg/MfD933h9jb" target="_blank" rel="noopener noreferrer" className="hp-btn-large primary">
                 💬 Join Valor Odds Now
               </a>
-              <a href="#examples" className="hp-btn-large secondary">
-                View Live Examples
+              <a href="#opportunities" className="hp-btn-large secondary">
+                View Live Data
               </a>
             </div>
             <div className="hp-hero-stats">
@@ -136,198 +137,8 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* Live Examples Section */}
-      <section id="examples" className="hp-examples">
-        <div className="hp-container">
-          <div className="hp-section-header">
-            <h2 className="hp-section-title">Today's Top Opportunities</h2>
-            <p className="hp-section-subtitle">Real examples from the last 24 hours</p>
-          </div>
-
-          {/* Arbitrage Examples */}
-          <h3 className="hp-category-title">
-            <span>🎯</span> Arbitrage Opportunities
-          </h3>
-          <div className="hp-examples-grid">
-            {/* NFL Example */}
-            <div className="hp-example-card">
-              <div className="hp-example-header">
-                <span className="hp-sport-badge football">🏈 NFL</span>
-                <span className="hp-profit-badge high">2.8% Profit</span>
-              </div>
-              <div className="hp-matchup">
-                <h4>Kansas City Chiefs vs Buffalo Bills</h4>
-                <div className="hp-odds">
-                  <div className="hp-odd-item">
-                    <span className="team">🏠 Chiefs</span>
-                    <span className="odds">-110</span>
-                    <span className="book">DraftKings</span>
-                  </div>
-                  <div className="hp-odd-item">
-                    <span className="team">✈️ Bills</span>
-                    <span className="odds">+120</span>
-                    <span className="book">FanDuel</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hp-ai-section">
-                <div className="hp-ai-badge">🤖 AI Analysis</div>
-                <p><strong>Risk:</strong> LOW | <strong>Confidence:</strong> 8/10</p>
-                <p>High-quality arbitrage with minimal risk. Both sportsbooks are reputable with fast payouts. Execute immediately as odds may tighten.</p>
-              </div>
-              <div className="hp-example-footer">
-                <span>💰 Stakes: $52.38 / $47.62</span>
-                <span>📈 Min Profit: $2.80</span>
-              </div>
-            </div>
-
-            {/* NBA Example */}
-            <div className="hp-example-card">
-              <div className="hp-example-header">
-                <span className="hp-sport-badge basketball">🏀 NBA</span>
-                <span className="hp-profit-badge medium">2.1% Profit</span>
-              </div>
-              <div className="hp-matchup">
-                <h4>Los Angeles Lakers vs Golden State Warriors</h4>
-                <div className="hp-odds">
-                  <div className="hp-odd-item">
-                    <span className="team">🏠 Lakers</span>
-                    <span className="odds">-105</span>
-                    <span className="book">BetMGM</span>
-                  </div>
-                  <div className="hp-odd-item">
-                    <span className="team">✈️ Warriors</span>
-                    <span className="odds">+115</span>
-                    <span className="book">Caesars</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hp-ai-section">
-                <div className="hp-ai-badge">🤖 AI Analysis</div>
-                <p><strong>Risk:</strong> MEDIUM | <strong>Confidence:</strong> 7/10</p>
-                <p>Solid opportunity with moderate risk. Lakers' home advantage is significant. Monitor injury reports before executing.</p>
-              </div>
-              <div className="hp-example-footer">
-                <span>💰 Stakes: $51.20 / $48.80</span>
-                <span>📈 Min Profit: $2.10</span>
-              </div>
-            </div>
-
-            {/* Soccer Example */}
-            <div className="hp-example-card">
-              <div className="hp-example-header">
-                <span className="hp-sport-badge soccer">⚽ Soccer</span>
-                <span className="hp-profit-badge high">3.2% Profit</span>
-              </div>
-              <div className="hp-matchup">
-                <h4>Manchester United vs Liverpool</h4>
-                <div className="hp-odds">
-                  <div className="hp-odd-item">
-                    <span className="team">🏠 Man Utd</span>
-                    <span className="odds">+180</span>
-                    <span className="book">Bet365</span>
-                  </div>
-                  <div className="hp-odd-item">
-                    <span className="team">✈️ Liverpool</span>
-                    <span className="odds">-150</span>
-                    <span className="book">Unibet</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hp-ai-section">
-                <div className="hp-ai-badge">🤖 AI Analysis</div>
-                <p><strong>Risk:</strong> LOW | <strong>Confidence:</strong> 9/10</p>
-                <p>Excellent arbitrage opportunity. Liverpool's form is strong, but odds discrepancy creates guaranteed profit. High confidence.</p>
-              </div>
-              <div className="hp-example-footer">
-                <span>💰 Stakes: $46.15 / $53.85</span>
-                <span>📈 Min Profit: $3.20</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Player Props Examples */}
-          <h3 className="hp-category-title">
-            <span>🏆</span> AI Player Props Predictions
-          </h3>
-          <div className="hp-examples-grid">
-            {/* Mahomes */}
-            <div className="hp-example-card prop-card">
-              <div className="hp-example-header">
-                <span className="hp-sport-badge football">🏈 NFL</span>
-                <span className="hp-confidence-badge high">Confidence: 8/10</span>
-              </div>
-              <div className="hp-prop-player">
-                <h4>Patrick Mahomes</h4>
-                <p className="hp-prop-team">Kansas City Chiefs</p>
-              </div>
-              <div style={{margin: '2rem 0'}}>
-                <div className="hp-prop-line">
-                  <span className="hp-prop-type">Passing Yards</span>
-                  <span className="hp-prop-value">O/U 275.5</span>
-                </div>
-                <div className="hp-prop-game">Game: Chiefs @ Bills</div>
-              </div>
-              <div className="hp-ai-section">
-                <div className="hp-ai-badge">🤖 AI Prediction</div>
-                <p><strong>Over Likelihood:</strong> 68%</p>
-                <p>Mahomes averages 285 yards against top defenses. Buffalo's secondary ranks 18th in pass defense. Weather favorable.</p>
-                <p className="hp-recommendation"><strong>Recommendation:</strong> OVER - Strong value</p>
-              </div>
-            </div>
-
-            {/* LeBron */}
-            <div className="hp-example-card prop-card">
-              <div className="hp-example-header">
-                <span className="hp-sport-badge basketball">🏀 NBA</span>
-                <span className="hp-confidence-badge high">Confidence: 9/10</span>
-              </div>
-              <div className="hp-prop-player">
-                <h4>LeBron James</h4>
-                <p className="hp-prop-team">Los Angeles Lakers</p>
-              </div>
-              <div style={{margin: '2rem 0'}}>
-                <div className="hp-prop-line">
-                  <span className="hp-prop-type">Points</span>
-                  <span className="hp-prop-value">O/U 28.5</span>
-                </div>
-                <div className="hp-prop-game">Game: Lakers vs Warriors</div>
-              </div>
-              <div className="hp-ai-section">
-                <div className="hp-ai-badge">🤖 AI Prediction</div>
-                <p><strong>Over Likelihood:</strong> 72%</p>
-                <p>LeBron averaging 31.2 points in last 5 games. Warriors' defense allows 115+ PPG. Home court advantage.</p>
-                <p className="hp-recommendation"><strong>Recommendation:</strong> OVER - High confidence</p>
-              </div>
-            </div>
-
-            {/* Ohtani */}
-            <div className="hp-example-card prop-card">
-              <div className="hp-example-header">
-                <span className="hp-sport-badge baseball">⚾ MLB</span>
-                <span className="hp-confidence-badge medium">Confidence: 7/10</span>
-              </div>
-              <div className="hp-prop-player">
-                <h4>Shohei Ohtani</h4>
-                <p className="hp-prop-team">Los Angeles Dodgers</p>
-              </div>
-              <div style={{margin: '2rem 0'}}>
-                <div className="hp-prop-line">
-                  <span className="hp-prop-type">Total Bases</span>
-                  <span className="hp-prop-value">O/U 1.5</span>
-                </div>
-                <div className="hp-prop-game">Game: Dodgers @ Yankees</div>
-              </div>
-              <div className="hp-ai-section">
-                <div className="hp-ai-badge">🤖 AI Prediction</div>
-                <p><strong>Over Likelihood:</strong> 65%</p>
-                <p>Ohtani hitting .340 against right-handed pitchers. Yankees starter has 4.50 ERA in last 3 starts.</p>
-                <p className="hp-recommendation"><strong>Recommendation:</strong> OVER - Good value</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Live Opportunities Section — pulls real data from the bot's database */}
+      <OpportunitiesSection />
 
       {/* Pricing Section */}
       <section id="pricing" className="hp-pricing">
@@ -487,7 +298,7 @@ const HomePage = () => {
               <h4>Quick Links</h4>
               <ul>
                 <li><a href="#features">Features</a></li>
-                <li><a href="#examples">Examples</a></li>
+                <li><a href="#opportunities">Live Data</a></li>
                 <li><a href="#pricing">Pricing</a></li>
                 <li><a href="https://discord.gg/MfD933h9jb" target="_blank" rel="noopener noreferrer">Join Server</a></li>
               </ul>

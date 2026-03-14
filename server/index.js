@@ -5,6 +5,7 @@ const path = require('path');
 const { initDB } = require('./config/db');
 const authRoutes = require('./routes/auth');
 const stripeRoutes = require('./routes/stripe');
+const opportunitiesRoutes = require('./routes/opportunities');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,6 +22,7 @@ app.use(express.json());
 // ── API Routes ─────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/stripe', stripeRoutes);
+app.use('/api/opportunities', opportunitiesRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
