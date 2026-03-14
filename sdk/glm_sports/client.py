@@ -642,6 +642,161 @@ class GLMSportsClient:
         )
         return result.get("result", "")
 
+    # ── Sportsbook Data Methods ──────────────────────────────────────────────────
+
+    def sb_sports(self) -> dict:
+        """List all 24 supported sports with available sportsbooks."""
+        return self._request("GET", "/sportsbook/sports")
+
+    def sb_books(self) -> dict:
+        """List all 34 supported sportsbooks."""
+        return self._request("GET", "/sportsbook/books")
+
+    def sb_odds(self, sport: str, book: str = None) -> dict:
+        """
+        Get raw aggregated odds for a sport across all sportsbooks.
+
+        Args:
+            sport: nba | nfl | mlb | nhl | ncaaf | ncaab | soccer | mma | boxing | tennis | golf
+            book:  Optional sportsbook filter (e.g. "Bovada", "FanDuel", "DraftKings")
+
+        Returns:
+            Full odds data with all events and markets
+        """
+        path = f"/sportsbook/odds/{sport}"
+        if book:
+            path = f"/sportsbook/odds/{sport}/{book}"
+        return self._request("GET", path)
+
+    def sb_compare(self, sport: str) -> dict:
+        """
+        Compare odds across all sportsbooks for a sport.
+
+        Returns best prices, line shopping data, and full odds breakdown per event.
+
+        Args:
+            sport: nba | nfl | mlb | nhl | soccer | etc.
+        """
+        return self._request("GET", f"/sportsbook/compare/{sport}")
+
+    def sb_events(self, sport: str) -> dict:
+        """
+        Get all events grouped by matchup with multi-book odds view.
+
+        Args:
+            sport: nba | nfl | mlb | nhl | soccer | etc.
+        """
+        return self._request("GET", f"/sportsbook/events/{sport}")
+
+    def sb_live(self, sport: str) -> dict:
+        """
+        Get live/in-progress events and odds for a sport.
+
+        Args:
+            sport: nba | nfl | mlb | nhl | soccer | etc.
+        """
+        return self._request("GET", f"/sportsbook/live/{sport}")
+
+    def sb_best_bets(self, sport: str) -> dict:
+        """
+        Find top value bet opportunities by comparing lines across all sportsbooks.
+
+        Returns events with biggest line discrepancies (most line shopping value).
+
+        Args:
+            sport: nba | nfl | mlb | nhl | soccer | etc.
+        """
+        return self._request("GET", f"/sportsbook/best-bets/{sport}")
+
+    # ── Sportsbook + AI Combo Methods ─────────────────────────────────────────────
+
+    def sb_odds_ai(
+        self,
+        sport: str,
+        analysis_type: str = "value",
+        platform: str = "general",
+        sportsbook: str = None,
+    ) -> str:
+        """
+        Auto-fetch live odds + AI analysis in one call. Returns ready-to-post text.
+
+        Args:
+            sport:         nba | nfl | mlb | nhl | soccer | etc.
+            analysis_type: value | best_lines | comparison | live | picks
+            platform:      twitter | instagram | discord | general
+            sportsbook:    Optional - filter to one sportsbook
+
+        Example:
+            analysis = client.sb_odds_ai("nba", analysis_type="picks", platform="discord")
+            discord.send(analysis)
+        """
+        payload = {
+            "sport": sport,
+            "analysis_type": analysis_type,
+            "platform": platform,
+        }
+        if sportsbook:
+            payload["sportsbook"] = sportsbook
+        result = self._request("POST", f"/sportsbook/odds-ai/{sport}", json=payload)
+        return result.get("result", "")
+
+    def sb_compare_ai(self, sport: str, platform: str = "general") -> str:
+        """
+        Auto-fetch odds comparison across all sportsbooks + AI line-shopping analysis.
+
+        Args:
+            sport:    nba | nfl | mlb | nhl | soccer | etc.
+            platform: twitter | instagram | discord | general
+
+        Example:
+            post = client.sb_compare_ai("nfl", platform="twitter")
+            twitter.post(post)
+        """
+        payload = {"sport": sport, "platform": platform}
+        result = self._request("POST", f"/sportsbook/compare-ai/{sport}", json=payload)
+        return result.get("result", "")
+
+    def sb_live_ai(self, sport: str) -> str:
+        """
+        Auto-fetch live in-game odds + AI real-time betting breakdown.
+
+        Returns a live betting alert ready to post.
+
+        Args:
+            sport: nba | nfl | mlb | nhl | soccer | etc.
+
+        Example:
+            alert = client.sb_live_ai("nba")
+            discord.send(alert)
+        """
+        payload = {"sport": sport}
+        result = self._request("POST", f"/sportsbook/live-ai/{sport}", json=payload)
+        return result.get("result", "")
+
+    def sb_best_bets_ai(self, sport: str, platform: str = "general") -> str:
+        """
+        Auto-find best value bets across 34 sportsbooks + AI content generation.
+
+        Returns ready-to-post best bets content. This is the ultimate one-liner
+        for generating betting content - fetches odds, shops lines, and writes
+        the post automatically.
+
+        Args:
+            sport:    nba | nfl | mlb | nhl | soccer | etc.
+            platform: twitter | instagram | discord | general
+
+        Example:
+            post = client.sb_best_bets_ai("nba", platform="twitter")
+            twitter.post(post)
+
+            # Instagram best bets
+            caption = client.sb_best_bets_ai("nfl", platform="instagram")
+        """
+        payload = {"sport": sport, "platform": platform}
+        result = self._request("POST", f"/sportsbook/best-bets-ai/{sport}", json=payload)
+        return result.get("result", "")
+
+
     # ── Context Manager Support ────────────────────────────────────────────────
 
     def __enter__(self):

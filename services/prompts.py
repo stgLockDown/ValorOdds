@@ -152,6 +152,143 @@ INSTRUCTIONS:
 Your expert answer:"""
 
 
+def get_sportsbook_odds_prompt(odds_data: any, sport: str, analysis_type: str = "value") -> str:
+    """Prompt for analyzing odds from the custom sportsbook aggregation API."""
+    analysis_instructions = {
+        "value": """Find value bets by:
+- Comparing lines across all 34 sportsbooks to find discrepancies
+- Identifying the best available price for each team/outcome
+- Highlighting where one book is significantly off from the consensus
+- Calculating implied probabilities and flagging potential +EV spots
+- Pointing out the top 3-5 best value opportunities""",
+
+        "best_lines": """Find the best available lines by:
+- Identifying which sportsbook offers the best moneyline for each team
+- Finding the best spread lines (most favorable points)
+- Finding the best total lines (highest over / lowest under)
+- Summarizing the top line-shopping opportunities in a clear table format
+- Noting the sportsbooks with consistently better lines""",
+
+        "comparison": """Compare odds across sportsbooks by:
+- Showing the range of lines available (best vs worst for each outcome)
+- Identifying which sportsbooks consistently offer the best value
+- Highlighting any significant disagreements between books
+- Noting consensus lines vs outlier lines
+- Flagging any potential arbitrage opportunities""",
+
+        "live": """Analyze live/in-game odds by:
+- Summarizing current live betting opportunities
+- Highlighting dramatic line movements during the game
+- Identifying the best live value bets available right now
+- Noting any live lines that seem mispriced given game state
+- Ranking the top live betting opportunities""",
+
+        "picks": """Generate betting picks by:
+- Analyzing all available odds across 34 sportsbooks
+- Selecting the 3-5 best bets based on value and line shopping
+- Explaining the reasoning for each pick with specific odds
+- Identifying the best sportsbook to place each bet
+- Providing confidence levels and recommended bet sizing"""
+    }
+
+    analysis_str = analysis_instructions.get(analysis_type, analysis_instructions["value"])
+
+    return f"""You are a professional sports betting analyst and line-shopping expert with access to real-time odds from 34 major sportsbooks.
+
+Sport: {sport.upper()}
+
+LIVE ODDS DATA (from {sport.upper()} across multiple sportsbooks):
+{odds_data}
+
+ANALYSIS TYPE: {analysis_type.upper()}
+{analysis_str}
+
+IMPORTANT GUIDELINES:
+- Be specific with exact odds (use American format, e.g. -110, +150)
+- Name specific sportsbooks when recommending lines
+- Show the line spread/discrepancy when it's significant
+- Always remind users to gamble responsibly
+- Be direct and actionable - bettors need clear guidance
+- Flag any unusually sharp or public-facing lines
+
+Provide your expert odds analysis:"""
+
+
+def get_sportsbook_best_bets_prompt(best_bets_data: dict, sport: str, platform: str = "general") -> str:
+    """Prompt for generating best bets content from line-shopping data."""
+    platform_guidelines = {
+        "twitter": "Format as Twitter/X thread (1-5 tweets, 280 chars each). Use emojis and hashtags like #BestBets #SportsBetting.",
+        "discord": "Format for Discord with markdown. Use bold for picks, include odds in parentheses.",
+        "instagram": "Write as Instagram caption with emojis. Put hashtags at end.",
+        "general": "Write a clean, professional best bets breakdown."
+    }
+    platform_str = platform_guidelines.get(platform, platform_guidelines["general"])
+
+    return f"""You are a professional sports betting content creator specializing in line-shopping and value betting.
+
+You have analyzed odds from 34 sportsbooks for {sport.upper()} and found these top value opportunities:
+
+BEST BETS DATA:
+{best_bets_data}
+
+PLATFORM: {platform_str}
+
+Create engaging best bets content that:
+- Leads with the highest-value opportunity
+- Clearly states the pick, odds, and which sportsbook to use
+- Explains WHY it's a value bet (line discrepancy, edge)
+- Includes 3-5 picks total
+- Ends with a responsible gambling reminder
+- Feels like it's coming from a sharp, well-researched source
+
+Generate the best bets post:"""
+
+
+def get_sportsbook_live_prompt(live_data: dict, sport: str) -> str:
+    """Prompt for live odds analysis and in-game betting content."""
+    return f"""You are a live sports betting analyst covering {sport.upper()} games in real-time.
+
+LIVE ODDS DATA ({sport.upper()}):
+{live_data}
+
+Generate a live betting update that:
+1. Opens with a headline about what's happening live right now
+2. Breaks down the 2-3 most interesting live betting opportunities
+3. Notes any significant live line movements or interesting prices
+4. Names specific teams and specific sportsbook odds
+5. Gives clear, immediate action items for live bettors
+6. Reminds readers to act fast as live odds change constantly
+
+Keep it punchy and real-time feeling. Use present tense.
+This should read like a live betting alert, not a recap.
+
+Generate the live betting update:"""
+
+
+def get_sportsbook_compare_prompt(compare_data: dict, sport: str, platform: str = "general") -> str:
+    """Prompt for odds comparison content across sportsbooks."""
+    platform_note = f"Format for {platform}." if platform != "general" else ""
+
+    return f"""You are a sports betting analyst specializing in line comparison and arbitrage detection.
+
+ODDS COMPARISON DATA ({sport.upper()} - across 34 sportsbooks):
+{compare_data}
+
+{platform_note}
+
+Analyze this comparison data and:
+1. Identify the top 3-5 events with the biggest line discrepancies
+2. For each event, show: matchup, best available line, worst available line, which books have each
+3. Calculate the implied probability range (what does the spread in lines mean?)
+4. Flag any near-arbitrage or middle opportunities
+5. Recommend the top line-shopping plays with specific sportsbook names
+6. Summarize which sportsbooks are consistently offering the best value today
+
+Be specific with numbers. Format odds clearly. Make this actionable for a bettor who wants the best line.
+
+Provide the odds comparison analysis:"""
+
+
 def get_espn_prompt(espn_data: any, report_type: str = "recap", platform: str = "general") -> str:
     report_instructions = {
         "recap": "Write a game recap covering the key moments, standout performers, final score, and most important stats.",

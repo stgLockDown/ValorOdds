@@ -104,3 +104,36 @@ class BatchResult:
 
     def __repr__(self):
         return f"<BatchResult total={self.total} success={self.success}>"
+
+
+@dataclass
+class SportsbookOddsResult(BaseResult):
+    """Result from /sportsbook/odds-ai/{sport}"""
+    sport: Optional[str] = None
+    analysis_type: Optional[str] = None
+    total_events: Optional[int] = None
+    sportsbooks_queried: Optional[int] = None
+
+
+@dataclass
+class SportsbookCompareResult(BaseResult):
+    """Result from /sportsbook/compare-ai/{sport}"""
+    sport: Optional[str] = None
+    total_events: Optional[int] = None
+    multi_book_events: Optional[int] = None
+
+
+@dataclass
+class SportsbookLiveResult(BaseResult):
+    """Result from /sportsbook/live-ai/{sport}"""
+    sport: Optional[str] = None
+    live_count: Optional[int] = None
+
+
+@dataclass
+class SportsbookBestBetsResult(BaseResult):
+    """Result from /sportsbook/best-bets-ai/{sport}"""
+    sport: Optional[str] = None
+    platform: Optional[str] = None
+    total_opportunities: Optional[int] = None
+    top_bets_count: Optional[int] = None
