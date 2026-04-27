@@ -24,6 +24,14 @@ export async function POST(req: Request) {
     );
   }
 
+  // Guard: fail fast with a clear message if DB isn't configured yet
+  if (!process.env.DATABASE_URL) {
+    return NextResponse.json(
+      { error: 'The database is not yet configured. Please contact support.' },
+      { status: 503 },
+    );
+  }
+
   try {
     const user = await createEmailUser(input);
     // Fire and forget emails.

@@ -151,18 +151,29 @@ providers.push(
       if (!parsed.success) return null;
       const { email, password } = parsed.data;
 
-      const user = await findUserByEmail(email);
-      if (!user || !user.password_hash) return null;
+      // Guard: DB not configured means auth cannot work
+      if (!process.env.DATABASE_URL) {
+        console.error('[auth.credentials] DATABASE_URL not set — cannot authenticate');
+        return null;
+      }
 
-      const ok = await bcrypt.compare(password, user.password_hash);
-      if (!ok) return null;
+      try {
+        const user = await findUserByEmail(email);
+        if (!user || !user.password_hash) return null;
 
-      return {
-        id: user.id,
-        email: user.email,
-        name: user.display_name,
-        image: user.avatar_url,
-      };
+        const ok = await bcrypt.compare(password, user.password_hash);
+        if (!ok) return null;
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.display_name,
+          image: user.avatar_url,
+        };
+      } catch (err) {
+        console.error('[auth.credentials] DB error during sign-in:', err);
+        return null;
+      }
     },
   }),
 );
