@@ -1,8 +1,14 @@
+# Railway Nixpacks config for Next.js 14
+# Uses Node 20 and builds with npm.
+
 [phases.setup]
-nixPkgs = ["nodejs", "npm"]
+nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
-cmds = ["npm install"]
+cmds = ["npm ci --prefer-offline --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["npm run build"]
 
 [start]
 cmd = "npm start"
