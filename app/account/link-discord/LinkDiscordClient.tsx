@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, Copy, Check } from 'lucide-react';
 import { signIn } from 'next-auth/react';
 
@@ -9,6 +9,14 @@ export default function LinkDiscordClient() {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [discordEnabled, setDiscordEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/config')
+      .then(r => r.json())
+      .then(data => setDiscordEnabled(data.discordEnabled))
+      .catch(() => setDiscordEnabled(false));
+  }, []);
 
   async function generate() {
     setLoading(true);
@@ -35,23 +43,27 @@ export default function LinkDiscordClient() {
 
   return (
     <>
-      <div className="card">
-        <h2 className="text-lg font-semibold">Option 1 — Link via Discord OAuth</h2>
-        <p className="text-sm text-brand-muted mt-1">
-          Fastest. Sign in to Discord and we'll link automatically if your email matches.
-        </p>
-        <button
-          onClick={() => signIn('discord', { callbackUrl: '/account' })}
-          className="btn w-full mt-4 bg-[#5865F2] text-white hover:bg-[#4752C4] max-w-sm"
-        >
-          Continue with Discord
-        </button>
-      </div>
+      {discordEnabled && (
+        <div className="card">
+          <h2 className="text-lg font-semibold">Option 1 — Link via Discord OAuth</h2>
+          <p className="text-sm text-brand-muted mt-1">
+            Fastest. Sign in to Discord and we'll link automatically if your email matches.
+          </p>
+          <button
+            onClick={() => signIn('discord', { callbackUrl: '/account' })}
+            className="btn w-full mt-4 bg-[#5865F2] text-white hover:bg-[#4752C4] max-w-sm"
+          >
+            Continue with Discord
+          </button>
+        </div>
+      )}
 
       <div className="card">
-        <h2 className="text-lg font-semibold">Option 2 — Link with a code</h2>
+        <h2 className="text-lg font-semibold">{discordEnabled ? 'Option 2 — Link with a code' : 'Link with a code'}</h2>
         <p className="text-sm text-brand-muted mt-1">
-          Prefer not to use Discord OAuth? Generate a one-time code and run <code className="text-xs">/link</code> in the
+          {discordEnabled 
+            ? "Prefer not to use Discord OAuth? Generate a one-time code and run"
+            : "Generate a one-time code and run"} <code className="text-xs">/link</code> in the
           Valor Odds Discord server.
         </p>
         {code ? (
