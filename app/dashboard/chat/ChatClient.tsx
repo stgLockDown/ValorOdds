@@ -76,14 +76,21 @@ export default function ChatClient({
     if (!q || sending) return;
     setInput('');
     setSending(true);
+
+    // Build history from non-pending messages for context
+    const history = messages
+      .filter((m) => !m.pending)
+      .map((m) => ({ role: m.role, content: m.content }));
+
     setMessages((m) => [...m, { role: 'user', content: q }, { role: 'assistant', content: '', pending: true }]);
 
     try {
       const resp = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q }),
+        body: JSON.stringify({ message: q, history }),
       });
+
       if (!resp.ok || !resp.body) {
         setMessages((m) => {
           const copy = [...m];
@@ -93,6 +100,7 @@ export default function ChatClient({
         setSending(false);
         return;
       }
+
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -105,42 +113,61 @@ export default function ChatClient({
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split('\n\n');
         buffer = parts.pop() ?? '';
+
         for (const part of parts) {
-          const lines = part.split('\n');
-          let event = 'message';
-          let data = '';
-          for (const line of lines) {
-            if (line.startsWith('event:')) event = line.slice(6).trim();
-            else if (line.startsWith('data:')) data += line.slice(5).trim();
-          }
-          if (!data) continue;
-          try {
-            const payload = JSON.parse(data);
-            if (event === 'token' && typeof payload.content === 'string') {
-              accumulated += payload.content;
+          if (!part.trim()) continue;
+          for (const line of part.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+
+            if (data === '[DONE]') {
               setMessages((m) => {
                 const copy = [...m];
-                copy[copy.length - 1] = { role: 'assistant', content: accumulated, pending: true };
+                copy[copy.length - 1] = { role: 'assistant', content: accumulated };
                 return copy;
               });
-            } else if (event === 'done') {
-              setMessages((m) => {
-                const copy = [...m];
-                copy[copy.length - 1] = { role: 'assistant', content: accumulated || payload.content || '' };
-                return copy;
-              });
-            } else if (event === 'error') {
-              setMessages((m) => {
-                const copy = [...m];
-                copy[copy.length - 1] = { role: 'assistant', content: `⚠️ ${payload.message || 'Error'}` };
-                return copy;
-              });
+              continue;
             }
-          } catch {
-            // ignore
+
+            try {
+              const payload = JSON.parse(data);
+
+              // OpenAI / GitHub Models native streaming format
+              const token = payload?.choices?.[0]?.delta?.content;
+              if (typeof token === 'string' && token) {
+                accumulated += token;
+                setMessages((m) => {
+                  const copy = [...m];
+                  copy[copy.length - 1] = { role: 'assistant', content: accumulated, pending: true };
+                  return copy;
+                });
+              }
+
+              // Graceful error/info message passed as plain {content} field
+              if (typeof payload?.content === 'string' && !payload?.choices) {
+                accumulated += payload.content;
+                setMessages((m) => {
+                  const copy = [...m];
+                  copy[copy.length - 1] = { role: 'assistant', content: accumulated };
+                  return copy;
+                });
+              }
+            } catch {
+              // non-JSON line, skip
+            }
           }
         }
       }
+
+      // Ensure pending state is cleared even if [DONE] wasn't received
+      setMessages((m) => {
+        const copy = [...m];
+        if (copy[copy.length - 1]?.pending) {
+          copy[copy.length - 1] = { role: 'assistant', content: accumulated || '…' };
+        }
+        return copy;
+      });
+
     } catch (err: any) {
       setMessages((m) => {
         const copy = [...m];
