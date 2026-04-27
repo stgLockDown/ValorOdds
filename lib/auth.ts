@@ -10,7 +10,7 @@ import Credentials from 'next-auth/providers/credentials';
 import Discord from 'next-auth/providers/discord';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { env, isAdmin, type Tier } from './env';
+import { env, isAdmin, isDiscordConfigured, type Tier } from './env';
 import { query, queryOne } from './db';
 
 // ---------- Type augmentation ----------
@@ -122,6 +122,51 @@ async function getCurrentTier(userId: string, discordId: string | null): Promise
 }
 
 // ---------- NextAuth config ----------
+// Build providers list dynamically so missing Discord creds don't crash boot.
+const providers: any[] = [];
+if (isDiscordConfigured()) {
+  providers.push(
+    Discord({
+      clientId: env.discordClientId(),
+      clientSecret: env.discordClientSecret(),
+      authorization: { params: { scope: 'identify email guilds' } },
+    }),
+  );
+} else if (process.env.NEXT_PHASE !== 'phase-production-build') {
+  console.error(
+    '[auth] Discord OAuth disabled: DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET not set. ' +
+      'Email/password sign-in still works.',
+  );
+}
+
+providers.push(
+  Credentials({
+    name: 'Email & Password',
+    credentials: {
+      email: { label: 'Email', type: 'email' },
+      password: { label: 'Password', type: 'password' },
+    },
+    async authorize(raw) {
+      const parsed = signInSchema.safeParse(raw);
+      if (!parsed.success) return null;
+      const { email, password } = parsed.data;
+
+      const user = await findUserByEmail(email);
+      if (!user || !user.password_hash) return null;
+
+      const ok = await bcrypt.compare(password, user.password_hash);
+      if (!ok) return null;
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.display_name,
+        image: user.avatar_url,
+      };
+    },
+  }),
+);
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: env.nextauthSecret(),
   session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 /* 30 days */ },
@@ -129,38 +174,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: '/auth/signin',
   },
-  providers: [
-    Discord({
-      clientId: env.discordClientId(),
-      clientSecret: env.discordClientSecret(),
-      authorization: { params: { scope: 'identify email guilds' } },
-    }),
-    Credentials({
-      name: 'Email & Password',
-      credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' },
-      },
-      async authorize(raw) {
-        const parsed = signInSchema.safeParse(raw);
-        if (!parsed.success) return null;
-        const { email, password } = parsed.data;
-
-        const user = await findUserByEmail(email);
-        if (!user || !user.password_hash) return null;
-
-        const ok = await bcrypt.compare(password, user.password_hash);
-        if (!ok) return null;
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.display_name,
-          image: user.avatar_url,
-        };
-      },
-    }),
-  ],
+  providers,
   callbacks: {
     async signIn({ user, account, profile }) {
       if (account?.provider === 'discord' && profile) {
@@ -193,15 +207,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!token.userId && token.sub) token.userId = token.sub;
 
       // Load latest tier + admin flag from DB whenever token is minted/refreshed.
+      // Wrapped in try/catch so a missing/unreachable DB doesn't nuke the whole
+      // app — it just degrades the session to default (free/non-admin).
       if (token.userId) {
-        const row = await queryOne<{ email: string; discord_id: string | null; is_admin: boolean }>(
-          `SELECT email, discord_id, is_admin FROM web_users WHERE id = $1::bigint`,
-          [token.userId]
-        );
-        if (row) {
-          token.discordId = row.discord_id;
-          token.isAdmin = row.is_admin || isAdmin(row.email);
-          token.tier = await getCurrentTier(String(token.userId), row.discord_id);
+        try {
+          const row = await queryOne<{ email: string; discord_id: string | null; is_admin: boolean }>(
+            `SELECT email, discord_id, is_admin FROM web_users WHERE id = $1::bigint`,
+            [token.userId]
+          );
+          if (row) {
+            token.discordId = row.discord_id;
+            token.isAdmin = row.is_admin || isAdmin(row.email);
+            token.tier = await getCurrentTier(String(token.userId), row.discord_id);
+          }
+        } catch (err) {
+          console.error('[auth.jwt] DB enrichment failed (continuing with default tier):', err);
+          token.tier = token.tier ?? 'free';
+          token.isAdmin = token.isAdmin ?? false;
         }
       }
 
