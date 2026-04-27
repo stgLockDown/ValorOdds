@@ -45,7 +45,7 @@ export default function Footer() {
       <div className="border-t border-brand-border">
         <div className="container-px mx-auto max-w-7xl py-6 flex flex-col sm:flex-row justify-between gap-2 text-xs text-brand-muted">
           <p>© {new Date().getFullYear()} Valor Odds. All rights reserved.</p>
-          <p>Powered by AI + The Odds API</p>
+          <p>Powered by Valor Odds AI</p>
         </div>
       </div>
     </footer>

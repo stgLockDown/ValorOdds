@@ -13,7 +13,7 @@ export default function HomePage() {
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-brand-border bg-brand-surface px-3 py-1 text-xs text-brand-muted">
             <Sparkles className="h-3.5 w-3.5 text-brand-accent" />
-            Powered by DeepSeek AI
+            AI-driven insights
           </div>
           <h1 className="mt-6 text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.1]">
             Professional sports betting intelligence{' '}
@@ -57,8 +57,8 @@ export default function HomePage() {
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {[
             { icon: Target, title: 'Arbitrage detection', desc: 'Scan 25+ sports every 20 minutes for guaranteed profit opportunities.', items: ['Real-time odds monitoring', 'Automatic profit calculations', 'Multi-sportsbook coverage'] },
-            { icon: Bot, title: 'AI-powered analysis', desc: 'DeepSeek AI analyzes every opportunity with professional-grade insights.', items: ['Risk assessment (Low/Med/High)', 'Confidence scores (1–10)', 'Actionable recommendations'], featured: true },
-            { icon: Trophy, title: 'Player props', desc: 'AI predictions for top players with ESPN data integration.', items: ['Over/Under likelihood %', 'Performance predictions', 'Betting recommendations'] },
+            { icon: Bot, title: 'AI-powered analysis', desc: 'Our proprietary analysis engine, powered by best-in-class LLMs, turns raw odds into actionable plays.', items: ['Risk assessment (Low/Med/High)', 'Confidence scores (1–10)', 'Actionable recommendations'], featured: true },
+            { icon: Trophy, title: 'Player props', desc: 'AI-driven predictions for top players, backed by real-time stats.', items: ['Over/Under likelihood %', 'Performance predictions', 'Betting recommendations'] },
             { icon: Zap, title: 'Custom AI commands', desc: 'On-demand analysis for any game or player.', items: ['!analyze any game', '!predict any player', 'Instant AI responses'] },
             { icon: BarChart3, title: 'Market intelligence', desc: 'Understand the betting landscape across every sport.', items: ['Overall market assessment', 'Best opportunities ranked', 'Risk factors identified'] },
             { icon: Bell, title: 'Real-time alerts', desc: 'Instant notifications for high-value opportunities.', items: ['14 sport-specific channels', 'Custom alert preferences', 'Mobile push notifications'] },
