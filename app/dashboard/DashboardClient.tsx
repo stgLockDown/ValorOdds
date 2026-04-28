@@ -129,9 +129,8 @@ function BestBetsTab() {
   const types = [
     { id: 'all', label: 'All' },
     { id: 'bestBets', label: 'Best Bets' },
-    { id: 'parlay', label: 'Parlays' },
-    { id: 'aiPicks', label: 'AI Picks' },
-    { id: 'straightUp', label: 'Straight Up' },
+    { id: 'dailyPicks', label: 'Daily Picks' },
+    { id: 'depthAnalysis', label: 'Deep Analysis' },
   ];
 
   return (

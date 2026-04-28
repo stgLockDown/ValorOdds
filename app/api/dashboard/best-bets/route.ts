@@ -13,8 +13,9 @@ export async function GET(req: Request) {
   const type = searchParams.get('type') || 'all';
   const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
 
+  // Match actual database types: bestBets, dailyPicks, depthAnalysis
   const typeFilter = type === 'all'
-    ? `analysis_type IN ('bestBets','parlay','aiPicks','straightUp','depth')`
+    ? `analysis_type IN ('bestBets','dailyPicks','depthAnalysis')`
     : `analysis_type = $2`;
 
   const params: any[] = [limit];
