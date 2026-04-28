@@ -204,7 +204,7 @@ export default function ChatClient({
           const { data } = await resp.json();
           convId = data.id;
           setCurrentConversationId(convId);
-          updateConversationTitle(convId, q);
+          if (convId) updateConversationTitle(convId, q);
         }
       } catch (err) {
         console.error('Failed to create conversation:', err);
