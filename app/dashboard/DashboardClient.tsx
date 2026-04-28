@@ -8,6 +8,25 @@ import {
 } from 'lucide-react';
 import ChatClient from './chat/ChatClient';
 
+// Dynamically load markdown parser
+declare global {
+  interface Window {
+    marked?: { parse: (s: string) => string };
+    DOMPurify?: { sanitize: (s: string, o?: any) => string };
+  }
+}
+
+function renderMarkdown(src: string): string {
+  if (typeof window === 'undefined' || !window.marked || !window.DOMPurify) {
+    return src.replace(/\\n/g, '<br>').replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+  }
+  const html = window.marked.parse(String(src || ''));
+  return window.DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['p','br','strong','em','code','pre','ul','ol','li','a','h1','h2','h3','h4','blockquote','table','thead','tbody','tr','th','td','hr','span'],
+    ALLOWED_ATTR: ['href','target','rel','class'],
+  });
+}
+
 type Tab = 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'preferences';
 
 const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
@@ -70,6 +89,35 @@ function BestBetsTab() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [type, setType] = useState('all');
+  const [markedLoaded, setMarkedLoaded] = useState(false);
+
+  // Load markdown parser
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const load = () => {
+      if (window.marked && window.DOMPurify) {
+        setMarkedLoaded(true);
+        return;
+      }
+      Promise.all([
+        new Promise<void>((resolve) => {
+          if (document.querySelector('script[src*="marked"]')) return resolve();
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/marked@12/marked.min.js';
+          s.onload = () => resolve();
+          document.head.appendChild(s);
+        }),
+        new Promise<void>((resolve) => {
+          if (document.querySelector('script[src*="purify"]')) return resolve();
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js';
+          s.onload = () => resolve();
+          document.head.appendChild(s);
+        })
+      ]).then(() => setMarkedLoaded(true));
+    };
+    load();
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -107,9 +155,10 @@ function BestBetsTab() {
                   <span className="text-xs text-brand-muted">{new Date(item.generated_at).toLocaleString()}</span>
                 </div>
               </div>
-              <div className="prose prose-invert prose-sm max-w-none text-brand-muted whitespace-pre-wrap text-sm leading-relaxed">
-                {item.content}
-              </div>
+              <div
+                className="prose prose-invert prose-sm max-w-none text-brand-text text-sm leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: markedLoaded ? renderMarkdown(item.content || '') : item.content }}
+              />
             </div>
           ))}
         </div>
@@ -881,9 +930,9 @@ export default function DashboardClient({ user }: { user: any }) {
 
   return (
     <div className="min-h-screen bg-brand-bg">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="mx-auto px-4 py-4">
         {/* Tab Nav */}
-        <div className="flex overflow-x-auto gap-1 pb-4 mb-6 scrollbar-hide">
+        <div className="flex flex-wrap gap-1 mb-4">
           {TABS.map(({ id, label, icon: Icon, premium }) => {
             const locked = premium && !isPremiumOrVip;
             return (
@@ -923,3 +972,5 @@ function LockedTab() {
     </div>
   );
 }
+// Add displayName for layout detection
+DashboardClient.displayName = 'DashboardClient';

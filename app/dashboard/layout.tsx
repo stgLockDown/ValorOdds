@@ -16,6 +16,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { href: '/account/link-discord', label: 'Link Discord', icon: LinkIcon },
   ];
 
+  // Check if current page is the main dashboard (DashboardClient)
+  const isMainDashboard = typeof children === 'object' && 'type' in children && children.type?.displayName === 'DashboardClient';
+
+  // If main dashboard, use simpler layout without sidebar
+  if (isMainDashboard) {
+    return (
+      <>
+        <Navbar />
+        <div className="container-px mx-auto max-w-full py-4 px-4">
+          {children}
+        </div>
+        <Footer />
+      </>
+    );
+  }
+
+  // Other dashboard pages (stats, chat, etc.) show sidebar
   return (
     <>
       <Navbar />
