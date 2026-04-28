@@ -405,7 +405,7 @@ export default function ChatClient({
         <div className="p-4 border-t border-brand-border">
           <div className="flex items-center gap-2">
             <div className="flex-1">
-              <div className="text-sm font-medium truncate">{user.name || user.email}</div>
+              <div className="text-sm font-medium truncate">{user.email.split("@" )[0] || user.email}</div>
               <div className="text-xs text-brand-muted.capitalize">
                 {user.tier}
                 {user.discordId && ' • Discord linked'}
