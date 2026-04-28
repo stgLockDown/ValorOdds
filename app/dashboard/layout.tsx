@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   ];
 
   // Check if current page is the main dashboard (DashboardClient)
-  const isMainDashboard = typeof children === 'object' && 'type' in children && children.type?.displayName === 'DashboardClient';
+  const isMainDashboard = children && typeof children === 'object' && 'type' in children && (children.type as any)?.displayName === 'DashboardClient';
 
   // If main dashboard, use simpler layout without sidebar
   if (isMainDashboard) {
