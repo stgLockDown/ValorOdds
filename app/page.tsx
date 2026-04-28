@@ -35,7 +35,7 @@ export default function HomePage() {
             {[
               { n: '25+', l: 'Sports covered' },
               { n: '1,000+', l: 'Daily opportunities' },
-              { n: '98%', l: 'AI accuracy' },
+              { n: 'High', l: 'AI accuracy' },
             ].map((s) => (
               <div key={s.l}>
                 <div className="text-3xl font-bold gradient-text">{s.n}</div>
