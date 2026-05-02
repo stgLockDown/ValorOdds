@@ -27,7 +27,7 @@ function renderMarkdown(src: string): string {
   });
 }
 
-type Tab = 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'preferences';
+type Tab = 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'fantasy' | 'preferences';
 
 const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
   { id: 'overview',    label: 'Overview',       icon: Activity },
@@ -40,6 +40,7 @@ const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
   { id: 'trends',     label: 'Trends',           icon: TrendingUp },
   { id: 'sportsbooks',label: 'Sportsbooks',      icon: Shield },
   { id: 'chat',       label: 'AI Chat',          icon: MessageSquare },
+  { id: 'fantasy',    label: 'Fantasy',          icon: Trophy },
   { id: 'preferences',label: 'Preferences',     icon: Settings },
 ];
 
@@ -922,6 +923,7 @@ export default function DashboardClient({ user }: { user: any }) {
       case 'trends':       return <TrendsTab />;
       case 'sportsbooks':  return <SportsbooksTab />;
       case 'chat':         return <ChatClient user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />;
+      case 'fantasy':      return <FantasyTab userTier={user.tier || 'free'} />;
       case 'preferences':  return <PreferencesTab userId={user.id} />;
       default:             return null;
     }
@@ -971,5 +973,154 @@ function LockedTab() {
     </div>
   );
 }
+
+// ---------- Fantasy Tab (DiamondDraft) ----------
+
+function FantasyTab({ userTier }: { userTier: string }) {
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [data, setData] = useState<{
+    configured: boolean;
+    leagues: any[];
+    ddTier: string | null;
+    ssoUrl: string | null;
+  } | null>(null);
+
+  const fetchLeagues = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch('/api/fantasy/leagues', { cache: 'no-store' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setErr(body.error || `Fantasy feed returned HTTP ${res.status}`);
+        return;
+      }
+      setData(await res.json());
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to reach the fantasy feed.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchLeagues(); }, [fetchLeagues]);
+
+  const openFantasy = useCallback(async () => {
+    try {
+      const res = await fetch('/api/fantasy/handoff', { method: 'POST', body: JSON.stringify({ redirect: '/dashboard' }) });
+      const body = await res.json();
+      if (!res.ok) {
+        setErr(body.error || 'Could not open DiamondDraft.');
+        return;
+      }
+      window.open(body.ssoUrl, '_blank', 'noopener,noreferrer');
+    } catch (e: any) {
+      setErr(e?.message || 'Could not open DiamondDraft.');
+    }
+  }, []);
+
+  const entitled = ['beta', 'premium', 'vip'].includes((userTier || '').toLowerCase());
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="rounded-xl border border-brand-card p-4 bg-brand-card">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-brand-accent" />
+              Fantasy Sports
+            </h2>
+            <p className="text-sm text-brand-muted mt-1">
+              Run your leagues on <span className="font-semibold text-brand-fg">DiamondDraft</span> — baseball today, NFL & NBA & NHL coming soon.
+              {entitled
+                ? ' Your Valor Odds plan includes DiamondDraft Pro.'
+                : ' DiamondDraft Free covers 2 leagues; Pro is included with Beta, Premium and VIP.'}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={openFantasy} className="btn-primary px-4 py-2 whitespace-nowrap">
+              Open DiamondDraft →
+            </button>
+            <button
+              onClick={fetchLeagues}
+              className="px-3 py-2 rounded border border-brand-card text-brand-muted hover:text-brand-fg"
+              aria-label="Refresh"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {err && (
+        <div className="rounded border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+          {err}
+        </div>
+      )}
+
+      {/* Content */}
+      {loading ? (
+        <div className="text-center py-12 text-brand-muted">Loading your leagues…</div>
+      ) : !data?.configured ? (
+        <div className="rounded-xl border border-brand-card p-6 bg-brand-card text-center">
+          <p className="text-brand-muted mb-4">
+            Fantasy integration is not connected on this server yet. Once the admin wires up
+            <code className="mx-1 px-1.5 py-0.5 bg-black/30 rounded text-xs">DIAMONDDRAFT_SSO_SECRET</code>
+            and
+            <code className="mx-1 px-1.5 py-0.5 bg-black/30 rounded text-xs">DIAMONDDRAFT_API_URL</code>,
+            your leagues will appear here automatically.
+          </p>
+          <button onClick={openFantasy} className="btn-primary px-6 py-2">
+            Open DiamondDraft
+          </button>
+        </div>
+      ) : data.leagues.length === 0 ? (
+        <div className="rounded-xl border border-brand-card p-6 bg-brand-card text-center">
+          <p className="text-brand-muted mb-4">
+            You don't have any fantasy leagues yet.
+          </p>
+          <button onClick={openFantasy} className="btn-primary px-6 py-2">
+            Create your first league →
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {data.leagues.map((lg: any) => (
+            <div key={lg.id} className="rounded-xl border border-brand-card p-4 bg-brand-card">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold">{lg.name}</h3>
+                {lg.status && (
+                  <span className="text-xs uppercase tracking-wide text-brand-muted">
+                    {lg.status}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-brand-muted">
+                {(lg.format || 'Head-to-Head').replace(/_/g, ' ')}
+                {lg.memberCount ? ` · ${lg.memberCount} members` : ''}
+              </p>
+              <button
+                onClick={openFantasy}
+                className="mt-3 text-sm text-brand-accent hover:underline"
+              >
+                Open league →
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Entitlement note */}
+      <div className="text-xs text-brand-muted">
+        {entitled
+          ? `Your ${userTier.toUpperCase()} plan unlocks DiamondDraft Pro automatically.`
+          : 'Upgrade to Beta or higher to get DiamondDraft Pro included.'}
+      </div>
+    </div>
+  );
+}
+
 // Add displayName for layout detection
 DashboardClient.displayName = 'DashboardClient';
