@@ -86,3 +86,34 @@
   @apply border border-brand-border px-2 py-1;
 }
 .prose-chat a { @apply text-brand-primary underline; }
+/* Long-form article rendering (Learn pages) */
+.prose-learn {
+  @apply text-base leading-relaxed text-slate-200;
+}
+.prose-learn p { @apply my-4; }
+.prose-learn h2 {
+  @apply mt-10 mb-3 text-2xl font-bold text-white;
+}
+.prose-learn h3 {
+  @apply mt-6 mb-2 text-xl font-semibold text-white;
+}
+.prose-learn ul, .prose-learn ol {
+  @apply my-4 ml-6 space-y-2 list-disc;
+}
+.prose-learn ol { @apply list-decimal; }
+.prose-learn code {
+  @apply rounded bg-black/50 px-1.5 py-0.5 text-sm font-mono text-brand-accent;
+}
+.prose-learn pre {
+  @apply my-5 overflow-x-auto rounded-lg bg-black/60 p-4 text-sm;
+}
+.prose-learn pre code {
+  @apply bg-transparent p-0 text-slate-200;
+}
+.prose-learn a {
+  @apply text-brand-accent underline hover:no-underline;
+}
+.prose-learn strong { @apply text-white; }
+.prose-learn blockquote {
+  @apply my-4 border-l-4 border-brand-accent pl-4 italic text-slate-300;
+}
