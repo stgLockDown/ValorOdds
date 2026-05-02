@@ -3,8 +3,14 @@ import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import SignInForm from './SignInForm';
+import { buildMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = { title: 'Sign in' };
+export const metadata: Metadata = buildMetadata({
+  title: 'Sign in',
+  description:
+    'Sign in to Valor Odds to access live sports arbitrage, AI-powered player props, and your personalized betting dashboard.',
+  path: '/auth/signin',
+});
 
 export default function SignInPage({ searchParams }: { searchParams: { callbackUrl?: string; error?: string } }) {
   return (

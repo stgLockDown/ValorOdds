@@ -3,8 +3,15 @@ import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import SignUpForm from './SignUpForm';
+import { buildMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = { title: 'Create account' };
+export const metadata: Metadata = buildMetadata({
+  title: 'Create your free account',
+  description:
+    'Sign up free for Valor Odds and start finding real-time sports arbitrage and AI-driven +EV bets across MLB, NFL, NBA, NHL, soccer, UFC, and more. No credit card required.',
+  path: '/auth/signup',
+  keywords: ['valor odds signup', 'free arbitrage betting account', 'sports betting tool signup'],
+});
 
 export default function SignUpPage({ searchParams }: { searchParams: { next?: string } }) {
   return (

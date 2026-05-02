@@ -1,9 +1,25 @@
+import type { Metadata } from 'next';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { buildMetadata, breadcrumbJsonLd, canonical } from '@/lib/seo';
+import { JsonLd } from '@/components/JsonLd';
+
+export const metadata: Metadata = buildMetadata({
+  title: 'About Valor Odds',
+  description:
+    'Valor Odds is a data-driven sports betting intelligence platform. We combine real-time odds feeds with AI-powered analysis to surface arbitrage opportunities, +EV bets, and injury-aware prop insights across MLB, NFL, NBA, NHL, soccer, UFC, and more.',
+  path: '/about',
+});
 
 export default function AboutPage() {
   return (
     <>
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', url: canonical('/') },
+          { name: 'About', url: canonical('/about') },
+        ])}
+      />
       <Navbar />
       <main className="container-px mx-auto max-w-3xl py-16 prose-chat">
         <h1 className="text-3xl font-bold mb-4">About Valor Odds</h1>

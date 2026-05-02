@@ -1,5 +1,13 @@
+import type { Metadata } from 'next';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { buildMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildMetadata({
+  title: 'Privacy Policy',
+  description: 'How Valor Odds collects, uses, and protects your data. Read our full privacy policy.',
+  path: '/privacy',
+});
 
 export default function PrivacyPage() {
   return (

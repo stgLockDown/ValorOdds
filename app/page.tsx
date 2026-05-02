@@ -1,11 +1,60 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Target, Bot, Trophy, Zap, BarChart3, Bell, Sparkles, ArrowRight, Check } from 'lucide-react';
+import { buildMetadata, faqJsonLd, breadcrumbJsonLd, canonical, SITE } from '@/lib/seo';
+import { JsonLd } from '@/components/JsonLd';
+
+export const metadata: Metadata = buildMetadata({
+  title: 'Valor Odds — AI-Powered Sports Arbitrage & Player Props',
+  description:
+    'Real-time sports arbitrage opportunities and AI-powered player props analysis across MLB, NFL, NBA, NHL, soccer, UFC, and more. Start finding edges in seconds.',
+  path: '/',
+  keywords: [
+    'sports arbitrage',
+    'arbitrage betting',
+    'positive ev betting',
+    'ai sports betting',
+    'player props',
+    'best odds comparison',
+    'live odds',
+    'sharp sports bettor tools',
+  ],
+});
+
+const HOME_FAQS = [
+  {
+    q: 'What is sports arbitrage betting?',
+    a: 'Sports arbitrage betting (also called sure betting) is placing bets on all possible outcomes of a sporting event across different sportsbooks to guarantee a profit regardless of the result. Valor Odds surfaces arbitrage opportunities in real time.',
+  },
+  {
+    q: 'Is Valor Odds free to use?',
+    a: 'Yes. Valor Odds offers a free tier with live arbitrage and core tools. Premium and VIP plans unlock advanced filters, AI player props analysis, alert automation, and priority support.',
+  },
+  {
+    q: 'Which sports does Valor Odds cover?',
+    a: 'We cover 25+ sports including MLB, NFL, NBA, NHL, NCAA football and basketball, soccer (EPL / UCL / MLS), UFC / MMA, boxing, tennis, and more.',
+  },
+  {
+    q: 'Is arbitrage betting legal?',
+    a: "Arbitrage betting is legal in jurisdictions where sports betting itself is legal. Sportsbooks may limit or ban accounts used for arbitrage, so bettors should review each book's terms of service.",
+  },
+  {
+    q: 'How does Valor Odds compare to Odds Jam, OddsPortal, or RebelBetting?',
+    a: 'Valor Odds combines arbitrage detection with AI-driven player-prop edge analysis and native Discord + web delivery. Most competitors focus on one product category; we cover arbitrage, +EV, props, and injury-aware line movement in one subscription.',
+  },
+];
 
 export default function HomePage() {
   return (
     <>
+      <JsonLd
+        data={[
+          faqJsonLd(HOME_FAQS),
+          breadcrumbJsonLd([{ name: 'Home', url: canonical('/') }]),
+        ]}
+      />
       <Navbar />
 
       {/* Hero */}

@@ -1,0 +1,13 @@
+/* TEAM */
+Valor Odds — AI-Powered Sports Betting Intelligence
+Site: https://valorodds.com
+Contact: hello@valorodds.com
+
+/* THANKS */
+To every sharp bettor who pushes this product forward.
+
+/* SITE */
+Last update: 2026/05
+Standards: HTML5, CSS3, TypeScript
+Components: Next.js 14, React 18, Tailwind CSS
+Software: Vercel, Railway, Stripe, PostgreSQL

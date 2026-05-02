@@ -3,14 +3,55 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import PricingCards from '@/components/PricingCards';
 import { auth } from '@/lib/auth';
+import { buildMetadata, breadcrumbJsonLd, faqJsonLd, canonical } from '@/lib/seo';
+import { JsonLd } from '@/components/JsonLd';
 
-export const metadata: Metadata = { title: 'Pricing' };
+export const metadata: Metadata = buildMetadata({
+  title: 'Pricing',
+  description:
+    'Simple, transparent pricing for Valor Odds. Start free, upgrade to Premium for AI-powered player props and advanced arbitrage filters, or go VIP for our full sharp-bettor toolkit.',
+  path: '/pricing',
+  keywords: [
+    'valor odds pricing',
+    'sports betting subscription',
+    'arbitrage betting service',
+    'ev betting tool cost',
+  ],
+});
+
+const PRICING_FAQS = [
+  {
+    q: 'Can I cancel my subscription at any time?',
+    a: 'Yes. You can cancel from your account settings at any time. Your plan remains active through the end of the billing period.',
+  },
+  {
+    q: 'Do you offer refunds?',
+    a: 'We offer a 7-day satisfaction guarantee on annual plans. Monthly plans are non-refundable but can be canceled at any time.',
+  },
+  {
+    q: 'What payment methods are accepted?',
+    a: 'We accept all major credit and debit cards, and Apple / Google Pay, via Stripe.',
+  },
+  {
+    q: 'Is there a free tier?',
+    a: 'Yes. Our Free tier includes live arbitrage scanning and basic tools so you can evaluate the platform before upgrading.',
+  },
+];
 
 export default async function PricingPage({ searchParams }: { searchParams: { checkout?: string } }) {
   const session = await auth();
 
   return (
     <>
+      <JsonLd
+        data={[
+          breadcrumbJsonLd([
+            { name: 'Home', url: canonical('/') },
+            { name: 'Pricing', url: canonical('/pricing') },
+          ]),
+          faqJsonLd(PRICING_FAQS),
+        ]}
+      />
       <Navbar />
       <main className="container-px mx-auto max-w-7xl py-16">
         <div className="text-center max-w-2xl mx-auto">
