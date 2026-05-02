@@ -17,27 +17,33 @@ export default async function DashboardLayout({ children }: { children: React.Re
   ];
 
   // Check if current page is the main dashboard (DashboardClient)
-  const isMainDashboard = children && typeof children === 'object' && 'type' in children && (children.type as any)?.displayName === 'DashboardClient';
+  const isMainDashboard =
+    children &&
+    typeof children === 'object' &&
+    'type' in children &&
+    (children.type as any)?.displayName === 'DashboardClient';
 
-  // If main dashboard, use simpler layout without sidebar
+  // Main overview dashboard: simpler layout, no outer sidebar.
   if (isMainDashboard) {
     return (
       <>
         <Navbar />
-        <div className="container-px mx-auto max-w-full py-4 px-4">
-          {children}
-        </div>
+        <div className="container-px mx-auto max-w-full py-4 px-4">{children}</div>
         <Footer />
       </>
     );
   }
 
-  // Other dashboard pages (stats, chat, etc.) show sidebar
+  // Other dashboard pages (stats, account link, etc.) show sidebar.
+  // Note: The chat page (/dashboard/chat) provides its OWN in-page sidebar
+  // for conversations, so it relies on this layout's sidebar being hidden
+  // on small screens. We use responsive classes to achieve that without
+  // needing to detect the specific child.
   return (
     <>
       <Navbar />
-      <div className="container-px mx-auto max-w-7xl py-8 grid gap-6 lg:grid-cols-[240px,1fr]">
-        <aside className="lg:sticky lg:top-20 lg:self-start">
+      <div className="container-px mx-auto max-w-7xl py-4 lg:py-8 px-3 sm:px-4 grid gap-4 lg:gap-6 lg:grid-cols-[240px,1fr]">
+        <aside className="hidden lg:block lg:sticky lg:top-20 lg:self-start">
           <div className="card p-4">
             <div className="text-xs text-brand-muted uppercase tracking-wider mb-2">
               Signed in
@@ -78,7 +84,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             )}
           </nav>
         </aside>
-        <main>{children}</main>
+        <main className="min-w-0">{children}</main>
       </div>
       <Footer />
     </>
