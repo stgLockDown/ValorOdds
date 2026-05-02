@@ -27,10 +27,11 @@ function renderMarkdown(src: string): string {
   });
 }
 
-type Tab = 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'preferences';
+type Tab = 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'scores' | 'injuries' | 'players' | 'trends' | 'teams' | 'sportsbooks' | 'chat' | 'preferences';
 
 const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
   { id: 'overview',    label: 'Overview',       icon: Activity },
+  { id: 'scores',      label: 'Live Scores',    icon: Activity },
   { id: 'best-bets',  label: 'Best Bets',       icon: Star },
   { id: 'odds',       label: 'Live Odds',        icon: BarChart2 },
   { id: 'arbitrage',  label: 'Arbitrage',        icon: DollarSign, premium: true },
@@ -38,6 +39,7 @@ const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
   { id: 'injuries',   label: 'Injuries',         icon: AlertTriangle },
   { id: 'players',    label: 'Player Stats',     icon: Users },
   { id: 'trends',     label: 'Trends',           icon: TrendingUp },
+  { id: 'teams',      label: 'Team Hubs',        icon: Users },
   { id: 'sportsbooks',label: 'Sportsbooks',      icon: Shield },
   { id: 'chat',       label: 'AI Chat',          icon: MessageSquare },
   { id: 'preferences',label: 'Preferences',     icon: Settings },
@@ -522,27 +524,125 @@ function PlayerStatsTab() {
 }
 
 function TrendsTab() {
-  const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState('');
+  const [category, setCategory] = useState<'hot' | 'recommendations' | 'recent'>('hot');
+  const [data, setData] = useState<{
+    hot_trends: any[];
+    recommendations: any[];
+    recent_results: any[];
+  }>({ hot_trends: [], recommendations: [], recent_results: [] });
 
   useEffect(() => {
     setLoading(true);
     fetch(`/api/dashboard/trends?sport=${sport}&limit=30`)
-      .then(r => r.json()).then(d => setData(d.data || []))
+      .then(r => r.json())
+      .then(d => setData(d.categories || { hot_trends: [], recommendations: [], recent_results: [] }))
+      .catch(() => setData({ hot_trends: [], recommendations: [], recent_results: [] }))
       .finally(() => setLoading(false));
   }, [sport]);
+
+  const currentRows =
+    category === 'hot' ? data.hot_trends :
+    category === 'recommendations' ? data.recommendations :
+    data.recent_results;
+
+  const hasAny = data.hot_trends.length + data.recommendations.length + data.recent_results.length > 0;
+
+  const CATEGORY_TABS: { id: 'hot' | 'recommendations' | 'recent'; label: string; count: number }[] = [
+    { id: 'hot', label: '🔥 Hot Trends', count: data.hot_trends.length },
+    { id: 'recommendations', label: '🎯 Recommendations', count: data.recommendations.length },
+    { id: 'recent', label: '📜 Recent Results', count: data.recent_results.length },
+  ];
 
   return (
     <div>
       <SportFilter value={sport} onChange={setSport} />
-      {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No trend data available." /> : (
-        <div className="space-y-2">
-          {data.map((t: any, i: number) => (
+      <div className="flex flex-wrap gap-2 mb-4">
+        {CATEGORY_TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setCategory(t.id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              category === t.id
+                ? 'bg-brand-primary text-white'
+                : 'bg-brand-elevated text-brand-muted hover:text-white'
+            }`}
+          >
+            {t.label} <span className="opacity-70">({t.count})</span>
+          </button>
+        ))}
+      </div>
+
+      {loading ? <LoadingSpinner /> : !hasAny ? (
+        <EmptyState message="No trend data yet. The bot needs game results in the last 30 days to compute trends." />
+      ) : currentRows.length === 0 ? (
+        <EmptyState message={`No ${category === 'hot' ? 'hot trends' : category === 'recommendations' ? 'recommendations' : 'recent results'} for this filter.`} />
+      ) : (
+        <div className="space-y-3">
+          {category === 'hot' && currentRows.map((t: any) => (
+            <div key={t.id} className="card border-l-4 border-l-orange-500">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <Badge text={t.sport} color="bg-brand-elevated text-brand-muted" />
+                    <Badge text={t.category || t.market_type} color="bg-orange-500/20 text-orange-400" />
+                    {t.trend_direction && (
+                      <Badge
+                        text={t.trend_direction.toUpperCase()}
+                        color={/over|home|fav/i.test(t.trend_direction) ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}
+                      />
+                    )}
+                    {t.streak_current > 0 && (
+                      <Badge text={`🔥 ${t.streak_current} streak`} color="bg-red-500/20 text-red-400" />
+                    )}
+                  </div>
+                  {t.recommendation && (
+                    <p className="font-semibold text-sm mb-2">{t.recommendation}</p>
+                  )}
+                  {t.line_range && (
+                    <p className="text-xs text-brand-muted">Line range: {t.line_range}</p>
+                  )}
+                </div>
+                <div className="text-right ml-4">
+                  <p className="text-2xl font-bold text-green-400">
+                    {(parseFloat(t.hit_rate) * 100).toFixed(0)}%
+                  </p>
+                  <p className="text-xs text-brand-muted">
+                    {t.sample_size} games
+                    {t.confidence_score != null && ` · ${(parseFloat(t.confidence_score) * 100).toFixed(0)}% conf`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {category === 'recommendations' && currentRows.map((r: any) => (
+            <div key={r.id} className="card border-l-4 border-l-brand-primary">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <Badge text={r.sport} color="bg-brand-elevated text-brand-muted" />
+                <Badge text={r.badge || r.recommendation_type} color="bg-brand-primary/20 text-brand-primary" />
+                {r.confidence != null && (
+                  <Badge text={`${(parseFloat(r.confidence) * 100).toFixed(0)}% conf`} color="bg-green-500/20 text-green-400" />
+                )}
+              </div>
+              <h4 className="font-semibold text-sm mb-1">{r.title}</h4>
+              {r.description && (
+                <p className="text-xs text-brand-muted whitespace-pre-wrap leading-relaxed">
+                  {r.description}
+                </p>
+              )}
+              <p className="text-xs text-brand-muted mt-2">
+                {new Date(r.generated_at).toLocaleString()}
+              </p>
+            </div>
+          ))}
+
+          {category === 'recent' && currentRows.map((t: any, i: number) => (
             <div key={i} className="card py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <Badge text={t.sport} color="bg-brand-elevated text-brand-muted" />
                     <Badge text={t.market_type} color="bg-brand-elevated text-brand-muted" />
                     <Badge
@@ -555,6 +655,309 @@ function TrendsTab() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-brand-muted">{new Date(t.event_date).toLocaleDateString()}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// LIVE SCORES TAB
+// ----------------------------------------------------------------------------
+
+function LiveScoresTab() {
+  const [loading, setLoading] = useState(true);
+  const [sport, setSport] = useState('');
+  const [data, setData] = useState<{ live: any[]; upcoming: any[]; final: any[] }>({
+    live: [], upcoming: [], final: []
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    function load() {
+      fetch(`/api/dashboard/live-scores?sport=${sport}`)
+        .then(r => r.json())
+        .then(d => { if (!cancelled) setData(d); })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }
+    setLoading(true);
+    load();
+    // Refresh every 30s while tab is open
+    const interval = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [sport]);
+
+  const totalGames = data.live.length + data.upcoming.length + data.final.length;
+
+  return (
+    <div>
+      <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-4 mb-6">
+        <p className="text-sm text-green-400">
+          <span className="font-semibold">📡 Live Scores</span> — auto-refreshes every 30 seconds. Shows in-progress games, today's upcoming games, and finals.
+        </p>
+      </div>
+
+      <SportFilter value={sport} onChange={setSport} />
+
+      {loading ? <LoadingSpinner /> : totalGames === 0 ? (
+        <EmptyState message="No games scheduled for the current window." />
+      ) : (
+        <div className="space-y-6">
+          {data.live.length > 0 && (
+            <section>
+              <h3 className="text-sm font-semibold text-red-400 mb-3 flex items-center gap-2">
+                <span className="inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                Live Now ({data.live.length})
+              </h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                {data.live.map((g: any) => <ScoreCard key={g.game_id} game={g} variant="live" />)}
+              </div>
+            </section>
+          )}
+          {data.upcoming.length > 0 && (
+            <section>
+              <h3 className="text-sm font-semibold text-brand-muted mb-3">
+                Upcoming ({data.upcoming.length})
+              </h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                {data.upcoming.map((g: any) => <ScoreCard key={g.game_id} game={g} variant="upcoming" />)}
+              </div>
+            </section>
+          )}
+          {data.final.length > 0 && (
+            <section>
+              <h3 className="text-sm font-semibold text-brand-muted mb-3">
+                Final ({data.final.length})
+              </h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                {data.final.map((g: any) => <ScoreCard key={g.game_id} game={g} variant="final" />)}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScoreCard({ game, variant }: { game: any; variant: 'live' | 'upcoming' | 'final' }) {
+  const borderColor = variant === 'live' ? 'border-l-red-500' : variant === 'final' ? 'border-l-brand-muted' : 'border-l-brand-primary';
+  return (
+    <div className={`card border-l-4 ${borderColor}`}>
+      <div className="flex items-center justify-between mb-2">
+        <Badge text={game.sport} color="bg-brand-elevated text-brand-muted" />
+        <span className="text-xs text-brand-muted">
+          {variant === 'upcoming'
+            ? new Date(game.game_date).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+            : game.status_detail || game.status || ''}
+        </span>
+      </div>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">{game.away_team}</span>
+          {(variant === 'live' || variant === 'final') && (
+            <span className="text-lg font-bold font-mono">{game.away_score ?? 0}</span>
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">{game.home_team}</span>
+          {(variant === 'live' || variant === 'final') && (
+            <span className="text-lg font-bold font-mono">{game.home_score ?? 0}</span>
+          )}
+        </div>
+      </div>
+      {variant === 'live' && game.clock && (
+        <p className="text-xs text-red-400 mt-2 font-mono">{game.period ? `Q${game.period}` : ''} {game.clock}</p>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// TEAM HUBS TAB - per-user team following
+// ----------------------------------------------------------------------------
+
+function TeamHubsTab() {
+  const [loading, setLoading] = useState(true);
+  const [hubs, setHubs] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [addingTeam, setAddingTeam] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/dashboard/team-hubs');
+      const d = await r.json();
+      setHubs(d.hubs || []);
+      setSuggestions(d.suggestions || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function addTeam(name: string) {
+    const team = name.trim();
+    if (!team) return;
+    setSaving(true);
+    try {
+      await fetch('/api/dashboard/team-hubs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add: team }),
+      });
+      setAddingTeam('');
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeTeam(name: string) {
+    setSaving(true);
+    try {
+      await fetch('/api/dashboard/team-hubs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remove: name }),
+      });
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div>
+      <div className="rounded-xl bg-brand-primary/10 border border-brand-primary/20 p-4 mb-6">
+        <p className="text-sm text-brand-primary">
+          <span className="font-semibold">👥 Team Hubs</span> — follow your favorite teams to see their upcoming games, recent finals, and injury reports in one place. Everyone's hubs are their own.
+        </p>
+      </div>
+
+      {/* Add team */}
+      <div className="card mb-6">
+        <h3 className="text-sm font-semibold mb-3">Follow a team</h3>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={addingTeam}
+            onChange={(e) => setAddingTeam(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addTeam(addingTeam); }}
+            placeholder="Team name (e.g. Kansas City Chiefs)"
+            className="flex-1 bg-brand-elevated border border-brand-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+            disabled={saving}
+          />
+          <button
+            onClick={() => addTeam(addingTeam)}
+            disabled={saving || !addingTeam.trim()}
+            className="bg-brand-primary text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-brand-primary/90"
+          >
+            Follow
+          </button>
+        </div>
+
+        {suggestions.length > 0 && hubs.length === 0 && (
+          <div className="mt-4">
+            <p className="text-xs text-brand-muted mb-2">Popular teams:</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.slice(0, 12).map((s: any) => (
+                <button
+                  key={`${s.sport}-${s.team}`}
+                  onClick={() => addTeam(s.team)}
+                  disabled={saving}
+                  className="px-3 py-1 rounded-full text-xs bg-brand-elevated hover:bg-brand-primary hover:text-white transition-colors border border-brand-border"
+                >
+                  {s.team}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Hubs for each followed team */}
+      {hubs.length === 0 ? (
+        <EmptyState message="You're not following any teams yet. Pick one above to get started." />
+      ) : (
+        <div className="space-y-6">
+          {hubs.map((hub) => (
+            <div key={hub.team} className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold">{hub.team}</h3>
+                <button
+                  onClick={() => removeTeam(hub.team)}
+                  disabled={saving}
+                  className="text-xs text-brand-muted hover:text-red-400 transition-colors"
+                >
+                  Unfollow
+                </button>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <h4 className="text-xs font-semibold text-brand-muted mb-2 uppercase">Upcoming ({hub.upcoming.length})</h4>
+                  {hub.upcoming.length === 0 ? (
+                    <p className="text-xs text-brand-muted italic">No upcoming games</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {hub.upcoming.slice(0, 3).map((g: any) => (
+                        <div key={g.game_id} className="text-xs p-2 rounded bg-brand-elevated">
+                          <p className="font-semibold">{g.away_team} @ {g.home_team}</p>
+                          <p className="text-brand-muted mt-0.5">
+                            {new Date(g.game_date).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-semibold text-brand-muted mb-2 uppercase">Recent ({hub.recent_finals.length})</h4>
+                  {hub.recent_finals.length === 0 ? (
+                    <p className="text-xs text-brand-muted italic">No recent finals</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {hub.recent_finals.slice(0, 3).map((g: any) => (
+                        <div key={g.game_id} className="text-xs p-2 rounded bg-brand-elevated">
+                          <p className="font-semibold">
+                            {g.away_team} {g.away_score ?? '-'} — {g.home_score ?? '-'} {g.home_team}
+                          </p>
+                          <p className="text-brand-muted mt-0.5">
+                            {new Date(g.game_date).toLocaleDateString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-semibold text-brand-muted mb-2 uppercase">Injuries ({hub.injuries.length})</h4>
+                  {hub.injuries.length === 0 ? (
+                    <p className="text-xs text-brand-muted italic">No injury reports</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {hub.injuries.slice(0, 3).map((inj: any, i: number) => (
+                        <div key={i} className="text-xs p-2 rounded bg-brand-elevated">
+                          <p className="font-semibold">{inj.player_name}</p>
+                          <p className="text-brand-muted mt-0.5">
+                            {inj.status}{inj.injury_type ? ` · ${inj.injury_type}` : ''}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -916,6 +1319,7 @@ export default function DashboardClient({ user }: { user: any }) {
   function renderTab() {
     switch (activeTab) {
       case 'overview':     return <OverviewTab user={user} />;
+      case 'scores':       return <LiveScoresTab />;
       case 'best-bets':    return <BestBetsTab />;
       case 'odds':         return <OddsTab />;
       case 'arbitrage':    return isPremiumOrVip ? <ArbitrageTab /> : <LockedTab />;
@@ -923,6 +1327,7 @@ export default function DashboardClient({ user }: { user: any }) {
       case 'injuries':     return <InjuriesTab />;
       case 'players':      return <PlayerStatsTab />;
       case 'trends':       return <TrendsTab />;
+      case 'teams':        return <TeamHubsTab />;
       case 'sportsbooks':  return <SportsbooksTab />;
       case 'chat':         return <ChatClient user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />;
       case 'preferences':  return <PreferencesTab userId={user.id} />;
