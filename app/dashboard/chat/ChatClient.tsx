@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Send, Loader2, Mic, MicOff, Plus, MessageSquare, Trash2, Menu, X } from 'lucide-react';
+import Link from 'next/link';
+import { Send, Loader2, Mic, MicOff, Plus, MessageSquare, Trash2, Menu, X, ArrowLeft } from 'lucide-react';
 import type { Tier } from '@/lib/env';
 
 type Msg = { role: 'user' | 'assistant' | 'system'; content: string; pending?: boolean };
@@ -49,8 +50,17 @@ export default function ChatClient({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Start with the history sidebar CLOSED so mobile users see the chat area immediately.
+  // Desktop users can open it with the menu button.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(true);
+
+  // Open the sidebar by default on desktop (lg+) only.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    setSidebarOpen(mq.matches);
+  }, []);
   
   const scrollerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -349,9 +359,30 @@ export default function ChatClient({
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex bg-brand-bg">
-      {/* Sidebar - Chat History */}
-      <div className={`${sidebarOpen ? 'w-72' : 'w-0'} transition-all duration-300 flex-shrink-0 flex flex-col bg-brand-elevated border-r border-brand-border`}>
+    <div className="relative h-full flex bg-brand-bg">
+      {/* Mobile backdrop when sidebar is open */}
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close chat history"
+          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden fixed inset-0 z-30 bg-black/60"
+        />
+      )}
+
+      {/* Sidebar - Chat History.
+          On mobile: fixed overlay drawer (z-40), slides in/out via translate.
+          On desktop (lg+): in-flow, width-animated sidebar. */}
+      <div
+        className={`
+          fixed lg:relative inset-y-0 left-0 z-40 w-72
+          bg-brand-elevated border-r border-brand-border
+          flex flex-col flex-shrink-0
+          transition-transform duration-300
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          ${sidebarOpen ? 'lg:w-72' : 'lg:w-0 lg:border-r-0 lg:overflow-hidden'}
+        `}
+      >
         {/* Sidebar Header */}
         <div className="p-4 border-b border-brand-border">
           <button
@@ -406,7 +437,7 @@ export default function ChatClient({
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <div className="text-sm font-medium truncate">{user.email.split("@" )[0] || user.email}</div>
-              <div className="text-xs text-brand-muted.capitalize">
+              <div className="text-xs text-brand-muted capitalize">
                 {user.tier}
                 {user.discordId && ' • Discord linked'}
               </div>
@@ -416,22 +447,33 @@ export default function ChatClient({
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-brand-border">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-2 px-3 sm:px-6 py-3 sm:py-4 border-b border-brand-border">
+          <div className="flex items-center gap-2 min-w-0">
             <button
+              type="button"
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg hover:bg-brand-surface transition-colors"
+              aria-label={sidebarOpen ? 'Close chat history' : 'Open chat history'}
+              className="p-2 rounded-lg hover:bg-brand-surface transition-colors flex-shrink-0"
             >
-              {sidebarOpen ? <Menu className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <h1 className="font-semibold">
+            <h1 className="font-semibold truncate">
               {currentConversationId
                 ? conversations.find(c => c.id === currentConversationId)?.title || 'Chat'
                 : 'AI Chat'}
             </h1>
           </div>
+          {/* Close / back-to-dashboard button - lets users exit the chat easily */}
+          <Link
+            href="/dashboard"
+            aria-label="Exit chat"
+            className="flex items-center gap-1 text-sm text-brand-muted hover:text-brand-text px-2 sm:px-3 py-2 rounded-lg hover:bg-brand-surface transition-colors flex-shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Exit</span>
+          </Link>
         </div>
 
         {/* Messages */}

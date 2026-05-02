@@ -64,6 +64,7 @@ export const env = {
   discordClientId: () => optional('DISCORD_CLIENT_ID', ''),
   discordClientSecret: () => optional('DISCORD_CLIENT_SECRET', ''),
   discordGuildId: () => optional('DISCORD_GUILD_ID'),
+  discordRoleBeta: () => optional('DISCORD_ROLE_BETA'),
   discordRolePremium: () => optional('DISCORD_ROLE_PREMIUM'),
   discordRoleVip: () => optional('DISCORD_ROLE_VIP'),
 
@@ -76,8 +77,13 @@ export const env = {
   stripeSecretKey: () => readOptionalWithWarning('STRIPE_SECRET_KEY', ''),
   stripePublishableKey: optional('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'),
   stripeWebhookSecret: () => readOptionalWithWarning('STRIPE_WEBHOOK_SECRET', ''),
-  stripeProductPremium: () => optional('STRIPE_PRODUCT_PREMIUM', 'prod_UPYSeWPotixwU2'),
-  stripeProductVip: () => optional('STRIPE_PRODUCT_VIP', 'prod_UPYWwtSNL1LAqR'),
+  stripeProductPremium: () => optional('STRIPE_PRODUCT_PREMIUM', ''),
+  stripeProductVip: () => optional('STRIPE_PRODUCT_VIP', ''),
+  stripeProductBeta: () => optional('STRIPE_PRODUCT_BETA', ''),
+  // Optional hard-coded price IDs — if set, we skip the product lookup.
+  stripePricePremium: () => optional('STRIPE_PRICE_PREMIUM', ''),
+  stripePriceVip: () => optional('STRIPE_PRICE_VIP', ''),
+  stripePriceBeta: () => optional('STRIPE_PRICE_BETA', ''),
 
   // Email
   resendApiKey: () => readOptionalWithWarning('RESEND_API_KEY', ''),
@@ -104,7 +110,7 @@ export const env = {
   },
 };
 
-export type Tier = 'free' | 'premium' | 'vip';
+export type Tier = 'free' | 'beta' | 'premium' | 'vip';
 
 export function isAdmin(email: string | null | undefined): boolean {
   if (!email) return false;

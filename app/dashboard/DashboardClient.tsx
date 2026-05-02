@@ -824,6 +824,7 @@ function OverviewTab({ user }: { user: any }) {
               <Badge text={user.tier?.toUpperCase() || 'FREE'} color={
                 user.tier === 'vip' ? 'bg-yellow-500/20 text-yellow-400' :
                 user.tier === 'premium' ? 'bg-brand-primary/20 text-brand-primary' :
+                user.tier === 'beta' ? 'bg-purple-500/20 text-purple-300' :
                 'bg-brand-elevated text-brand-muted'
               } />
               {user.isAdmin && <span className="ml-2"><Badge text="ADMIN" color="bg-red-500/20 text-red-400" /></span>}
@@ -908,7 +909,9 @@ function OverviewTab({ user }: { user: any }) {
 export default function DashboardClient({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-  const isPremiumOrVip = user.tier === 'premium' || user.tier === 'vip' || user.isAdmin;
+  // Beta, Premium, and VIP users all get the full dashboard. Free users see upgrade prompts.
+  const isPaidTier = user.tier === 'beta' || user.tier === 'premium' || user.tier === 'vip' || user.isAdmin;
+  const isPremiumOrVip = isPaidTier;
 
   function renderTab() {
     switch (activeTab) {

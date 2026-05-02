@@ -1,116 +1,139 @@
-# Railway Setup Guide — Valor Odds Web Platform
+# Railway Setup — Valor Odds Web
 
-This guide walks you through configuring the Railway deployment so auth, Stripe, and Discord integration all work.
+This guide walks you through wiring the website up on Railway so Stripe checkout, auth, and the Discord bot integration all work.
 
-## Required Environment Variables
+## 1. Required environment variables (minimum viable)
 
-Set these in **Railway → your service → Variables** tab.
+Set these in **Railway → your web service → Variables** to get the site fully functional. Anything missing will surface as a clear error message in the UI (no more "Network error").
 
-### 1. Core (required for auth to work)
-
-| Variable | Example / How to get it |
-| --- | --- |
-| `NEXTAUTH_SECRET` | Run `openssl rand -base64 32` locally. Any strong random string. |
-| `NEXTAUTH_URL` | Your public URL, e.g. `https://valorodds.com` (no trailing slash). |
-| `DATABASE_URL` | Railway Postgres internal URL — click your Postgres service → Connect → "Postgres Connection URL". Use the **internal** one (reference: `${{ Postgres.DATABASE_URL }}`). |
-
-### 2. Discord OAuth (optional — enables "Continue with Discord")
-
-| Variable | How to get it |
-| --- | --- |
-| `DISCORD_CLIENT_ID` | Discord Developer Portal → Your App → OAuth2 → Client ID |
-| `DISCORD_CLIENT_SECRET` | Same page → Client Secret |
-
-Then in the Discord Dev Portal, add this **Redirect URL**:
+### Core app
 ```
-https://valorodds.com/api/auth/callback/discord
-```
-Replace with your actual Railway URL during staging.
-
-Without these, the "Continue with Discord" button is hidden automatically — the app won't crash.
-
-### 3. Stripe (optional — enables payments)
-
-| Variable | How to get it |
-| --- | --- |
-| `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys → Secret key (live or test) |
-| `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → Developers → Webhooks → Add endpoint `https://valorodds.com/api/stripe/webhook`, select these events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed` → copy the Signing secret |
-| `STRIPE_PREMIUM_PRICE_ID` | Stripe Dashboard → Products → Premium (prod_UPYSeWPotixwU2) → Pricing → copy the Price ID (starts with `price_`) |
-| `STRIPE_VIP_PRICE_ID` | Stripe Dashboard → Products → VIP (prod_UPYWwtSNL1LAqR) → Pricing → copy the Price ID |
-
-### 4. Email via Resend (optional — enables verification / receipts)
-
-| Variable | How to get it |
-| --- | --- |
-| `RESEND_API_KEY` | resend.com → API Keys → Create API Key |
-| `EMAIL_FROM` | `Valor Odds <noreply@valorodds.com>` (must be a verified sender domain in Resend) |
-
-### 5. Bot integration (optional — enables role sync + in-dashboard chat)
-
-| Variable | How to get it |
-| --- | --- |
-| `INTERNAL_API_KEY` | Any strong random string. **Must match the same var set on the bot service.** |
-| `BOT_INTERNAL_BASE_URL` | The bot's Railway internal URL, e.g. `http://${{ValorOddsDiscordBot.RAILWAY_PRIVATE_DOMAIN}}:3001` |
-
----
-
-## Database Migration
-
-After setting `DATABASE_URL`, run this **once** to create the `web_users`, `web_subscriptions`, `web_usage_events`, `web_stripe_events`, and `tokens` tables.
-
-From your local machine:
-```bash
-# Pull the DATABASE_URL from Railway (Railway CLI: railway variables)
-psql "$DATABASE_URL" -f db/migrations/001_web_platform.sql
+NODE_ENV=production
+NEXT_PUBLIC_APP_URL=https://valorodds.com           # your production URL
+NEXT_PUBLIC_APP_NAME=Valor Odds
 ```
 
-Or use Railway's built-in database UI (Data tab → Query) and paste the contents of `db/migrations/001_web_platform.sql`.
+### Database (shared with Discord bot)
+```
+DATABASE_URL=postgresql://…
+```
+
+### NextAuth
+```
+NEXTAUTH_SECRET=<run `openssl rand -base64 32`>
+NEXTAUTH_URL=https://valorodds.com
+```
+
+### Stripe (THE FIX for "Network error")
+The pricing page shows **"Network error"** when the checkout API can't find Stripe credentials. Set:
+
+```
+STRIPE_SECRET_KEY=sk_live_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...     # from your Stripe Dashboard webhook endpoint
+
+# Launch tier (required for Beta Access button on /pricing)
+STRIPE_PRICE_BETA=price_...         # $10.59/month beta access
+
+# Optional — only needed if those buttons are enabled on pricing page
+STRIPE_PRICE_PREMIUM=price_...      # $29/month
+STRIPE_PRICE_VIP=price_...          # $79/month
+```
+
+**Recommendation**: use `STRIPE_PRICE_<TIER>` (exact price ID) instead of `STRIPE_PRODUCT_<TIER>` (requires a lookup). It's faster and avoids picking the wrong price when a product has multiple.
+
+### Discord OAuth + role sync
+```
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_GUILD_ID=
+DISCORD_ROLE_BETA=
+DISCORD_ROLE_PREMIUM=
+DISCORD_ROLE_VIP=
+```
+
+### Bot bridge
+```
+INTERNAL_API_KEY=<same value as set on the Discord bot side>
+BOT_API_BASE_URL=https://valoroddsdiscordbot-production.up.railway.app
+```
+
+### Email (for password reset)
+```
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL="Valor Odds <noreply@valorodds.com>"
+```
+
+### Admin access
+```
+ADMIN_EMAILS=you@example.com,teammate@example.com
+```
 
 ---
 
-## Graceful Degradation
+## 2. Create the Stripe "Beta Access" product
 
-The app is designed to boot even without any env vars set:
+1. Go to https://dashboard.stripe.com/products
+2. Click **+ Add product**
+3. Name: `Valor Odds Beta Access`
+4. Pricing: **Recurring**, `$10.59 USD / month`
+   * The odd price covers Stripe's fee (~2.9% + 30¢ on $10 → ~$0.59)
+5. Save → copy the **price ID** (starts with `price_`)
+6. Paste as `STRIPE_PRICE_BETA` in Railway
 
-| Missing var | What happens |
+Repeat for Premium ($29) and VIP ($79) if you want those tiers live too.
+
+---
+
+## 3. Configure the Stripe webhook
+
+1. https://dashboard.stripe.com/webhooks → **+ Add endpoint**
+2. Endpoint URL: `https://valorodds.com/api/stripe/webhook`
+3. Listen for these events:
+   * `checkout.session.completed`
+   * `customer.subscription.created`
+   * `customer.subscription.updated`
+   * `customer.subscription.deleted`
+   * `invoice.payment_succeeded`
+   * `invoice.payment_failed`
+4. After creation, copy the **Signing secret** (starts with `whsec_`) and set it as `STRIPE_WEBHOOK_SECRET`
+
+---
+
+## 4. Run database migrations
+
+On first deploy (or when a new migration is added), connect to Railway Postgres and run:
+
+```sql
+-- Main schema
+\i db/migrations/001_web_platform.sql
+\i db/migrations/002_user_preferences.sql
+\i db/migrations/003_web_chat_history.sql
+
+-- NEW: adds 'beta' tier to web_subscriptions.tier check constraint
+\i db/migrations/004_add_beta_tier.sql
+```
+
+Or via `railway run psql $DATABASE_URL -f db/migrations/004_add_beta_tier.sql` locally.
+
+---
+
+## 5. Smoke-test checkout
+
+1. Sign up with a test email on `/auth/signup`
+2. Go to `/pricing`
+3. Click **Join Beta**. You should be redirected to Stripe Checkout.
+4. If you see a red error banner ("Billing is not configured yet", etc.) → check the Railway logs for the exact missing env var.
+
+---
+
+## 6. Troubleshooting
+
+| Symptom on site | Likely cause |
 | --- | --- |
-| `NEXTAUTH_SECRET` | Warning logged; sessions won't persist but the app renders. |
-| `DATABASE_URL` | Sign-up returns a friendly 503 ("database not configured"); read-only pages still render. |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | Discord button is hidden entirely. Email auth still works. |
-| `STRIPE_SECRET_KEY` | Checkout buttons return a 503. Marketing pages still render. |
-| `RESEND_API_KEY` | Verification emails silently skipped; account still created and usable. |
+| "Billing is not configured yet" | `STRIPE_SECRET_KEY` is missing in Railway |
+| "Unable to load pricing for the beta tier" | Neither `STRIPE_PRICE_BETA` nor `STRIPE_PRODUCT_BETA` is set |
+| "Checkout failed (HTTP 500)" | Check Railway logs for the real error (often DB not reachable) |
+| "You must be signed in to start checkout" | User hit `/api/stripe/checkout` without an active session |
 
-So you can deploy incrementally — set `NEXTAUTH_SECRET` + `DATABASE_URL` first, verify email auth works, then layer on Discord OAuth, then Stripe, etc.
-
----
-
-## Minimum-Viable First Deploy Checklist
-
-- [ ] Set `NEXTAUTH_SECRET` (run `openssl rand -base64 32`)
-- [ ] Set `NEXTAUTH_URL` to your Railway public URL
-- [ ] Attach a Postgres service and set `DATABASE_URL` to `${{ Postgres.DATABASE_URL }}`
-- [ ] Run `db/migrations/001_web_platform.sql` against the Postgres instance
-- [ ] Trigger a redeploy (push any commit to `main`, or Railway → Redeploy)
-- [ ] Visit `/auth/signup`, create a test account, confirm you land on the dashboard
-
-Once that works, add Discord OAuth and Stripe in any order.
-
----
-
-## Troubleshooting
-
-**Healthcheck keeps failing after deploy**
-- Check deploy logs for `[env] WARNING:` lines — those tell you which env vars are missing.
-- The app boots without env vars, so the only hard crash would be a syntax error or missing dependency. Run `npm run build` locally to reproduce.
-
-**"Continue with Discord" button missing**
-- Means `DISCORD_CLIENT_ID` or `DISCORD_CLIENT_SECRET` is unset. Check Railway vars and redeploy.
-
-**Sign-up returns "database not configured"**
-- `DATABASE_URL` isn't set or isn't reachable. Verify by running `railway run psql $DATABASE_URL -c "select 1"`.
-
-**Sign-in says "Invalid credentials" even for a fresh account**
-- The `web_users` table likely doesn't exist yet — run the migration `db/migrations/001_web_platform.sql`.
-
-**Stripe webhook 400s**
-- The `STRIPE_WEBHOOK_SECRET` doesn't match the endpoint in Stripe. Regenerate on the Stripe side and update the Railway var.
+All server-side errors now log to stderr with the `[stripe/checkout]` prefix so they're easy to grep in the Railway log stream.
