@@ -113,6 +113,23 @@ const nextConfig = {
         headers: securityHeaders,
       },
 
+      // Embeddable widgets — explicitly allow cross-origin iframe embedding.
+      // The whole point of /widgets/* is to be embedded on partner sites,
+      // so we override X-Frame-Options (SAMEORIGIN would block the embed)
+      // and set a permissive frame-ancestors. Everything else (XSS
+      // protection, MIME sniff, referrer policy) stays locked down.
+      {
+        source: '/widgets/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'ALLOWALL' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors *; default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; script-src 'self';" },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Cache-Control', value: 'public, max-age=120, s-maxage=120, stale-while-revalidate=300' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+        ],
+      },
+
       // Static assets — filenames are content-hashed so `immutable` is safe.
       {
         source: '/_next/static/:path*',
