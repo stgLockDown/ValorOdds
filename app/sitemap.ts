@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { SITE, SPORTS, MARKETS } from '@/lib/seo';
+import { allArticleMeta } from '@/components/learn/manifest';
 
 /**
  * Next.js App Router sitemap generator.
@@ -64,5 +65,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
   ];
 
-  return [...staticRoutes, ...sportHubs, ...sportMarketPages, ...arbitrageHubs];
+  const articleRoutes: MetadataRoute.Sitemap = allArticleMeta().map((a) => ({
+    url: `${SITE.url}/learn/${a.slug}`,
+    lastModified: new Date(a.updated || a.published),
+    changeFrequency: 'monthly' as const,
+    priority: 0.7,
+  }));
+
+  return [
+    ...staticRoutes,
+    ...sportHubs,
+    ...sportMarketPages,
+    ...arbitrageHubs,
+    ...articleRoutes,
+  ];
 }

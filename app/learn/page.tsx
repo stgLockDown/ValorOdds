@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { buildMetadata, breadcrumbJsonLd, canonical } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
+import { allArticles } from '@/components/learn';
 
 export const metadata: Metadata = buildMetadata({
   title: 'Learn — Sports Betting Guides, Strategy & Glossary',
@@ -19,71 +20,8 @@ export const metadata: Metadata = buildMetadata({
   ],
 });
 
-/**
- * Seed topic list. Articles themselves live at /learn/[slug] (see PR #3).
- * This landing page is intentionally hand-curated so it can be edited
- * by humans without a CMS until content cadence justifies one.
- */
-const TOPICS: { slug: string; title: string; summary: string; cat: string }[] = [
-  {
-    slug: 'what-is-arbitrage-betting',
-    title: 'What is arbitrage betting?',
-    summary:
-      'The complete guide to arb betting: how it works, example math, and how sharp bettors use it to lock in risk-free profit.',
-    cat: 'Arbitrage',
-  },
-  {
-    slug: 'positive-ev-betting-explained',
-    title: 'Positive EV (+EV) betting explained',
-    summary:
-      'Why expected value matters more than win rate, how to calculate it, and how to find +EV bets consistently.',
-    cat: 'Strategy',
-  },
-  {
-    slug: 'closing-line-value-clv',
-    title: 'Closing line value (CLV) — the sharp bettor KPI',
-    summary:
-      'How professional bettors measure long-term edge with CLV, and why sportsbooks track it too.',
-    cat: 'Strategy',
-  },
-  {
-    slug: 'kelly-criterion-bet-sizing',
-    title: 'Kelly criterion and bet sizing',
-    summary:
-      'Full Kelly, fractional Kelly, and why most sharps don’t bet full Kelly. With an interactive calculator.',
-    cat: 'Bankroll',
-  },
-  {
-    slug: 'player-props-edge',
-    title: 'Finding edge in player props',
-    summary:
-      'How to find mispriced player props using projections, defensive matchups, and lineup news.',
-    cat: 'Props',
-  },
-  {
-    slug: 'mlb-betting-guide',
-    title: 'MLB betting: a beginner-to-sharp guide',
-    summary:
-      'Moneyline, F5, run lines, and the most +EV MLB markets. With weather, umpire, and pitcher notes.',
-    cat: 'MLB',
-  },
-  {
-    slug: 'nfl-betting-guide',
-    title: 'NFL betting guide',
-    summary:
-      'Spreads, totals, teasers, correlated parlays, and how to beat the public in the NFL market.',
-    cat: 'NFL',
-  },
-  {
-    slug: 'nba-betting-guide',
-    title: 'NBA betting guide',
-    summary:
-      'Pace, injury-driven line movement, and why NBA totals offer structural value.',
-    cat: 'NBA',
-  },
-];
-
 export default function LearnHubPage() {
+  const articles = allArticles();
   return (
     <>
       <JsonLd
@@ -106,15 +44,20 @@ export default function LearnHubPage() {
         </header>
 
         <section className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {TOPICS.map((t) => (
+          {articles.map((a) => (
             <Link
-              key={t.slug}
-              href={`/learn/${t.slug}`}
+              key={a.slug}
+              href={`/learn/${a.slug}`}
               className="block rounded-xl border border-brand-border bg-brand-surface p-5 hover:border-brand-accent transition-colors"
             >
-              <div className="text-xs uppercase tracking-wider text-brand-accent">{t.cat}</div>
-              <h2 className="mt-2 text-lg font-bold">{t.title}</h2>
-              <p className="mt-2 text-sm text-brand-muted">{t.summary}</p>
+              <div className="text-xs uppercase tracking-wider text-brand-accent">
+                {a.category}
+              </div>
+              <h2 className="mt-2 text-lg font-bold">{a.title}</h2>
+              <p className="mt-2 text-sm text-brand-muted">{a.description}</p>
+              <div className="mt-3 text-xs text-brand-muted">
+                {a.readingMinutes} min read
+              </div>
             </Link>
           ))}
         </section>
