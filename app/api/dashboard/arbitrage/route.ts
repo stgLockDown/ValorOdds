@@ -5,33 +5,97 @@ import { query } from '@/lib/db';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Live arbitrage opportunities for the dashboard.
+ *
+ * Data source: `custom_api_compare` (written by the Discord bot's
+ * `custom_api_scheduler.js` every 60s). The legacy `arbitrage_opportunities`
+ * table is a separate ingest path that has been dormant since 2026-03-14;
+ * we read from `custom_api_compare` so the website matches what the bot
+ * is posting in Discord.
+ *
+ * Each row in `custom_api_compare` already exposes:
+ *   sport, home_team, away_team, best_home_odds, best_home_book,
+ *   best_away_odds, best_away_book, profit_percentage, is_arbitrage,
+ *   raw_data (JSON: full per-book breakdown), fetched_at
+ *
+ * We expose the website-facing shape used by `DashboardClient.tsx` so
+ * existing UI code keeps working.
+ */
 export async function GET(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const { searchParams } = new URL(req.url);
-  const sport = searchParams.get('sport') || '';
+  const sport = (searchParams.get('sport') || '').trim();
   const minProfit = parseFloat(searchParams.get('min_profit') || '0');
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
-
-  const params: any[] = [minProfit, limit];
-  const sportFilter = sport ? `AND UPPER(sport) = UPPER($3)` : '';
-  if (sport) params.push(sport);
-
-  const result = await query(
-    `SELECT id, sport, home_team, away_team, commence_time,
-            market_type, market_name,
-            side1_bookmaker, side1_selection, side1_odds, side1_stake,
-            side2_bookmaker, side2_selection, side2_odds, side2_stake,
-            profit_percentage, guaranteed_profit, is_us_only, detected_at
-     FROM arbitrage_opportunities
-     WHERE profit_percentage >= $1
-       ${sportFilter}
-       AND commence_time > NOW()
-     ORDER BY profit_percentage DESC
-     LIMIT $2`,
-    params
+  const limit = Math.min(
+    Math.max(1, parseInt(searchParams.get('limit') || '20', 10)),
+    100,
   );
 
-  return NextResponse.json({ data: result.rows });
+  const params: any[] = [minProfit, limit];
+  let sportFilter = '';
+  if (sport) {
+    params.push(sport);
+    sportFilter = `AND UPPER(sport) = UPPER($${params.length})`;
+  }
+
+  // Only consider rows fetched recently — the bot refreshes every ~60s,
+  // so 10 minutes is a generous freshness window. This prevents stale
+  // pre-game arbs from haunting the dashboard if the bot pauses.
+  const result = await query(
+    `SELECT id, sport, home_team, away_team,
+            best_home_odds, best_home_book,
+            best_away_odds, best_away_book,
+            profit_percentage, implied_total,
+            is_arbitrage, raw_data, fetched_at
+     FROM custom_api_compare
+     WHERE is_arbitrage = TRUE
+       AND profit_percentage >= $1
+       AND fetched_at > NOW() - INTERVAL '10 minutes'
+       ${sportFilter}
+     ORDER BY profit_percentage DESC NULLS LAST
+     LIMIT $2`,
+    params,
+  );
+
+  // Map to the website-facing shape used by the dashboard. We mimic the old
+  // `arbitrage_opportunities` columns so DashboardClient.tsx can render
+  // both sources interchangeably during the cutover.
+  const data = result.rows.map((r: any) => {
+    const raw = (() => {
+      try {
+        return typeof r.raw_data === 'string' ? JSON.parse(r.raw_data) : r.raw_data;
+      } catch {
+        return null;
+      }
+    })();
+    const startTime = raw?.start_time ?? raw?.commence_time ?? null;
+    return {
+      id: r.id,
+      sport: r.sport,
+      home_team: r.home_team,
+      away_team: r.away_team,
+      commence_time: startTime,
+      market_type: 'h2h',
+      market_name: 'Moneyline',
+      side1_bookmaker: r.best_home_book,
+      side1_selection: r.home_team,
+      side1_odds: r.best_home_odds,
+      side1_stake: null,
+      side2_bookmaker: r.best_away_book,
+      side2_selection: r.away_team,
+      side2_odds: r.best_away_odds,
+      side2_stake: null,
+      profit_percentage: Number(r.profit_percentage),
+      guaranteed_profit: null,
+      is_us_only: null,
+      detected_at: r.fetched_at,
+    };
+  });
+
+  return NextResponse.json({ data });
 }
