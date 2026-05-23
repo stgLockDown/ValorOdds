@@ -87,13 +87,21 @@ export default function PricingCards({ isAuthenticated }: { isAuthenticated: boo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier }),
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
       if (data?.url) {
         window.location.href = data.url;
-      } else {
-        alert(data?.error || 'Checkout failed');
-        setLoadingTier(null);
+        return;
       }
+      // Surface the server's friendly message verbatim. 503s from
+      // /api/stripe/checkout when Stripe is unconfigured land here.
+      const msg =
+        data?.detail ||
+        data?.error ||
+        (resp.status === 503
+          ? 'Billing is temporarily unavailable. Please try again shortly.'
+          : 'Checkout failed. Please try again.');
+      alert(msg);
+      setLoadingTier(null);
     } catch (err) {
       alert('Network error. Please try again.');
       setLoadingTier(null);

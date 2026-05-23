@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
-import { getStripe, tierFromProductId } from '@/lib/stripe';
+import { getStripe, tierFromProductId, isStripeConfigured } from '@/lib/stripe';
 import { env, type Tier } from '@/lib/env';
 import { query, queryOne } from '@/lib/db';
 import {
@@ -22,6 +22,16 @@ export const dynamic = 'force-dynamic';
 
 // Next.js parses JSON by default; we need the raw body for Stripe signature verification.
 export async function POST(req: Request) {
+  // Stripe webhooks should never be hit on a deployment without Stripe
+  // configured — return 503 so Stripe stops retrying instead of getting
+  // a 500 spam loop.
+  if (!isStripeConfigured()) {
+    return NextResponse.json(
+      { error: 'Stripe not configured on this deployment' },
+      { status: 503 },
+    );
+  }
+
   const sig = req.headers.get('stripe-signature');
   if (!sig) return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
 

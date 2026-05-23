@@ -10,6 +10,41 @@ const DiscordIcon = () => (
   </svg>
 );
 
+/**
+ * Map NextAuth `?error=...` query params to friendly user-facing messages.
+ * NextAuth surfaces a wide variety of error codes (CredentialsSignin,
+ * OAuthAccountNotLinked, InvalidProvider, Callback, OAuthCallback,
+ * Configuration, AccessDenied, Verification, …). Anything we don't recognise
+ * falls through to a generic message instead of leaking the raw code.
+ */
+function mapAuthError(code?: string): string | null {
+  if (!code) return null;
+  switch (code) {
+    case 'OAuthAccountNotLinked':
+      return 'An account already exists with this email. Please sign in with your password.';
+    case 'CredentialsSignin':
+      return 'Invalid email or password.';
+    case 'InvalidProvider':
+      // Discord OAuth got disabled mid-session, or someone hit the callback URL
+      // directly. Don't expose the internal code.
+      return 'That sign-in method is currently unavailable. Please use email and password.';
+    case 'OAuthCallback':
+    case 'OAuthSignin':
+    case 'Callback':
+      return 'We could not complete sign-in with that provider. Please try again or use email and password.';
+    case 'Configuration':
+      return 'Sign-in is temporarily unavailable. Please try again in a few minutes.';
+    case 'AccessDenied':
+      return 'Access denied. If you think this is a mistake, contact support.';
+    case 'Verification':
+      return 'That sign-in link has expired or has already been used.';
+    case 'SessionRequired':
+      return 'Please sign in to continue.';
+    default:
+      return 'Sign-in failed. Please try again.';
+  }
+}
+
 export default function SignInForm({
   callbackUrl,
   initialError,
@@ -19,13 +54,7 @@ export default function SignInForm({
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(
-    initialError === 'OAuthAccountNotLinked'
-      ? 'An account already exists with this email. Please sign in with your password.'
-      : initialError === 'CredentialsSignin'
-      ? 'Invalid email or password.'
-      : initialError ?? null,
-  );
+  const [error, setError] = useState<string | null>(mapAuthError(initialError));
   const [loading, setLoading] = useState<null | 'creds' | 'discord'>(null);
   const [discordEnabled, setDiscordEnabled] = useState<boolean | null>(null);
 
