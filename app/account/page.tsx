@@ -3,6 +3,7 @@ import Footer from '@/components/Footer';
 import { auth } from '@/lib/auth';
 import { queryOne } from '@/lib/db';
 import { getActiveSubscriptionForUser } from '@/lib/subscriptions';
+import { isStripeConfigured } from '@/lib/stripe';
 import ManageBillingButton from './ManageBillingButton';
 import Link from 'next/link';
 
@@ -24,6 +25,7 @@ export default async function AccountPage({ searchParams }: { searchParams: { ch
   );
 
   const sub = await getActiveSubscriptionForUser(user.id, user.discordId ?? null);
+  const billingAvailable = isStripeConfigured();
 
   return (
     <>
@@ -94,14 +96,26 @@ export default async function AccountPage({ searchParams }: { searchParams: { ch
                 </p>
               )}
               <div className="mt-4 flex gap-3 flex-wrap">
-                <ManageBillingButton />
+                {billingAvailable ? (
+                  <ManageBillingButton />
+                ) : (
+                  <span className="text-xs text-brand-muted">
+                    Billing portal is temporarily unavailable. Contact support to make changes.
+                  </span>
+                )}
                 <Link href="/pricing" className="btn-secondary">Change plan</Link>
               </div>
             </>
           ) : (
             <div className="mt-4">
-              <p className="text-sm text-brand-muted">You're currently on the Free tier.</p>
-              <Link href="/pricing" className="btn-primary mt-3">Upgrade</Link>
+              <p className="text-sm text-brand-muted">You&apos;re currently on the Free tier.</p>
+              {billingAvailable ? (
+                <Link href="/pricing" className="btn-primary mt-3">Upgrade</Link>
+              ) : (
+                <p className="text-xs text-brand-muted mt-3">
+                  Upgrades are temporarily unavailable while we finalize billing. Check back shortly.
+                </p>
+              )}
             </div>
           )}
         </div>

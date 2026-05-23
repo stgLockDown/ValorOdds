@@ -1,5 +1,14 @@
 /**
  * Stripe SDK wrapper. Also resolves active price IDs from product IDs on first use.
+ *
+ * Hardening notes (production fix):
+ *  - `getStripe()` no longer constructs `new Stripe('')` when STRIPE_SECRET_KEY
+ *    is missing. The Stripe SDK throws "Neither apiKey nor config.authenticator
+ *    provided" with a stack that's hostile to debug. We instead throw a
+ *    typed `StripeNotConfiguredError` that callers can catch and turn into
+ *    a clean 503.
+ *  - `isStripeConfigured()` lets server components / pages render a
+ *    friendly empty state instead of crashing the route.
  */
 import Stripe from 'stripe';
 import { env, type Tier } from './env';
@@ -11,7 +20,35 @@ declare global {
   var __stripePriceCache: { premium?: string; vip?: string; fetchedAt?: number } | undefined;
 }
 
+export class StripeNotConfiguredError extends Error {
+  constructor() {
+    super(
+      'Stripe is not configured on this deployment. Set STRIPE_SECRET_KEY in the ' +
+        'environment to enable checkout, billing portal, and subscription features.',
+    );
+    this.name = 'StripeNotConfiguredError';
+  }
+}
+
+/**
+ * True iff a usable Stripe secret key is present. Cheap — does not construct
+ * the SDK. Use this in server components to decide whether to render a
+ * Stripe-dependent UI block.
+ */
+export function isStripeConfigured(): boolean {
+  const key = env.stripeSecretKey();
+  return typeof key === 'string' && key.startsWith('sk_') && key.length > 20;
+}
+
+/**
+ * Get (or create) the singleton Stripe client. Throws StripeNotConfiguredError
+ * if the secret key is missing or obviously a placeholder. Callers in API
+ * routes should catch this and return 503 with a clean error body.
+ */
 export function getStripe(): Stripe {
+  if (!isStripeConfigured()) {
+    throw new StripeNotConfiguredError();
+  }
   if (!global.__stripe) {
     global.__stripe = new Stripe(env.stripeSecretKey(), {
       apiVersion: '2025-02-24.acacia' as Stripe.StripeConfig['apiVersion'],

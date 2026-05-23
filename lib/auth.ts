@@ -184,8 +184,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   pages: {
     signIn: '/auth/signin',
+    error: '/auth/signin',
   },
   providers,
+  // Demote expected/user-actionable auth errors from console.error to console.warn
+  // so production logs aren't drowned in stack traces for normal events like
+  // "user typed wrong password" or "Discord OAuth got disabled".
+  logger: {
+    error(error) {
+      const name = (error as any)?.name ?? '';
+      const code = (error as any)?.code ?? '';
+      const msg = (error as any)?.message ?? String(error);
+      // Known benign / user-actionable errors — log compact warning, no stack.
+      if (
+        name === 'CredentialsSignin' ||
+        name === 'CallbackRouteError' ||
+        name === 'InvalidProvider' ||
+        code === 'credentials' ||
+        msg.includes('InvalidProvider') ||
+        msg.includes('CredentialsSignin')
+      ) {
+        console.warn(`[auth] ${name || 'AuthError'}: ${msg}`);
+        return;
+      }
+      console.error('[auth]', error);
+    },
+    warn(code) {
+      console.warn(`[auth] ${code}`);
+    },
+    debug() {
+      /* silent in prod */
+    },
+  },
   callbacks: {
     async signIn({ user, account, profile }) {
       if (account?.provider === 'discord' && profile) {
