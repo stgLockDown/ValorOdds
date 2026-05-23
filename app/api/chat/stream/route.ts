@@ -33,18 +33,23 @@ async function getContext(message: string): Promise<string> {
       ).join('\n\n'));
     }
 
-    // Live arbitrage
+    // Live arbitrage — read from custom_api_compare (the table the bot actually
+    // writes to every 60s). The legacy arbitrage_opportunities table has been
+    // dormant since 2026-03-14.
     const arbs = await query(
-      `SELECT sport, home_team, away_team, side1_bookmaker, side1_selection, side1_odds,
-              side2_bookmaker, side2_selection, side2_odds, profit_percentage
-       FROM arbitrage_opportunities
-       WHERE detected_at > NOW() - INTERVAL '24 hours'
-       ORDER BY profit_percentage DESC LIMIT 5`,
+      `SELECT sport, home_team, away_team,
+              best_home_book, best_home_odds,
+              best_away_book, best_away_odds,
+              profit_percentage
+       FROM custom_api_compare
+       WHERE is_arbitrage = TRUE
+         AND fetched_at > NOW() - INTERVAL '35 minutes'
+       ORDER BY profit_percentage DESC NULLS LAST LIMIT 5`,
       []
     );
     if (arbs.rows.length > 0) {
       parts.push('## Live Arbitrage\n' + arbs.rows.map((r: any) =>
-        `${r.sport}: ${r.home_team} vs ${r.away_team} | ${r.side1_bookmaker} ${r.side1_selection} @ ${r.side1_odds} + ${r.side2_bookmaker} ${r.side2_selection} @ ${r.side2_odds} = ${r.profit_percentage}% profit`
+        `${(r.sport || '').toUpperCase()}: ${r.home_team} vs ${r.away_team} | ${r.best_home_book} ${r.home_team} @ ${r.best_home_odds} + ${r.best_away_book} ${r.away_team} @ ${r.best_away_odds} = ${Number(r.profit_percentage).toFixed(2)}% profit`
       ).join('\n'));
     }
 

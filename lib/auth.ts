@@ -133,7 +133,10 @@ if (isDiscordConfigured()) {
     }),
   );
 } else if (process.env.NEXT_PHASE !== 'phase-production-build') {
-  console.error(
+  // Informational, not an error: app boots fine without Discord OAuth, only
+  // email/password sign-in is exposed. Use console.warn so Railway doesn't
+  // colour it red and trigger error-monitoring alerts.
+  console.warn(
     '[auth] Discord OAuth disabled: DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET not set. ' +
       'Email/password sign-in still works.',
   );
