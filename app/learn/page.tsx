@@ -1,0 +1,139 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
+import { buildMetadata, breadcrumbJsonLd, canonical } from '@/lib/seo';
+import { JsonLd } from '@/components/JsonLd';
+
+export const metadata: Metadata = buildMetadata({
+  title: 'Learn — Sports Betting Guides, Strategy & Glossary',
+  description:
+    'Learn sports betting the right way. Free guides on arbitrage, +EV betting, closing line value, Kelly staking, player props, and sport-specific strategy for MLB, NFL, NBA, NHL, soccer, and UFC.',
+  path: '/learn',
+  keywords: [
+    'sports betting strategy',
+    'arbitrage betting guide',
+    'positive ev explained',
+    'closing line value',
+    'how to bet sports',
+  ],
+});
+
+/**
+ * Seed topic list. Articles themselves live at /learn/[slug] (see PR #3).
+ * This landing page is intentionally hand-curated so it can be edited
+ * by humans without a CMS until content cadence justifies one.
+ */
+const TOPICS: { slug: string; title: string; summary: string; cat: string }[] = [
+  {
+    slug: 'what-is-arbitrage-betting',
+    title: 'What is arbitrage betting?',
+    summary:
+      'The complete guide to arb betting: how it works, example math, and how sharp bettors use it to lock in risk-free profit.',
+    cat: 'Arbitrage',
+  },
+  {
+    slug: 'positive-ev-betting-explained',
+    title: 'Positive EV (+EV) betting explained',
+    summary:
+      'Why expected value matters more than win rate, how to calculate it, and how to find +EV bets consistently.',
+    cat: 'Strategy',
+  },
+  {
+    slug: 'closing-line-value-clv',
+    title: 'Closing line value (CLV) — the sharp bettor KPI',
+    summary:
+      'How professional bettors measure long-term edge with CLV, and why sportsbooks track it too.',
+    cat: 'Strategy',
+  },
+  {
+    slug: 'kelly-criterion-bet-sizing',
+    title: 'Kelly criterion and bet sizing',
+    summary:
+      'Full Kelly, fractional Kelly, and why most sharps don’t bet full Kelly. With an interactive calculator.',
+    cat: 'Bankroll',
+  },
+  {
+    slug: 'player-props-edge',
+    title: 'Finding edge in player props',
+    summary:
+      'How to find mispriced player props using projections, defensive matchups, and lineup news.',
+    cat: 'Props',
+  },
+  {
+    slug: 'mlb-betting-guide',
+    title: 'MLB betting: a beginner-to-sharp guide',
+    summary:
+      'Moneyline, F5, run lines, and the most +EV MLB markets. With weather, umpire, and pitcher notes.',
+    cat: 'MLB',
+  },
+  {
+    slug: 'nfl-betting-guide',
+    title: 'NFL betting guide',
+    summary:
+      'Spreads, totals, teasers, correlated parlays, and how to beat the public in the NFL market.',
+    cat: 'NFL',
+  },
+  {
+    slug: 'nba-betting-guide',
+    title: 'NBA betting guide',
+    summary:
+      'Pace, injury-driven line movement, and why NBA totals offer structural value.',
+    cat: 'NBA',
+  },
+];
+
+export default function LearnHubPage() {
+  return (
+    <>
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', url: canonical('/') },
+          { name: 'Learn', url: canonical('/learn') },
+        ])}
+      />
+      <Navbar />
+      <main className="container-px mx-auto max-w-6xl py-16">
+        <header className="max-w-3xl">
+          <div className="text-xs uppercase tracking-widest text-brand-accent">Learn</div>
+          <h1 className="mt-2 text-4xl sm:text-5xl font-extrabold">
+            Sports betting guides, strategy & glossary
+          </h1>
+          <p className="mt-4 text-brand-muted text-lg">
+            Free, in-depth guides written for bettors who want to move from casual to sharp. No
+            fluff, no affiliate spam — just the math, the edges, and the mistakes to avoid.
+          </p>
+        </header>
+
+        <section className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {TOPICS.map((t) => (
+            <Link
+              key={t.slug}
+              href={`/learn/${t.slug}`}
+              className="block rounded-xl border border-brand-border bg-brand-surface p-5 hover:border-brand-accent transition-colors"
+            >
+              <div className="text-xs uppercase tracking-wider text-brand-accent">{t.cat}</div>
+              <h2 className="mt-2 text-lg font-bold">{t.title}</h2>
+              <p className="mt-2 text-sm text-brand-muted">{t.summary}</p>
+            </Link>
+          ))}
+        </section>
+
+        <aside className="mt-16 rounded-2xl border border-brand-border bg-brand-surface p-6 sm:p-8">
+          <h2 className="text-2xl font-bold">Glossary of betting terms</h2>
+          <p className="mt-2 text-brand-muted">
+            Every term a sharp bettor actually uses — arbitrage, CLV, EV, juice, steam, middle,
+            limit, and more.
+          </p>
+          <Link
+            href="/learn/glossary"
+            className="mt-4 inline-flex items-center gap-2 text-brand-accent font-semibold hover:underline"
+          >
+            Open the glossary →
+          </Link>
+        </aside>
+      </main>
+      <Footer />
+    </>
+  );
+}

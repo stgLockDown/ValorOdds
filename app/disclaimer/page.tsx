@@ -1,5 +1,13 @@
+import type { Metadata } from 'next';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { buildMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildMetadata({
+  title: 'Disclaimer & Responsible Betting',
+  description: 'Valor Odds responsible betting disclaimer. Sports betting involves risk. Never bet more than you can afford to lose.',
+  path: '/disclaimer',
+});
 
 export default function DisclaimerPage() {
   return (

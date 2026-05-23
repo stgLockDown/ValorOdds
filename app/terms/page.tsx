@@ -1,5 +1,13 @@
+import type { Metadata } from 'next';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { buildMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildMetadata({
+  title: 'Terms of Service',
+  description: 'Valor Odds Terms of Service. Read the terms that govern your use of valorodds.com and our Discord services.',
+  path: '/terms',
+});
 
 export default function TermsPage() {
   return (
