@@ -43,7 +43,7 @@ async function getContext(message: string): Promise<string> {
               profit_percentage
        FROM custom_api_compare
        WHERE is_arbitrage = TRUE
-         AND fetched_at > NOW() - INTERVAL '10 minutes'
+         AND fetched_at > NOW() - INTERVAL '35 minutes'
        ORDER BY profit_percentage DESC NULLS LAST LIMIT 5`,
       []
     );

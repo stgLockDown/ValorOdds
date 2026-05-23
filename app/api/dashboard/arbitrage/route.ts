@@ -43,9 +43,12 @@ export async function GET(req: Request) {
     sportFilter = `AND UPPER(sport) = UPPER($${params.length})`;
   }
 
-  // Only consider rows fetched recently — the bot refreshes every ~60s,
-  // so 10 minutes is a generous freshness window. This prevents stale
-  // pre-game arbs from haunting the dashboard if the bot pauses.
+  // Only consider rows from the most recent scheduler cycle. The bot's
+  // `custom_api_scheduler.js` runs every 30 minutes (1800s, configured in
+  // unified_server.js), so we use a 35-minute window to ensure we always
+  // catch the latest cycle plus a small jitter buffer. Going tighter than
+  // the scheduler period would leave the dashboard empty for most of each
+  // 30-minute cycle.
   const result = await query(
     `SELECT id, sport, home_team, away_team,
             best_home_odds, best_home_book,
@@ -55,7 +58,7 @@ export async function GET(req: Request) {
      FROM custom_api_compare
      WHERE is_arbitrage = TRUE
        AND profit_percentage >= $1
-       AND fetched_at > NOW() - INTERVAL '10 minutes'
+       AND fetched_at > NOW() - INTERVAL '35 minutes'
        ${sportFilter}
      ORDER BY profit_percentage DESC NULLS LAST
      LIMIT $2`,

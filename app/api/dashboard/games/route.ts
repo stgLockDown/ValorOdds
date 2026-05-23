@@ -28,7 +28,9 @@ export async function GET(req: Request) {
   const live = searchParams.get('live') === 'true';
 
   const params: any[] = [];
-  const conds: string[] = [`fetched_at > NOW() - INTERVAL '10 minutes'`];
+  // Bot's custom_api_scheduler runs every 30 min — use 35-min window so we
+  // always catch the latest cycle plus jitter buffer.
+  const conds: string[] = [`fetched_at > NOW() - INTERVAL '35 minutes'`];
 
   if (sport) {
     params.push(sport.toLowerCase());
