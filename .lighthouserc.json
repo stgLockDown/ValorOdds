@@ -1,0 +1,86 @@
+{
+  "ci": {
+    "collect": {
+      "staticDistDir": null,
+      "startServerCommand": "npm run start",
+      "startServerReadyPattern": "ready on|started server on|Ready in",
+      "startServerReadyTimeout": 60000,
+      "url": [
+        "http://localhost:3000/",
+        "http://localhost:3000/pricing",
+        "http://localhost:3000/about",
+        "http://localhost:3000/sports",
+        "http://localhost:3000/sports/mlb",
+        "http://localhost:3000/sports/nfl/odds/moneyline",
+        "http://localhost:3000/arbitrage",
+        "http://localhost:3000/learn",
+        "http://localhost:3000/learn/what-is-arbitrage-betting",
+        "http://localhost:3000/learn/glossary"
+      ],
+      "numberOfRuns": 3,
+      "settings": {
+        "preset": "desktop",
+        "onlyCategories": [
+          "performance",
+          "accessibility",
+          "best-practices",
+          "seo"
+        ],
+        "skipAudits": ["uses-http2"]
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["warn", { "minScore": 0.85 }],
+        "categories:accessibility": ["error", { "minScore": 0.9 }],
+        "categories:best-practices": ["warn", { "minScore": 0.9 }],
+        "categories:seo": ["error", { "minScore": 0.95 }],
+
+        "largest-contentful-paint": ["warn", { "maxNumericValue": 2500 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
+        "total-blocking-time": ["warn", { "maxNumericValue": 300 }],
+        "interactive": ["warn", { "maxNumericValue": 3800 }],
+        "speed-index": ["warn", { "maxNumericValue": 3400 }],
+        "first-contentful-paint": ["warn", { "maxNumericValue": 1800 }],
+        "server-response-time": ["warn", { "maxNumericValue": 600 }],
+
+        "meta-description": "error",
+        "document-title": "error",
+        "canonical": "error",
+        "crawlable-anchors": "error",
+        "hreflang": "off",
+        "http-status-code": "error",
+        "link-text": "error",
+        "robots-txt": "error",
+        "structured-data": "off",
+        "tap-targets": "warn",
+        "viewport": "error",
+
+        "image-alt": "error",
+        "label": "error",
+        "color-contrast": "warn",
+        "heading-order": "warn",
+        "html-has-lang": "error",
+        "html-lang-valid": "error",
+
+        "is-on-https": "error",
+        "no-vulnerable-libraries": "error",
+        "csp-xss": "off",
+        "inspector-issues": "warn",
+
+        "unused-javascript": ["warn", { "maxLength": 2 }],
+        "unused-css-rules": ["warn", { "maxLength": 2 }],
+        "modern-image-formats": "warn",
+        "uses-text-compression": "error",
+        "uses-responsive-images": "warn",
+        "offscreen-images": "warn",
+        "render-blocking-resources": "warn",
+        "uses-long-cache-ttl": "warn",
+        "uses-rel-preconnect": "off"
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}
