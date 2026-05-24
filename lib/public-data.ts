@@ -14,6 +14,13 @@
 
 import { query } from '@/lib/db';
 import { unstable_cache } from 'next/cache';
+import { sportFilterClause } from '@/lib/sport-filter';
+
+/**
+ * Sport filter logic lives in `@/lib/sport-filter` so authenticated
+ * dashboard routes share the same vocabulary as these public SEO
+ * queries. See that module for the per-sport `sport_key` patterns.
+ */
 
 export type UpcomingGame = {
   gameId: string;
@@ -45,15 +52,17 @@ export type BestOdds = {
 export const getUpcomingGamesBySport = unstable_cache(
   async (sportCode: string, limit = 40): Promise<UpcomingGame[]> => {
     try {
+      const filter = sportFilterClause(sportCode, 1);
+      if (!filter) return [];
       const r = await query(
         `SELECT DISTINCT game_id, sport, home_team, away_team, commence_time
          FROM odds_snapshots
-         WHERE UPPER(sport) = UPPER($1)
+         WHERE ${filter.clause}
            AND commence_time > NOW()
            AND commence_time < NOW() + INTERVAL '7 days'
          ORDER BY commence_time ASC
-         LIMIT $2`,
-        [sportCode, limit],
+         LIMIT $${filter.params.length + 1}`,
+        [...filter.params, limit],
       );
       return r.rows.map((row: any) => ({
         gameId: row.game_id,
@@ -78,6 +87,10 @@ export const getUpcomingGamesBySport = unstable_cache(
 export const getBestOddsBySportMarket = unstable_cache(
   async (sportCode: string, marketType: string, limit = 25): Promise<BestOdds[]> => {
     try {
+      const filter = sportFilterClause(sportCode, 1);
+      if (!filter) return [];
+      const marketParamIdx = filter.params.length + 1;
+      const limitParamIdx = marketParamIdx + 1;
       // Join trick: per (game, outcome_name), take the row with the best price.
       // Postgres-specific DISTINCT ON keeps this cheap.
       const r = await query(
@@ -86,13 +99,13 @@ export const getBestOddsBySportMarket = unstable_cache(
            bookmaker_key, bookmaker_name, market_type,
            outcome_name, outcome_price, outcome_point
          FROM odds_snapshots
-         WHERE UPPER(sport) = UPPER($1)
-           AND market_type = $2
+         WHERE ${filter.clause}
+           AND market_type = $${marketParamIdx}
            AND commence_time > NOW()
            AND commence_time < NOW() + INTERVAL '7 days'
          ORDER BY game_id, outcome_name, outcome_price DESC, snapshot_time DESC
-         LIMIT $3`,
-        [sportCode, marketType, limit * 4],
+         LIMIT $${limitParamIdx}`,
+        [...filter.params, marketType, limit * 4],
       );
       const byGame: Record<string, BestOdds> = {};
       for (const row of r.rows as any[]) {
@@ -132,12 +145,14 @@ export const getBestOddsBySportMarket = unstable_cache(
 export const getArbStatsBySport = unstable_cache(
   async (sportCode: string): Promise<{ last24h: number; avgEdgePct: number | null }> => {
     try {
+      const filter = sportFilterClause(sportCode, 1);
+      if (!filter) return { last24h: 0, avgEdgePct: null };
       const r = await query(
         `SELECT COUNT(*)::int AS c, AVG(edge_pct) AS avg
          FROM arbitrage_opportunities
-         WHERE UPPER(sport) = UPPER($1)
+         WHERE ${filter.clause}
            AND detected_at > NOW() - INTERVAL '24 hours'`,
-        [sportCode],
+        filter.params,
       );
       const row = r.rows[0] || { c: 0, avg: null };
       return { last24h: row.c || 0, avgEdgePct: row.avg != null ? Number(row.avg) : null };
