@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { sportFilterClause } from '@/lib/sport-filter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,10 +15,23 @@ export async function GET(req: Request) {
   const market = searchParams.get('market') || 'h2h';
   const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
 
-  // Get latest odds per game/bookmaker grouped nicely
-  const params: any[] = [market, limit];
-  const sportFilter = sport ? `AND UPPER(sport) = UPPER($3)` : '';
-  if (sport) params.push(sport);
+  // Compose the WHERE clause. The bot writes `sport='BASKETBALL'`,
+  // `sport_key='basketball_nba'` so we filter on `sport_key` to
+  // disambiguate NBA / NCAAB / WNBA which all share the same `sport`.
+  const params: any[] = [market];
+  let sportClause = '';
+  if (sport) {
+    const filter = sportFilterClause(sport, params.length + 1);
+    if (filter) {
+      sportClause = `AND ${filter.clause}`;
+      params.push(...filter.params);
+    } else {
+      // Unknown sport — return empty rather than spilling all sports.
+      return NextResponse.json({ data: [] });
+    }
+  }
+  params.push(limit);
+  const limitParamIdx = params.length;
 
   const result = await query(
     `SELECT DISTINCT ON (game_id, bookmaker_key, outcome_name)
@@ -26,10 +40,10 @@ export async function GET(req: Request) {
        outcome_name, outcome_price, outcome_point, snapshot_time
      FROM odds_snapshots
      WHERE market_type = $1
-       ${sportFilter}
+       ${sportClause}
        AND commence_time > NOW()
      ORDER BY game_id, bookmaker_key, outcome_name, snapshot_time DESC
-     LIMIT $2`,
+     LIMIT $${limitParamIdx}`,
     params
   );
 
