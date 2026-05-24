@@ -7,6 +7,8 @@ import {
   Shield, Users, Trophy, Target, Flame, DollarSign
 } from 'lucide-react';
 import ChatClient from './chat/ChatClient';
+import { formatOddsByPref, oddsColorClass } from '@/lib/format-odds';
+import { useOddsFormat, setOddsFormatCache } from '@/lib/use-odds-format';
 
 // Dynamically load markdown parser
 declare global {
@@ -171,6 +173,7 @@ function OddsTab() {
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState('');
   const [market, setMarket] = useState('h2h');
+  const oddsFormat = useOddsFormat();
 
   useEffect(() => {
     setLoading(true);
@@ -184,11 +187,6 @@ function OddsTab() {
     { id: 'spreads', label: 'Spreads' },
     { id: 'totals', label: 'Totals' },
   ];
-
-  function formatOdds(price: number) {
-    if (!price) return '-';
-    return price > 0 ? `+${price}` : `${price}`;
-  }
 
   return (
     <div>
@@ -227,10 +225,8 @@ function OddsTab() {
                       <tr key={book.key} className="border-t border-brand-border">
                         <td className="py-1.5 text-brand-muted">{book.name}</td>
                         {book.outcomes.map((o: any) => (
-                          <td key={o.name} className={`text-right font-mono font-semibold py-1.5 ${
-                            parseFloat(o.price) > 0 ? 'text-green-400' : 'text-brand-primary'
-                          }`}>
-                            {formatOdds(o.price)}
+                          <td key={o.name} className={`text-right font-mono font-semibold py-1.5 ${oddsColorClass(o.price)}`}>
+                            {formatOddsByPref(o.price, oddsFormat)}
                             {o.point ? <span className="text-xs text-brand-muted ml-1">({o.point})</span> : null}
                           </td>
                         ))}
@@ -251,6 +247,7 @@ function ArbitrageTab() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState('');
+  const oddsFormat = useOddsFormat();
 
   useEffect(() => {
     setLoading(true);
@@ -284,7 +281,7 @@ function ArbitrageTab() {
                   <p className="text-xs text-brand-muted mb-1">{arb.side1_bookmaker}</p>
                   <p className="font-semibold">{arb.side1_selection}</p>
                   <p className="text-xl font-mono font-bold text-brand-primary">
-                    {parseFloat(arb.side1_odds) > 0 ? '+' : ''}{arb.side1_odds}
+                    {formatOddsByPref(arb.side1_odds, oddsFormat)}
                   </p>
                   {arb.side1_stake && <p className="text-xs text-brand-muted mt-1">Stake: ${parseFloat(arb.side1_stake).toFixed(2)}</p>}
                 </div>
@@ -292,7 +289,7 @@ function ArbitrageTab() {
                   <p className="text-xs text-brand-muted mb-1">{arb.side2_bookmaker}</p>
                   <p className="font-semibold">{arb.side2_selection}</p>
                   <p className="text-xl font-mono font-bold text-brand-primary">
-                    {parseFloat(arb.side2_odds) > 0 ? '+' : ''}{arb.side2_odds}
+                    {formatOddsByPref(arb.side2_odds, oddsFormat)}
                   </p>
                   {arb.side2_stake && <p className="text-xs text-brand-muted mt-1">Stake: ${parseFloat(arb.side2_stake).toFixed(2)}</p>}
                 </div>
@@ -318,6 +315,7 @@ function SteamTab() {
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState('');
   const [hours, setHours] = useState(24);
+  const oddsFormat = useOddsFormat();
 
   useEffect(() => {
     setLoading(true);
@@ -357,14 +355,14 @@ function SteamTab() {
                     <Badge text={move.market_type} color="bg-brand-elevated text-brand-muted" />
                     <Badge
                       text={move.direction?.toUpperCase() || 'MOVED'}
-                      color={move.direction === 'up' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}
+                      color={['UP', 'SHORTENING'].includes((move.direction || '').toUpperCase()) ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}
                     />
                   </div>
                   <p className="font-semibold text-sm">{move.away_team} @ {move.home_team}</p>
                   <p className="text-sm text-brand-primary font-semibold mt-1">
                     📌 {move.outcome_name}:
-                    <span className="ml-2 font-mono line-through text-brand-muted">{move.before_avg_price}</span>
-                    <span className="ml-2 font-mono text-orange-400">→ {move.after_avg_price}</span>
+                    <span className="ml-2 font-mono line-through text-brand-muted">{formatOddsByPref(move.before_avg_price, oddsFormat)}</span>
+                    <span className="ml-2 font-mono text-orange-400">→ {formatOddsByPref(move.after_avg_price, oddsFormat)}</span>
                   </p>
                 </div>
                 <div className="text-right">
@@ -776,7 +774,10 @@ function PreferencesTab({ userId }: { userId: string }) {
         <h3 className="font-semibold mb-3">💰 Odds Format</h3>
         <div className="flex gap-2">
           {['american', 'decimal', 'fractional'].map(f => (
-            <button key={f} onClick={() => setPrefs((p: any) => ({ ...p, odds_format: f }))}
+            <button key={f} onClick={() => {
+              setPrefs((p: any) => ({ ...p, odds_format: f }));
+              setOddsFormatCache(f as any);
+            }}
               className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${
                 prefs.odds_format === f ? 'bg-brand-primary text-white' : 'bg-brand-elevated text-brand-muted hover:text-white'
               }`}>{f}</button>
