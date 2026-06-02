@@ -79,6 +79,17 @@ export const env = {
   stripeProductPremium: () => optional('STRIPE_PRODUCT_PREMIUM', 'prod_UPYSeWPotixwU2'),
   stripeProductVip: () => optional('STRIPE_PRODUCT_VIP', 'prod_UPYWwtSNL1LAqR'),
 
+  // ─── DiamondDraft cross-platform integration ────────────────────
+  // Shared HS256 secret with DiamondDraft. MUST match on both servers.
+  diamondDraftSsoSecret: () => readOptionalWithWarning('DIAMONDDRAFT_SSO_SECRET', ''),
+  // Public URL where DiamondDraft lives. Used to generate SSO redirects.
+  diamondDraftAppUrl: () => optional('DIAMONDDRAFT_APP_URL', 'https://diamonddraft.app'),
+  // DiamondDraft API URL (used for listing the user's leagues in the dashboard tab).
+  diamondDraftApiUrl: () => optional('DIAMONDDRAFT_API_URL', ''),
+  // DiamondDraft entitlement webhook URL (notified on subscription changes).
+  // Leave blank to skip outbound notification.
+  diamondDraftEntitlementUrl: () => optional('DIAMONDDRAFT_ENTITLEMENT_URL', ''),
+
   // Email
   resendApiKey: () => readOptionalWithWarning('RESEND_API_KEY', ''),
   resendFromEmail: () => optional('RESEND_FROM_EMAIL', 'Valor Odds <noreply@valorodds.com>'),

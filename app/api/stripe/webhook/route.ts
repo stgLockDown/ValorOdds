@@ -9,6 +9,7 @@ import {
   upsertSubscriptionFromStripe,
 } from '@/lib/subscriptions';
 import { syncDiscordRole } from '@/lib/bot-client';
+import { notifyDiamondDraftEntitlement } from '@/lib/diamonddraft-notifier';
 import { logEvent } from '@/lib/analytics';
 import {
   purchaseReceiptEmail,
@@ -124,6 +125,14 @@ async function handleEvent(event: Stripe.Event) {
         });
       }
 
+      if (saved?.tier && ctx.userId) {
+        notifyDiamondDraftEntitlement({
+          userId: ctx.userId,
+          email: ctx.email || null,
+          tier: saved.tier,
+        });
+      }
+
       if (ctx.email && saved) {
         const amount = sess.amount_total ? (sess.amount_total / 100).toFixed(2) : '—';
         const currency = (sess.currency || 'usd').toUpperCase();
@@ -160,6 +169,13 @@ async function handleEvent(event: Stripe.Event) {
       if (ctx.discordId && saved?.tier) {
         await syncDiscordRole(ctx.discordId, saved.tier).catch(() => undefined);
       }
+      if (saved?.tier && ctx.userId) {
+        notifyDiamondDraftEntitlement({
+          userId: ctx.userId,
+          email: ctx.email || null,
+          tier: saved.tier,
+        });
+      }
       break;
     }
 
@@ -173,6 +189,13 @@ async function handleEvent(event: Stripe.Event) {
       const ctx = await resolveUserContext({ customerId });
       if (ctx.discordId) {
         await syncDiscordRole(ctx.discordId, 'free').catch(() => undefined);
+      }
+      if (ctx.userId) {
+        notifyDiamondDraftEntitlement({
+          userId: ctx.userId,
+          email: ctx.email || null,
+          tier: 'free',
+        });
       }
       if (ctx.email) {
         const effectiveUntil = sub.current_period_end
