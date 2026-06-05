@@ -155,8 +155,17 @@ export async function POST(req: Request) {
   // the next provider/model on any hard failure. Only when ALL options are
   // exhausted do we surface an error to the user — with a friendlier, actionable
   // message for rate limits.
-  type Provider = { name: string; baseUrl: string; apiKey: string; model: string };
+  // `style` controls the request body shape:
+  //   'gpt5'   → OpenAI GPT-5.x family: requires `max_completion_tokens` and
+  //              ONLY supports the default temperature (so we omit it).
+  //   'legacy' → GPT-4-class / GitHub Models: `max_tokens` + custom temperature.
+  type PayloadStyle = 'gpt5' | 'legacy';
+  type Provider = { name: string; baseUrl: string; apiKey: string; model: string; style: PayloadStyle };
   const providers: Provider[] = [];
+
+  // GPT-5.x model ids use the new payload style. Anything else (gpt-4o, etc.)
+  // uses the legacy style. Detect by model id so env overrides Just Work.
+  const isGpt5 = (model: string) => /^(gpt-5|o[0-9])/i.test(model);
 
   // PRIMARY: OpenAI — model ladder is env-configurable so Railway can correct
   // the exact model ids without a code change.
@@ -172,6 +181,7 @@ export async function POST(req: Request) {
         baseUrl: 'https://api.openai.com/v1',
         apiKey: openaiKey,
         model,
+        style: isGpt5(model) ? 'gpt5' : 'legacy',
       });
     }
   }
@@ -183,6 +193,7 @@ export async function POST(req: Request) {
       baseUrl: 'https://models.inference.ai.azure.com',
       apiKey: githubToken,
       model: 'gpt-4o',
+      style: 'legacy',
     });
   }
 
@@ -193,13 +204,25 @@ export async function POST(req: Request) {
     let lastStatus = 0;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
+        const payload: Record<string, unknown> = {
+          model: p.model,
+          messages,
+          stream: true,
+        };
+        if (p.style === 'gpt5') {
+          // GPT-5.x: new token param, default temperature only (omit it).
+          payload.max_completion_tokens = 1024;
+        } else {
+          payload.max_tokens = 1024;
+          payload.temperature = 0.7;
+        }
         const upstream = await fetch(`${p.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${p.apiKey}`,
           },
-          body: JSON.stringify({ model: p.model, messages, stream: true, max_tokens: 1024, temperature: 0.7 }),
+          body: JSON.stringify(payload),
         });
 
         if (upstream.ok && upstream.body) {
