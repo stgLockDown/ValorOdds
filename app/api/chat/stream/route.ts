@@ -1,7 +1,19 @@
 /**
  * AI Chat stream endpoint — runs directly in the web app.
- * Uses GitHub Models (GPT-4o) with fallback to OPENAI_API_KEY.
+ * PRIMARY:  OpenAI (OPENAI_API_KEY)   — models configurable via env vars.
+ * FALLBACK: GitHub Models (GITHUB_TOKEN, gpt-4o) — used only if OpenAI fails.
  * Pulls live context from shared Postgres DB.
+ *
+ * Env vars (set these in Railway):
+ *   OPENAI_API_KEY            — your OpenAI secret key (PRIMARY provider).
+ *   OPENAI_CHAT_MODEL         — primary model id        (default: "gpt-5.5").
+ *   OPENAI_CHAT_FALLBACK_MODEL— secondary OpenAI model   (default: "gpt-5.4").
+ *   OPENAI_CHAT_MINI_MODEL    — last-resort OpenAI model  (default: "gpt-5.4-mini").
+ *   GITHUB_TOKEN              — GitHub Models token (FALLBACK provider).
+ *
+ * NOTE: If an OpenAI model id isn't available on the account, OpenAI returns an
+ * error and we automatically try the next model, then fall back to GitHub Models.
+ * You can override any model id from Railway without a code change.
  */
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
@@ -137,27 +149,40 @@ export async function POST(req: Request) {
   }).catch(() => {});
 
   // ── Provider chain ──────────────────────────────────────────────────────
-  // GitHub Models (gpt-4o) has aggressive free-tier rate limits and frequently
-  // returns 429. We (1) retry the same provider with backoff on transient 429/5xx,
-  // and (2) fall back to OpenAI if a key is configured. Only when ALL options
-  // are exhausted do we surface an error to the user — and with a friendlier,
-  // actionable message for rate limits.
+  // GitHub Models (gpt-4o) has aggressive free-tier rate limits, so OpenAI is
+  // now the PRIMARY provider with GitHub Models only as a fallback. For each
+  // provider we (1) retry with backoff on transient 429/5xx, and (2) advance to
+  // the next provider/model on any hard failure. Only when ALL options are
+  // exhausted do we surface an error to the user — with a friendlier, actionable
+  // message for rate limits.
   type Provider = { name: string; baseUrl: string; apiKey: string; model: string };
   const providers: Provider[] = [];
+
+  // PRIMARY: OpenAI — model ladder is env-configurable so Railway can correct
+  // the exact model ids without a code change.
+  if (openaiKey) {
+    const openaiModels = [
+      process.env.OPENAI_CHAT_MODEL || 'gpt-5.5',
+      process.env.OPENAI_CHAT_FALLBACK_MODEL || 'gpt-5.4',
+      process.env.OPENAI_CHAT_MINI_MODEL || 'gpt-5.4-mini',
+    ].filter((m, i, arr) => m && arr.indexOf(m) === i); // de-dupe, drop empties
+    for (const model of openaiModels) {
+      providers.push({
+        name: `openai:${model}`,
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: openaiKey,
+        model,
+      });
+    }
+  }
+
+  // FALLBACK: GitHub Models (gpt-4o) — used only if every OpenAI attempt fails.
   if (githubToken) {
     providers.push({
       name: 'github-models',
       baseUrl: 'https://models.inference.ai.azure.com',
       apiKey: githubToken,
       model: 'gpt-4o',
-    });
-  }
-  if (openaiKey) {
-    providers.push({
-      name: 'openai',
-      baseUrl: 'https://api.openai.com/v1',
-      apiKey: openaiKey,
-      model: 'gpt-4o-mini',
     });
   }
 
@@ -233,7 +258,7 @@ export async function POST(req: Request) {
 
   // All providers exhausted.
   if (lastFailureStatus === 429) {
-    return new Response(sseStream('⏳ The AI assistant is handling a lot of requests right now and hit a rate limit. Please wait about a minute and try again. (If this keeps happening, an OpenAI fallback key can be configured to avoid GitHub Models limits.)'), {
+    return new Response(sseStream('⏳ The AI assistant is handling a lot of requests right now and hit a rate limit. Please wait about a minute and try again.'), {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
     });
   }
