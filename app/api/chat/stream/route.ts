@@ -102,11 +102,6 @@ export async function POST(req: Request) {
 
   const githubToken = process.env.GITHUB_TOKEN;
   const openaiKey = process.env.OPENAI_API_KEY;
-  const apiKey = githubToken || openaiKey;
-  const baseUrl = githubToken
-    ? 'https://models.inference.ai.azure.com'
-    : 'https://api.openai.com/v1';
-  const model = githubToken ? 'gpt-4o' : 'gpt-4o-mini';
 
   const encoder = new TextEncoder();
 
@@ -120,7 +115,7 @@ export async function POST(req: Request) {
     });
   }
 
-  if (!apiKey) {
+  if (!githubToken && !openaiKey) {
     return new Response(sseStream('⚠️ AI chat is not yet configured. Please set GITHUB_TOKEN or OPENAI_API_KEY in Railway environment variables.'), {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
     });
@@ -141,33 +136,108 @@ export async function POST(req: Request) {
     metadata: { source: 'web' },
   }).catch(() => {});
 
-  try {
-    const upstream = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ model, messages, stream: true, max_tokens: 1024, temperature: 0.7 }),
+  // ── Provider chain ──────────────────────────────────────────────────────
+  // GitHub Models (gpt-4o) has aggressive free-tier rate limits and frequently
+  // returns 429. We (1) retry the same provider with backoff on transient 429/5xx,
+  // and (2) fall back to OpenAI if a key is configured. Only when ALL options
+  // are exhausted do we surface an error to the user — and with a friendlier,
+  // actionable message for rate limits.
+  type Provider = { name: string; baseUrl: string; apiKey: string; model: string };
+  const providers: Provider[] = [];
+  if (githubToken) {
+    providers.push({
+      name: 'github-models',
+      baseUrl: 'https://models.inference.ai.azure.com',
+      apiKey: githubToken,
+      model: 'gpt-4o',
     });
+  }
+  if (openaiKey) {
+    providers.push({
+      name: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: openaiKey,
+      model: 'gpt-4o-mini',
+    });
+  }
 
-    if (!upstream.ok || !upstream.body) {
-      return new Response(sseStream(`⚠️ AI service error (${upstream.status}). Please try again.`), {
-        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function tryProvider(p: Provider): Promise<{ ok: true; resp: Response } | { ok: false; status: number; retryable: boolean }> {
+    const MAX_ATTEMPTS = 3;
+    let lastStatus = 0;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const upstream = await fetch(`${p.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${p.apiKey}`,
+          },
+          body: JSON.stringify({ model: p.model, messages, stream: true, max_tokens: 1024, temperature: 0.7 }),
+        });
+
+        if (upstream.ok && upstream.body) {
+          return { ok: true, resp: upstream };
+        }
+
+        lastStatus = upstream.status;
+        const retryable = upstream.status === 429 || upstream.status >= 500;
+        // Drain the body so the socket can be reused.
+        try { await upstream.text(); } catch { /* noop */ }
+
+        if (retryable && attempt < MAX_ATTEMPTS) {
+          // Honor Retry-After when present, else exponential backoff (capped).
+          const retryAfterHeader = upstream.headers.get('retry-after');
+          let waitMs = 0;
+          if (retryAfterHeader) {
+            const secs = parseInt(retryAfterHeader, 10);
+            if (Number.isFinite(secs)) waitMs = Math.min(secs * 1000, 8000);
+          }
+          if (!waitMs) waitMs = Math.min(500 * 2 ** (attempt - 1), 4000);
+          console.warn(`[chat/stream] ${p.name} ${upstream.status} (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${waitMs}ms`);
+          await sleep(waitMs);
+          continue;
+        }
+
+        return { ok: false, status: upstream.status, retryable };
+      } catch (err: any) {
+        lastStatus = 0;
+        console.error(`[chat/stream] ${p.name} fetch error (attempt ${attempt}):`, err?.message);
+        if (attempt < MAX_ATTEMPTS) {
+          await sleep(Math.min(500 * 2 ** (attempt - 1), 4000));
+          continue;
+        }
+        return { ok: false, status: 0, retryable: true };
+      }
+    }
+    return { ok: false, status: lastStatus, retryable: true };
+  }
+
+  let lastFailureStatus = 0;
+  for (const p of providers) {
+    const result = await tryProvider(p);
+    if (result.ok) {
+      return new Response(result.resp.body, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
       });
     }
+    lastFailureStatus = result.status;
+    console.warn(`[chat/stream] provider ${p.name} failed (status ${result.status}); ${providers.indexOf(p) < providers.length - 1 ? 'falling back to next provider' : 'no more providers'}`);
+  }
 
-    return new Response(upstream.body, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
-    });
-  } catch (err: any) {
-    return new Response(sseStream(`⚠️ Connection error: ${err.message}. Please try again.`), {
+  // All providers exhausted.
+  if (lastFailureStatus === 429) {
+    return new Response(sseStream('⏳ The AI assistant is handling a lot of requests right now and hit a rate limit. Please wait about a minute and try again. (If this keeps happening, an OpenAI fallback key can be configured to avoid GitHub Models limits.)'), {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
     });
   }
+  return new Response(sseStream(`⚠️ AI service is temporarily unavailable${lastFailureStatus ? ` (error ${lastFailureStatus})` : ''}. Please try again in a moment.`), {
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
+  });
 }
