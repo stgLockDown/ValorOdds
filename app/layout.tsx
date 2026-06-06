@@ -4,6 +4,7 @@ import './globals.css';
 import { SITE, orgJsonLd, websiteJsonLd, softwareAppJsonLd } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 import { WebVitals } from '@/components/WebVitals';
+import { ConsentManager } from '@/components/ConsentManager';
 
 /**
  * Self-hosted Inter via next/font. Eliminates the external roundtrip to
@@ -122,6 +123,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <JsonLd data={[orgJsonLd(), websiteJsonLd(), softwareAppJsonLd()]} />
       </head>
       <body className={inter.className}>
+        <ConsentManager />
         <WebVitals />
         {children}
       </body>

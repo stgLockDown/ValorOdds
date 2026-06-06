@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Zap } from 'lucide-react';
+import { CookieSettingsButton } from '@/components/CookieSettingsButton';
 
 export default function Footer() {
   return (
@@ -36,6 +37,7 @@ export default function Footer() {
             <li><Link href="/terms" className="hover:text-brand-text">Terms of service</Link></li>
             <li><Link href="/privacy" className="hover:text-brand-text">Privacy policy</Link></li>
             <li><Link href="/disclaimer" className="hover:text-brand-text">Disclaimer</Link></li>
+            <li><CookieSettingsButton /></li>
           </ul>
           <p className="mt-4 text-xs text-brand-muted">
             ⚠️ Gambling involves risk. 18+. Bet responsibly.
