@@ -14,12 +14,17 @@
  *   - NEXT_PUBLIC_GA_MEASUREMENT_ID → sends as GA4 `web_vitals` event.
  *   - NEXT_PUBLIC_VITALS_ENDPOINT   → falls back to a custom POST endpoint.
  *
- * If neither is set the component does nothing in production, but it still
- * logs to console during development so engineers can spot regressions.
+ * NOTE: gtag.js itself is loaded by <ConsentManager> only after the user
+ * accepts analytics cookies (Google Consent Mode v2). This component never
+ * loads GA on its own — it just reports metrics via window.gtag IF analytics
+ * consent has been granted and gtag is present. If consent was denied,
+ * window.gtag is absent (or consent is 'denied') and nothing is sent.
+ *
+ * If neither target applies the component does nothing in production, but it
+ * still logs to console during development so engineers can spot regressions.
  */
 
 import { useReportWebVitals } from 'next/web-vitals';
-import { useEffect } from 'react';
 
 type Metric = {
   id: string;
@@ -29,16 +34,6 @@ type Metric = {
   delta?: number;
   navigationType?: string;
 };
-
-declare global {
-  interface Window {
-    gtag?: (
-      command: 'event',
-      eventName: string,
-      params: Record<string, unknown>,
-    ) => void;
-  }
-}
 
 function reportToGA(metric: Metric) {
   if (typeof window === 'undefined' || !window.gtag) return;
@@ -86,29 +81,9 @@ export function WebVitals() {
   const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
   const endpoint = process.env.NEXT_PUBLIC_VITALS_ENDPOINT;
 
-  // Load GA4 snippet if a measurement ID is configured. gtag.js is loaded
-  // lazily and non-blocking; it does not impact LCP.
-  useEffect(() => {
-    if (!gaId || typeof window === 'undefined') return;
-    if (window.gtag) return; // already loaded
-
-    const s = document.createElement('script');
-    s.async = true;
-    s.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
-    document.head.appendChild(s);
-
-    const inline = document.createElement('script');
-    inline.text = `
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      window.gtag = gtag;
-      gtag('js', new Date());
-      gtag('config', '${gaId}', { send_page_view: true, anonymize_ip: true });
-    `;
-    document.head.appendChild(inline);
-  }, [gaId]);
-
   useReportWebVitals((metric) => {
+    // gtag only exists once the user has accepted analytics cookies (loaded by
+    // <ConsentManager>). So this is a no-op when consent was denied.
     if (gaId) reportToGA(metric as Metric);
     if (endpoint) reportToCustomEndpoint(endpoint, metric as Metric);
 
