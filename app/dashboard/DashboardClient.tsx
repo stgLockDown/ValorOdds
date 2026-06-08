@@ -29,9 +29,10 @@ function renderMarkdown(src: string): string {
   });
 }
 
-type Tab = 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'preferences';
+type Tab = 'command-center' | 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'preferences';
 
 const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
+  { id: 'command-center', label: 'Command Center', icon: Zap },
   { id: 'overview',    label: 'Overview',       icon: Activity },
   { id: 'best-bets',  label: 'Best Bets',       icon: Star },
   { id: 'odds',       label: 'Live Odds',        icon: BarChart2 },
@@ -243,67 +244,141 @@ function OddsTab() {
   );
 }
 
+function money(v: any): string {
+  const n = parseFloat(v);
+  if (!isFinite(n)) return '0.00';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function ArbitrageTab() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState('');
+  // Bankroll the user wants to spread across both sides. We keep a separate
+  // text field (`bankrollInput`) so users can type freely, then debounce it
+  // into `bankroll` which actually drives the API request + stake math.
+  const [bankrollInput, setBankrollInput] = useState('100');
+  const [bankroll, setBankroll] = useState(100);
   const oddsFormat = useOddsFormat();
+
+  // Debounce the typed bankroll so we don't refetch on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const parsed = parseFloat(bankrollInput);
+      setBankroll(parsed > 0 ? parsed : 100);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [bankrollInput]);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/dashboard/arbitrage?sport=${sport}&limit=20`)
+    fetch(`/api/dashboard/arbitrage?sport=${sport}&stake=${bankroll}&limit=20`)
       .then(r => r.json()).then(d => setData(d.data || []))
       .finally(() => setLoading(false));
-  }, [sport]);
+  }, [sport, bankroll]);
 
   return (
     <div>
-      <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-4 mb-6">
+      <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-4 mb-4">
         <p className="text-sm text-green-400">
-          <span className="font-semibold">⚡ Arbitrage opportunities</span> let you bet both sides across different sportsbooks for guaranteed profit regardless of outcome.
+          <span className="font-semibold">⚡ Arbitrage opportunities</span> let you bet both sides across different sportsbooks for guaranteed profit regardless of outcome. We tell you <span className="font-semibold">exactly how much to bet on each side</span> for your bankroll.
         </p>
       </div>
+
+      {/* Bankroll control — stakes below rescale to this total instantly */}
+      <div className="card mb-4 flex flex-wrap items-center gap-3">
+        <label htmlFor="arb-bankroll" className="text-sm font-semibold flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-green-400" /> Total bankroll
+        </label>
+        <div className="flex items-center gap-1">
+          <span className="text-brand-muted">$</span>
+          <input
+            id="arb-bankroll"
+            type="number"
+            min={1}
+            step={10}
+            value={bankrollInput}
+            onChange={(e) => setBankrollInput(e.target.value)}
+            className="w-28 rounded-lg bg-brand-elevated border border-white/10 px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-brand-primary"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {[50, 100, 250, 500, 1000].map(v => (
+            <button key={v} onClick={() => setBankrollInput(String(v))}
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                bankroll === v ? 'bg-brand-primary text-white' : 'bg-brand-elevated text-brand-muted hover:text-white'
+              }`}>${v}</button>
+          ))}
+        </div>
+        <span className="text-xs text-brand-muted">Stakes update automatically.</span>
+      </div>
+
       <SportFilter value={sport} onChange={setSport} />
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No arbitrage opportunities detected right now." /> : (
         <div className="space-y-4">
-          {data.map((arb: any) => (
-            <div key={arb.id} className="card border-l-4 border-l-green-500">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <Badge text={arb.sport} color="bg-brand-elevated text-brand-muted" />
-                  <span className="ml-2 text-xs text-brand-muted">{arb.market_name}</span>
+          {data.map((arb: any) => {
+            const profit = arb.guaranteed_profit != null ? parseFloat(arb.guaranteed_profit) : null;
+            const hasStakes = arb.side1_stake != null && arb.side2_stake != null;
+            return (
+              <div key={arb.id} className="card border-l-4 border-l-green-500">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <Badge text={arb.sport} color="bg-brand-elevated text-brand-muted" />
+                    <span className="ml-2 text-xs text-brand-muted">{arb.market_name}</span>
+                  </div>
+                  <Badge text={`+${parseFloat(arb.profit_percentage).toFixed(2)}% profit`} color="bg-green-500/20 text-green-400" />
                 </div>
-                <Badge text={`+${parseFloat(arb.profit_percentage).toFixed(2)}% profit`} color="bg-green-500/20 text-green-400" />
-              </div>
-              <h3 className="font-semibold mb-3">{arb.away_team} @ {arb.home_team}</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-brand-elevated p-3">
-                  <p className="text-xs text-brand-muted mb-1">{arb.side1_bookmaker}</p>
-                  <p className="font-semibold">{arb.side1_selection}</p>
-                  <p className="text-xl font-mono font-bold text-brand-primary">
-                    {formatOddsByPref(arb.side1_odds, oddsFormat)}
-                  </p>
-                  {arb.side1_stake && <p className="text-xs text-brand-muted mt-1">Stake: ${parseFloat(arb.side1_stake).toFixed(2)}</p>}
+                <h3 className="font-semibold mb-3">{arb.away_team} @ {arb.home_team}</h3>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-brand-elevated p-3">
+                    <p className="text-xs text-brand-muted mb-1">{arb.side1_bookmaker}</p>
+                    <p className="font-semibold">{arb.side1_selection}</p>
+                    <p className="text-xl font-mono font-bold text-brand-primary">
+                      {formatOddsByPref(arb.side1_odds, oddsFormat)}
+                    </p>
+                    {hasStakes && (
+                      <p className="text-sm font-semibold text-green-400 mt-1">Bet ${money(arb.side1_stake)}</p>
+                    )}
+                  </div>
+                  <div className="rounded-lg bg-brand-elevated p-3">
+                    <p className="text-xs text-brand-muted mb-1">{arb.side2_bookmaker}</p>
+                    <p className="font-semibold">{arb.side2_selection}</p>
+                    <p className="text-xl font-mono font-bold text-brand-primary">
+                      {formatOddsByPref(arb.side2_odds, oddsFormat)}
+                    </p>
+                    {hasStakes && (
+                      <p className="text-sm font-semibold text-green-400 mt-1">Bet ${money(arb.side2_stake)}</p>
+                    )}
+                  </div>
                 </div>
-                <div className="rounded-lg bg-brand-elevated p-3">
-                  <p className="text-xs text-brand-muted mb-1">{arb.side2_bookmaker}</p>
-                  <p className="font-semibold">{arb.side2_selection}</p>
-                  <p className="text-xl font-mono font-bold text-brand-primary">
-                    {formatOddsByPref(arb.side2_odds, oddsFormat)}
-                  </p>
-                  {arb.side2_stake && <p className="text-xs text-brand-muted mt-1">Stake: ${parseFloat(arb.side2_stake).toFixed(2)}</p>}
-                </div>
-              </div>
-              {arb.guaranteed_profit && (
-                <p className="text-xs text-green-400 mt-2">
-                  💰 Guaranteed profit: ${parseFloat(arb.guaranteed_profit).toFixed(2)} per $100 wagered
+
+                {/* How to bet — mirrors the Discord "How to Execute" steps */}
+                {hasStakes && (
+                  <div className="mt-3 rounded-lg bg-green-500/5 border border-green-500/20 p-3">
+                    <p className="text-xs font-semibold text-green-400 mb-2 flex items-center gap-1.5">
+                      <Target className="h-3.5 w-3.5" /> How to bet (${money(arb.stake_total ?? bankroll)} total)
+                    </p>
+                    <ol className="text-sm text-brand-text space-y-1 list-decimal list-inside">
+                      <li>Place <span className="font-semibold text-white">${money(arb.side1_stake)}</span> on <span className="font-semibold">{arb.side1_selection}</span> at {arb.side1_bookmaker} ({formatOddsByPref(arb.side1_odds, oddsFormat)})</li>
+                      <li>Place <span className="font-semibold text-white">${money(arb.side2_stake)}</span> on <span className="font-semibold">{arb.side2_selection}</span> at {arb.side2_bookmaker} ({formatOddsByPref(arb.side2_odds, oddsFormat)})</li>
+                      {profit != null && (
+                        <li>Collect <span className="font-semibold text-green-400">${money(arb.payout)}</span> whichever side wins → guaranteed profit <span className="font-semibold text-green-400">${money(profit)}</span></li>
+                      )}
+                    </ol>
+                  </div>
+                )}
+
+                <p className="text-xs text-brand-muted mt-2">
+                  🕐 {new Date(arb.detected_at).toLocaleString()}
+                  {arb.commence_time ? <> · Game: {new Date(arb.commence_time).toLocaleString()}</> : null}
                 </p>
-              )}
-              <p className="text-xs text-brand-muted mt-1">
-                🕐 {new Date(arb.detected_at).toLocaleString()} · Game: {new Date(arb.commence_time).toLocaleDateString()}
-              </p>
-            </div>
-          ))}
+                <p className="text-[11px] text-brand-muted mt-1">
+                  ⚠️ Odds move fast — confirm both lines are still available before betting. Limits/voids vary by book.
+                </p>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -394,21 +469,25 @@ function InjuriesTab() {
 
   const statuses = [
     { id: '', label: 'All' },
-    { id: 'Out', label: '🔴 Out' },
-    { id: 'Doubtful', label: '🟠 Doubtful' },
-    { id: 'Questionable', label: '🟡 Questionable' },
-    { id: 'Day-To-Day', label: '🟢 Day-To-Day' },
+    { id: 'Out', label: '🔴 Out / IR' },
+    { id: 'Day-To-Day', label: '🟡 Day-To-Day' },
   ];
 
   function statusColor(s: string) {
-    if (s === 'Out') return 'bg-red-500/20 text-red-400';
-    if (s === 'Doubtful') return 'bg-orange-500/20 text-orange-400';
-    if (s === 'Questionable') return 'bg-yellow-500/20 text-yellow-400';
+    const v = (s || '').toLowerCase();
+    if (v === 'out' || v.includes('injured reserve') || v === 'ir' || v === 'suspended') return 'bg-red-500/20 text-red-400';
+    if (v.includes('doubtful')) return 'bg-orange-500/20 text-orange-400';
+    if (v.includes('questionable') || v.includes('game-time')) return 'bg-yellow-500/20 text-yellow-400';
     return 'bg-green-500/20 text-green-400';
   }
 
   return (
     <div>
+      <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 mb-4">
+        <p className="text-sm text-blue-300">
+          <span className="font-semibold">🏥 Injury reports</span> from the last 72 hours across NBA, NHL & MLB. Off-season leagues (e.g. NFL in summer) won't have active reports.
+        </p>
+      </div>
       <SportFilter value={sport} onChange={setSport} />
       <div className="flex flex-wrap gap-2 mb-4">
         {statuses.map(s => (
@@ -418,7 +497,13 @@ function InjuriesTab() {
             }`}>{s.label}</button>
         ))}
       </div>
-      {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No injury reports in the last 72 hours." /> : (
+      {loading ? <LoadingSpinner /> : data.length === 0 ? (
+        <EmptyState message={
+          sport
+            ? `No ${sport} injury reports in the last 72 hours${sport === 'NFL' ? ' (off-season).' : '.'}`
+            : 'No injury reports in the last 72 hours.'
+        } />
+      ) : (
         <div className="space-y-2">
           {data.map((inj: any, i: number) => (
             <div key={i} className="card py-3">
@@ -904,15 +989,234 @@ function OverviewTab({ user }: { user: any }) {
   );
 }
 
+// ---------- Command Center (default landing) ----------
+
+function LiveScoresStrip() {
+  const [games, setGames] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    fetch('/api/dashboard/games?limit=40')
+      .then(r => r.json())
+      .then(d => {
+        const all: any[] = d.data || [];
+        // Live games first, then soonest-starting scheduled games.
+        const live = all.filter(g => g.is_live);
+        const upcoming = all
+          .filter(g => !g.is_live)
+          .sort((a, b) => new Date(a.game_date || 0).getTime() - new Date(b.game_date || 0).getTime());
+        setGames([...live, ...upcoming].slice(0, 24));
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60_000); // refresh scores every minute
+    return () => clearInterval(t);
+  }, [load]);
+
+  if (loading) {
+    return <div className="card"><LoadingSpinner /></div>;
+  }
+  if (games.length === 0) {
+    return (
+      <div className="card">
+        <h3 className="font-semibold flex items-center gap-2 mb-2"><Activity className="h-4 w-4 text-green-400" /> Live & Upcoming</h3>
+        <EmptyState message="No games in the current window." />
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold flex items-center gap-2"><Activity className="h-4 w-4 text-green-400" /> Live &amp; Upcoming Scores</h3>
+        <span className="text-xs text-brand-muted">auto-refreshes</span>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+        {games.map((g) => {
+          const when = g.game_date ? new Date(g.game_date) : null;
+          return (
+            <div key={g.game_id} className="min-w-[200px] rounded-lg bg-brand-elevated p-3 flex-shrink-0">
+              <div className="flex items-center justify-between mb-2">
+                <Badge text={g.sport} color="bg-brand-bg text-brand-muted" />
+                {g.is_live ? (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-red-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" /> LIVE
+                  </span>
+                ) : g.is_final ? (
+                  <span className="text-xs font-semibold text-brand-muted">FINAL</span>
+                ) : (
+                  <span className="text-xs text-brand-muted">{when ? when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</span>
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm truncate pr-2">{g.away_team_abbrev || g.away_team}</span>
+                  {(g.is_live || g.is_final) && <span className="text-sm font-mono font-bold">{g.away_score}</span>}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm truncate pr-2">{g.home_team_abbrev || g.home_team}</span>
+                  {(g.is_live || g.is_final) && <span className="text-sm font-mono font-bold">{g.home_score}</span>}
+                </div>
+              </div>
+              {g.is_live && (g.clock || g.period) && (
+                <p className="text-xs text-red-400 mt-2">
+                  {g.status_detail || [g.period ? `P${g.period}` : '', g.clock || ''].filter(Boolean).join(' · ')}
+                </p>
+              )}
+              {!g.is_live && !g.is_final && when && (
+                <p className="text-xs text-brand-muted mt-2">{when.toLocaleDateString([], { month: 'short', day: 'numeric' })}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OpportunityCards({ isPremiumOrVip, onJump }: { isPremiumOrVip: boolean; onJump: (t: Tab) => void }) {
+  const [bestBet, setBestBet] = useState<any>(null);
+  const [arbs, setArbs] = useState<any[]>([]);
+  const [steam, setSteam] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/dashboard/best-bets?type=bestBets&limit=1').then(r => r.json()).catch(() => ({})),
+      fetch('/api/dashboard/arbitrage?stake=100&limit=3').then(r => r.json()).catch(() => ({})),
+      fetch('/api/dashboard/steam-moves?hours=12&limit=3').then(r => r.json()).catch(() => ({})),
+    ]).then(([bets, arbData, steamData]) => {
+      setBestBet(bets.data?.[0] || null);
+      setArbs(arbData.data || []);
+      setSteam(steamData.data || []);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="card"><LoadingSpinner /></div>;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* Top Arbitrage */}
+      <button onClick={() => onJump('arbitrage')} className="card text-left hover:border-green-500/40 transition-colors border border-transparent">
+        <h3 className="font-semibold flex items-center gap-2 mb-2 text-sm"><DollarSign className="h-4 w-4 text-green-400" /> Top Arbitrage</h3>
+        {arbs.length === 0 ? (
+          <p className="text-xs text-brand-muted">None right now.</p>
+        ) : (
+          <div className="space-y-2">
+            {arbs.slice(0, 2).map((arb: any) => (
+              <div key={arb.id}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold truncate pr-2">{arb.away_team} @ {arb.home_team}</span>
+                  <Badge text={`+${parseFloat(arb.profit_percentage).toFixed(2)}%`} color="bg-green-500/20 text-green-400" />
+                </div>
+                {arb.side1_stake != null && (
+                  <p className="text-xs text-brand-muted">
+                    Bet ${money(arb.side1_stake)} / ${money(arb.side2_stake)} → +${money(arb.guaranteed_profit)} guaranteed
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-green-400 mt-2 flex items-center gap-1">See stakes <ChevronRight className="h-3 w-3" /></p>
+      </button>
+
+      {/* Latest AI Best Bet */}
+      <button onClick={() => onJump('best-bets')} className="card text-left hover:border-brand-primary/40 transition-colors border border-transparent">
+        <h3 className="font-semibold flex items-center gap-2 mb-2 text-sm"><Star className="h-4 w-4 text-brand-primary" /> AI Best Bets</h3>
+        {bestBet ? (
+          <p className="text-xs text-brand-muted line-clamp-4 whitespace-pre-wrap">{bestBet.content}</p>
+        ) : (
+          <p className="text-xs text-brand-muted">No picks published yet today.</p>
+        )}
+        <p className="text-xs text-brand-primary mt-2 flex items-center gap-1">View all <ChevronRight className="h-3 w-3" /></p>
+      </button>
+
+      {/* Steam Moves */}
+      <button onClick={() => onJump('steam')} className="card text-left hover:border-orange-500/40 transition-colors border border-transparent">
+        <h3 className="font-semibold flex items-center gap-2 mb-2 text-sm"><Flame className="h-4 w-4 text-orange-400" /> Steam Moves</h3>
+        {steam.length === 0 ? (
+          <p className="text-xs text-brand-muted">No sharp moves (12h).</p>
+        ) : (
+          <div className="space-y-2">
+            {steam.slice(0, 2).map((m: any) => (
+              <div key={m.id}>
+                <p className="text-sm font-semibold truncate">{m.outcome_name}</p>
+                <p className="text-xs text-brand-muted truncate">{m.away_team} @ {m.home_team} · {m.books_moved} books</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-orange-400 mt-2 flex items-center gap-1">{isPremiumOrVip ? 'View all' : 'Unlock'} <ChevronRight className="h-3 w-3" /></p>
+      </button>
+    </div>
+  );
+}
+
+function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumOrVip: boolean; onJump: (t: Tab) => void }) {
+  const canChat = isPremiumOrVip;
+  return (
+    <div className="space-y-4">
+      {/* Welcome */}
+      <div className="card bg-gradient-to-r from-brand-primary/20 to-purple-500/10 border-brand-primary/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-bold">Welcome back, {user.name || user.email?.split('@')[0]}! 👋</h2>
+            <p className="text-brand-muted text-sm mt-1 flex items-center gap-2">
+              <Badge text={user.tier?.toUpperCase() || 'FREE'} color={
+                user.tier === 'vip' ? 'bg-yellow-500/20 text-yellow-400' :
+                user.tier === 'premium' ? 'bg-brand-primary/20 text-brand-primary' :
+                'bg-brand-elevated text-brand-muted'
+              } />
+              {user.isAdmin && <Badge text="ADMIN" color="bg-red-500/20 text-red-400" />}
+              <span>Your command center — live games, top opportunities &amp; the AI analyst.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Live scores above the chat */}
+      <LiveScoresStrip />
+
+      {/* Opportunity cards above the chat */}
+      <OpportunityCards isPremiumOrVip={isPremiumOrVip} onJump={onJump} />
+
+      {/* AI chat — the centerpiece */}
+      <div className="card p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <h3 className="font-semibold flex items-center gap-2"><MessageSquare className="h-4 w-4 text-brand-primary" /> Ask the AI Analyst</h3>
+          <button onClick={() => onJump('chat')} className="text-xs text-brand-primary flex items-center gap-1 hover:underline">
+            Full screen <ChevronRight className="h-3 w-3" />
+          </button>
+        </div>
+        {canChat ? (
+          <ChatClient user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />
+        ) : (
+          <div className="p-6 text-center">
+            <MessageSquare className="h-10 w-10 mx-auto mb-3 text-brand-muted" />
+            <h4 className="font-semibold mb-1">AI chat is a Premium feature</h4>
+            <p className="text-sm text-brand-muted mb-4">Upgrade to ask the AI about lines, matchups, injuries and arbitrage in real time.</p>
+            <a href="/pricing" className="inline-block px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-semibold">Upgrade</a>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Main Dashboard ----------
 
 export default function DashboardClient({ user }: { user: any }) {
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [activeTab, setActiveTab] = useState<Tab>('command-center');
 
   const isPremiumOrVip = user.tier === 'premium' || user.tier === 'vip' || user.isAdmin;
 
   function renderTab() {
     switch (activeTab) {
+      case 'command-center': return <CommandCenter user={user} isPremiumOrVip={isPremiumOrVip} onJump={setActiveTab} />;
       case 'overview':     return <OverviewTab user={user} />;
       case 'best-bets':    return <BestBetsTab />;
       case 'odds':         return <OddsTab />;
