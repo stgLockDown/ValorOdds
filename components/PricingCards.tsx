@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Check, X, Loader2, Sparkles } from 'lucide-react';
 
 type Tier = {
-  id: 'free' | 'premium' | 'vip';
+  id: 'free' | 'basic' | 'premium' | 'vip';
   name: string;
   price: string;
   period: string;
@@ -26,11 +26,27 @@ const TIERS: Tier[] = [
     features: [
       { label: 'Access to summary channel', included: true },
       { label: 'Daily top 5 opportunities', included: true },
-      { label: 'Basic AI analysis', included: true },
       { label: 'Community support', included: true },
-      { label: 'All 14 sport channels', included: false },
+      { label: 'AI chat analyst', included: false },
+      { label: 'Arbitrage finder', included: false },
       { label: 'Player props predictions', included: false },
-      { label: 'Custom AI commands', included: false },
+    ],
+  },
+  {
+    id: 'basic',
+    name: 'Basic',
+    price: '$9.99',
+    period: '/ month',
+    tagline: 'The essentials, without the AI chat.',
+    ctaLabel: 'Get Basic',
+    features: [
+      { label: 'Live scores & best bets', included: true },
+      { label: 'Live odds & line tracking', included: true },
+      { label: 'Injury reports', included: true },
+      { label: 'Trends & sportsbook reviews', included: true },
+      { label: 'AI chat analyst', included: false },
+      { label: 'Arbitrage finder & steam moves', included: false },
+      { label: 'Player props predictions', included: false },
     ],
   },
   {
@@ -43,11 +59,11 @@ const TIERS: Tier[] = [
     ribbon: 'Most Popular',
     ctaLabel: 'Go Premium',
     features: [
-      { label: 'All 14 arbitrage channels', included: true },
-      { label: 'Unlimited opportunities', included: true },
-      { label: 'Full AI analysis & recommendations', included: true },
+      { label: 'Everything in Basic', included: true },
+      { label: 'AI chat analyst (unlimited)', included: true },
+      { label: 'Arbitrage finder + stake sizing', included: true },
+      { label: 'Steam moves & sharp signals', included: true },
       { label: 'Player props (4 sports)', included: true },
-      { label: 'Custom AI commands', included: true },
       { label: 'Priority support', included: true },
       { label: 'Mobile notifications', included: true },
     ],
@@ -75,41 +91,19 @@ const TIERS: Tier[] = [
 export default function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
 
-  async function handleCheckout(tier: 'premium' | 'vip') {
+  function handleCheckout(tier: 'basic' | 'premium' | 'vip') {
     if (!isAuthenticated) {
-      window.location.href = `/auth/signup?next=${encodeURIComponent('/pricing')}`;
+      window.location.href = `/auth/signup?next=${encodeURIComponent(`/checkout?tier=${tier}`)}`;
       return;
     }
     setLoadingTier(tier);
-    try {
-      const resp = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (data?.url) {
-        window.location.href = data.url;
-        return;
-      }
-      // Surface the server's friendly message verbatim. 503s from
-      // /api/stripe/checkout when Stripe is unconfigured land here.
-      const msg =
-        data?.detail ||
-        data?.error ||
-        (resp.status === 503
-          ? 'Billing is temporarily unavailable. Please try again shortly.'
-          : 'Checkout failed. Please try again.');
-      alert(msg);
-      setLoadingTier(null);
-    } catch (err) {
-      alert('Network error. Please try again.');
-      setLoadingTier(null);
-    }
+    // Embedded checkout lives on /checkout — the Stripe form renders on our
+    // own page (no redirect to a hosted Stripe page).
+    window.location.href = `/checkout?tier=${tier}`;
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
       {TIERS.map((tier) => (
         <div
           key={tier.id}
@@ -154,13 +148,13 @@ export default function PricingCards({ isAuthenticated }: { isAuthenticated: boo
               </a>
             ) : (
               <button
-                onClick={() => handleCheckout(tier.id as 'premium' | 'vip')}
+                onClick={() => handleCheckout(tier.id as 'basic' | 'premium' | 'vip')}
                 disabled={loadingTier !== null}
                 className={tier.featured ? 'btn-primary w-full' : 'btn-secondary w-full'}
               >
                 {loadingTier === tier.id ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Redirecting…
+                    <Loader2 className="h-4 w-4 animate-spin" /> Continuing…
                   </>
                 ) : (
                   tier.ctaLabel

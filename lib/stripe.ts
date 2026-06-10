@@ -17,7 +17,7 @@ declare global {
   // eslint-disable-next-line no-var
   var __stripe: Stripe | undefined;
   // eslint-disable-next-line no-var
-  var __stripePriceCache: { premium?: string; vip?: string; fetchedAt?: number } | undefined;
+  var __stripePriceCache: { basic?: string; premium?: string; vip?: string; fetchedAt?: number } | undefined;
 }
 
 export class StripeNotConfiguredError extends Error {
@@ -88,7 +88,17 @@ export async function getPriceId(tier: Exclude<Tier, 'free'>): Promise<string> {
 
   if (fresh && cache[tier]) return cache[tier] as string;
 
-  const productId = tier === 'premium' ? env.stripeProductPremium() : env.stripeProductVip();
+  const productId =
+    tier === 'basic'
+      ? env.stripeProductBasic()
+      : tier === 'premium'
+        ? env.stripeProductPremium()
+        : env.stripeProductVip();
+  if (!productId) {
+    throw new Error(
+      `No Stripe product configured for tier "${tier}". Set STRIPE_PRODUCT_${tier.toUpperCase()} in the environment.`,
+    );
+  }
   const priceId = await resolveActivePriceForProduct(productId);
 
   global.__stripePriceCache = {
@@ -100,6 +110,7 @@ export async function getPriceId(tier: Exclude<Tier, 'free'>): Promise<string> {
 }
 
 export function tierFromProductId(productId: string): Tier | null {
+  if (productId && productId === env.stripeProductBasic()) return 'basic';
   if (productId === env.stripeProductPremium()) return 'premium';
   if (productId === env.stripeProductVip()) return 'vip';
   return null;

@@ -76,6 +76,7 @@ export const env = {
   stripeSecretKey: () => readOptionalWithWarning('STRIPE_SECRET_KEY', ''),
   stripePublishableKey: optional('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'),
   stripeWebhookSecret: () => readOptionalWithWarning('STRIPE_WEBHOOK_SECRET', ''),
+  stripeProductBasic: () => optional('STRIPE_PRODUCT_BASIC', ''),
   stripeProductPremium: () => optional('STRIPE_PRODUCT_PREMIUM', 'prod_UPYSeWPotixwU2'),
   stripeProductVip: () => optional('STRIPE_PRODUCT_VIP', 'prod_UPYWwtSNL1LAqR'),
 
@@ -104,7 +105,7 @@ export const env = {
   },
 };
 
-export type Tier = 'free' | 'premium' | 'vip';
+export type Tier = 'free' | 'basic' | 'premium' | 'vip';
 
 export function isAdmin(email: string | null | undefined): boolean {
   if (!email) return false;

@@ -8,14 +8,26 @@ import { queryOne } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
+/**
+ * Embedded Checkout session creator.
+ *
+ * Follows Stripe's "build a subscription" embedded flow:
+ *   https://docs.stripe.com/billing/subscriptions/build-subscriptions?ui=embedded-page
+ *
+ * Returns a `client_secret` that the browser mounts with
+ * <EmbeddedCheckout> from @stripe/react-stripe-js. Unlike the legacy
+ * redirect route (/api/stripe/checkout), the Stripe payment form renders
+ * directly on /checkout instead of redirecting to a hosted Stripe page.
+ *
+ * On completion Stripe sends the user to `return_url` (/checkout/return),
+ * which calls /api/stripe/session-status to confirm and then routes to the
+ * account page. Subscription provisioning still happens via the webhook.
+ */
 const Body = z.object({
   tier: z.enum(['basic', 'premium', 'vip']),
 });
 
 export async function POST(req: Request) {
-  // Fast-path 503 when Stripe isn't configured. Without this guard the
-  // Stripe SDK constructor throws an unhelpful error that bubbles up as a
-  // generic 500 and floods the logs.
   if (!isStripeConfigured()) {
     return NextResponse.json(
       {
@@ -31,6 +43,7 @@ export async function POST(req: Request) {
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+
   let input: z.infer<typeof Body>;
   try {
     input = Body.parse(await req.json());
@@ -42,22 +55,23 @@ export async function POST(req: Request) {
     const stripe = getStripe();
     const priceId = await getPriceId(input.tier);
 
-    // Find existing Stripe customer if any
     const existingSub = await queryOne<{ stripe_customer_id: string }>(
       `SELECT stripe_customer_id FROM web_subscriptions WHERE user_id = $1::bigint ORDER BY id DESC LIMIT 1`,
-      [session.user.id]
+      [session.user.id],
     );
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'subscription',
+      ui_mode: 'embedded',
       line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: session.user.id,
       customer: existingSub?.stripe_customer_id ?? undefined,
       customer_email: existingSub?.stripe_customer_id ? undefined : session.user.email,
       allow_promotion_codes: true,
       billing_address_collection: 'auto',
-      success_url: `${env.appUrl}/account?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${env.appUrl}/pricing?checkout=cancelled`,
+      // Embedded mode uses return_url (with the {CHECKOUT_SESSION_ID}
+      // template) instead of success_url/cancel_url.
+      return_url: `${env.appUrl}/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
       metadata: {
         webUserId: session.user.id,
         discordId: session.user.discordId ?? '',
@@ -76,10 +90,10 @@ export async function POST(req: Request) {
       userId: session.user.id,
       discordId: session.user.discordId ?? null,
       eventType: 'checkout_started',
-      metadata: { tier: input.tier, sessionId: checkoutSession.id },
+      metadata: { tier: input.tier, sessionId: checkoutSession.id, mode: 'embedded' },
     });
 
-    return NextResponse.json({ url: checkoutSession.url });
+    return NextResponse.json({ clientSecret: checkoutSession.client_secret });
   } catch (err) {
     if (err instanceof StripeNotConfiguredError) {
       return NextResponse.json(
@@ -87,7 +101,7 @@ export async function POST(req: Request) {
         { status: 503 },
       );
     }
-    console.error('[stripe/checkout] failed:', err);
+    console.error('[stripe/checkout-session] failed:', err);
     return NextResponse.json(
       { error: 'Could not start checkout. Please try again in a moment.' },
       { status: 500 },

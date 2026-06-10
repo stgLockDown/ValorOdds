@@ -52,6 +52,17 @@ function Badge({ text, color }: { text: string; color: string }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${color}`}>{text}</span>;
 }
 
+// Brand-consistent colour for a tier badge. Basic gets a distinct cyan so
+// it reads as "paid but entry-level" between free (grey) and premium.
+function tierBadgeColor(tier?: string): string {
+  switch (tier) {
+    case 'vip': return 'bg-yellow-500/20 text-yellow-400';
+    case 'premium': return 'bg-brand-primary/20 text-brand-primary';
+    case 'basic': return 'bg-cyan-500/20 text-cyan-300';
+    default: return 'bg-brand-elevated text-brand-muted';
+  }
+}
+
 function SportFilter({ value, onChange }: { value: string; onChange: (s: string) => void }) {
   return (
     <div className="flex flex-wrap gap-2 mb-4">
@@ -907,11 +918,7 @@ function OverviewTab({ user }: { user: any }) {
           <div>
             <h2 className="text-xl font-bold">Welcome back, {user.name || user.email?.split('@')[0]}! 👋</h2>
             <p className="text-brand-muted text-sm mt-1">
-              <Badge text={user.tier?.toUpperCase() || 'FREE'} color={
-                user.tier === 'vip' ? 'bg-yellow-500/20 text-yellow-400' :
-                user.tier === 'premium' ? 'bg-brand-primary/20 text-brand-primary' :
-                'bg-brand-elevated text-brand-muted'
-              } />
+              <Badge text={user.tier?.toUpperCase() || 'FREE'} color={tierBadgeColor(user.tier)} />
               {user.isAdmin && <span className="ml-2"><Badge text="ADMIN" color="bg-red-500/20 text-red-400" /></span>}
             </p>
           </div>
@@ -1166,11 +1173,7 @@ function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumO
           <div>
             <h2 className="text-xl font-bold">Welcome back, {user.name || user.email?.split('@')[0]}! 👋</h2>
             <p className="text-brand-muted text-sm mt-1 flex items-center gap-2">
-              <Badge text={user.tier?.toUpperCase() || 'FREE'} color={
-                user.tier === 'vip' ? 'bg-yellow-500/20 text-yellow-400' :
-                user.tier === 'premium' ? 'bg-brand-primary/20 text-brand-primary' :
-                'bg-brand-elevated text-brand-muted'
-              } />
+              <Badge text={user.tier?.toUpperCase() || 'FREE'} color={tierBadgeColor(user.tier)} />
               {user.isAdmin && <Badge text="ADMIN" color="bg-red-500/20 text-red-400" />}
               <span>Your command center — live games, top opportunities &amp; the AI analyst.</span>
             </p>
