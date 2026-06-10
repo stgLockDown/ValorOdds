@@ -1,17 +1,19 @@
 import { auth } from '@/lib/auth';
 import Link from 'next/link';
 import ChatClient from './ChatClient';
+import { canUseChat } from '@/lib/entitlements';
 
 export default async function DashboardChatPage() {
   const session = await auth();
   const user = session!.user;
 
-  if (user.tier === 'free') {
+  if (!canUseChat(user.tier, user.isAdmin)) {
     return (
       <div className="card">
         <h1 className="text-2xl font-bold">AI Chat</h1>
         <p className="mt-2 text-brand-muted">
-          AI Chat is available to Premium and VIP members. Upgrade to get unlimited AI-powered betting analysis.
+          AI Chat is available to <strong>Premium</strong> and <strong>VIP</strong> members.
+          Upgrade to get unlimited AI-powered betting analysis.
         </p>
         <Link href="/pricing" className="btn-primary mt-4 w-fit">
           Upgrade

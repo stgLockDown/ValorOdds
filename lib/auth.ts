@@ -117,7 +117,7 @@ async function getCurrentTier(userId: string, discordId: string | null): Promise
      LIMIT 1`,
     [userId, discordId]
   );
-  if (sub?.tier === 'premium' || sub?.tier === 'vip') return sub.tier;
+  if (sub?.tier === 'basic' || sub?.tier === 'premium' || sub?.tier === 'vip') return sub.tier;
   return 'free';
 }
 

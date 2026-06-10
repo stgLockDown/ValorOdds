@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { logEvent } from '@/lib/analytics';
+import { canUseChat } from '@/lib/entitlements';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -102,6 +103,20 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  }
+
+  // AI chat is a Premium/VIP feature. Free and Basic tiers are blocked here
+  // server-side (not just hidden in the UI) so the endpoint can't be called
+  // directly. Keep this in sync with canUseChat() in lib/entitlements.ts.
+  if (!canUseChat(session.user.tier, session.user.isAdmin)) {
+    return NextResponse.json(
+      {
+        error: 'AI chat requires Premium',
+        detail: 'Upgrade to Premium or VIP to use the AI analyst.',
+        upgradeUrl: '/pricing',
+      },
+      { status: 403 },
+    );
   }
 
   const body = await req.json().catch(() => ({}));
