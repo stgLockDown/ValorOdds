@@ -9,6 +9,7 @@ import {
 import ChatClient from './chat/ChatClient';
 import { formatOddsByPref, oddsColorClass } from '@/lib/format-odds';
 import { useOddsFormat, setOddsFormatCache } from '@/lib/use-odds-format';
+import { canUseArbitrage } from '@/lib/entitlements';
 
 // Dynamically load markdown parser
 declare global {
@@ -261,9 +262,10 @@ function money(v: any): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function ArbitrageTab() {
+function ArbitrageTab({ tier, isAdmin }: { tier: string; isAdmin: boolean }) {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [capped, setCapped] = useState(false);
   const [sport, setSport] = useState('');
   // Bankroll the user wants to spread across both sides. We keep a separate
   // text field (`bankrollInput`) so users can type freely, then debounce it
@@ -284,9 +286,11 @@ function ArbitrageTab() {
   useEffect(() => {
     setLoading(true);
     fetch(`/api/dashboard/arbitrage?sport=${sport}&stake=${bankroll}&limit=20`)
-      .then(r => r.json()).then(d => setData(d.data || []))
+      .then(r => r.json()).then(d => { setData(d.data || []); setCapped(!!d.capped); })
       .finally(() => setLoading(false));
   }, [sport, bankroll]);
+
+  const isBasic = tier === 'basic' && !isAdmin;
 
   return (
     <div>
@@ -295,6 +299,15 @@ function ArbitrageTab() {
           <span className="font-semibold">⚡ Arbitrage opportunities</span> let you bet both sides across different sportsbooks for guaranteed profit regardless of outcome. We tell you <span className="font-semibold">exactly how much to bet on each side</span> for your bankroll.
         </p>
       </div>
+
+      {isBasic && (
+        <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/20 p-4 mb-4 flex items-start justify-between gap-3">
+          <p className="text-sm text-cyan-300">
+            <span className="font-semibold">Basic plan</span> — you get <span className="font-semibold">1 domestic + 1 international</span> arbitrage opportunity each day. Upgrade to <span className="font-semibold">Premium</span> for the full, unlimited live feed plus AI chat, steam moves and player props.
+          </p>
+          <a href="/pricing" className="shrink-0 rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-400 transition-colors">Upgrade</a>
+        </div>
+      )}
 
       {/* Bankroll control — stakes below rescale to this total instantly */}
       <div className="card mb-4 flex flex-wrap items-center gap-3">
@@ -1216,6 +1229,9 @@ export default function DashboardClient({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState<Tab>('command-center');
 
   const isPremiumOrVip = user.tier === 'premium' || user.tier === 'vip' || user.isAdmin;
+  // Basic and up may see the arbitrage finder (Basic is capped to 1 domestic +
+  // 1 international per day, enforced server-side); Free cannot.
+  const canSeeArbitrage = canUseArbitrage(user.tier, user.isAdmin);
 
   function renderTab() {
     switch (activeTab) {
@@ -1223,7 +1239,7 @@ export default function DashboardClient({ user }: { user: any }) {
       case 'overview':     return <OverviewTab user={user} />;
       case 'best-bets':    return <BestBetsTab />;
       case 'odds':         return <OddsTab />;
-      case 'arbitrage':    return isPremiumOrVip ? <ArbitrageTab /> : <LockedTab />;
+      case 'arbitrage':    return canSeeArbitrage ? <ArbitrageTab tier={user.tier || 'free'} isAdmin={!!user.isAdmin} /> : <LockedTab />;
       case 'steam':        return isPremiumOrVip ? <SteamTab /> : <LockedTab />;
       case 'injuries':     return <InjuriesTab />;
       case 'players':      return <PlayerStatsTab />;
@@ -1241,7 +1257,11 @@ export default function DashboardClient({ user }: { user: any }) {
         {/* Tab Nav */}
         <div className="flex flex-wrap gap-1 mb-4">
           {TABS.map(({ id, label, icon: Icon, premium }) => {
-            const locked = premium && !isPremiumOrVip;
+            // Arbitrage is available to Basic+ (capped); other premium tabs
+            // (steam, etc.) stay Premium/VIP-only.
+            const locked = id === 'arbitrage'
+              ? !canSeeArbitrage
+              : premium && !isPremiumOrVip;
             return (
               <button
                 key={id}
