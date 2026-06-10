@@ -6,10 +6,11 @@
  * Tier ladder: free < basic < premium < vip
  *
  *  - free    : trial-level taste of the product.
- *  - basic   : $9.99/mo. Limited info. NO AI chat. No arbitrage / steam /
- *              player props. Gets live scores, best bets, live odds,
- *              injuries, trends, sportsbooks — but with a smaller results
- *              cap than premium/vip.
+ *  - basic   : $9.99/mo. Limited info. NO AI chat. No steam / player props.
+ *              Gets live scores, best bets, live odds, injuries, trends,
+ *              sportsbooks — with a smaller results cap than premium/vip — plus
+ *              a LIMITED arbitrage feed of 1 domestic + 1 international
+ *              opportunity per day. No premium Discord channels.
  *  - premium : $29/mo. Full access (chat + arbitrage + steam + props).
  *  - vip     : $79/mo. Everything in premium + VIP extras.
  *
@@ -39,9 +40,42 @@ export function canUseChat(tier: Tier | null | undefined, isAdmin = false): bool
   return isAdmin || tierAtLeast(tier, 'premium');
 }
 
-/** Arbitrage finder — Premium/VIP only. */
+/** Arbitrage finder.
+ *
+ * Premium/VIP (and admins) get the full, unlimited arbitrage feed.
+ * Basic gets a *limited* feed: 1 domestic + 1 international opportunity per
+ * day (see `arbDailyLimitFor`). Free gets none.
+ *
+ * `canUseArbitrage` therefore means "may see ANY arbitrage at all" — true for
+ * basic and up. Use `arbDailyLimitFor` to apply the per-day cap.
+ */
 export function canUseArbitrage(tier: Tier | null | undefined, isAdmin = false): boolean {
+  return isAdmin || tierAtLeast(tier, 'basic');
+}
+
+/** True if the tier gets the FULL, uncapped arbitrage feed (Premium/VIP/admin). */
+export function hasUnlimitedArbitrage(tier: Tier | null | undefined, isAdmin = false): boolean {
   return isAdmin || tierAtLeast(tier, 'premium');
+}
+
+/**
+ * Per-day arbitrage caps split by market.
+ *   - admin / premium / vip : unlimited (null)
+ *   - basic                 : 1 domestic + 1 international per day
+ *   - free                  : 0 (no arbitrage)
+ * `null` for a field means "no limit".
+ */
+export function arbDailyLimitFor(
+  tier: Tier | null | undefined,
+  isAdmin = false,
+): { domestic: number | null; international: number | null } {
+  if (hasUnlimitedArbitrage(tier, isAdmin)) {
+    return { domestic: null, international: null };
+  }
+  if ((tier ?? 'free') === 'basic') {
+    return { domestic: 1, international: 1 };
+  }
+  return { domestic: 0, international: 0 };
 }
 
 /** Steam moves — Premium/VIP only. */

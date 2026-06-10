@@ -44,9 +44,11 @@ const TIERS: Tier[] = [
       { label: 'Live odds & line tracking', included: true },
       { label: 'Injury reports', included: true },
       { label: 'Trends & sportsbook reviews', included: true },
+      { label: '1 domestic + 1 international arb / day', included: true },
       { label: 'AI chat analyst', included: false },
-      { label: 'Arbitrage finder & steam moves', included: false },
+      { label: 'Unlimited arbitrage & steam moves', included: false },
       { label: 'Player props predictions', included: false },
+      { label: 'Premium Discord channels', included: false },
     ],
   },
   {
