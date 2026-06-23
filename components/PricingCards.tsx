@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, X, Loader2, Sparkles } from 'lucide-react';
 
 type Tier = {
@@ -90,8 +90,39 @@ const TIERS: Tier[] = [
   },
 ];
 
-export default function PricingCards({ isAuthenticated }: { isAuthenticated: boolean }) {
+export default function PricingCards({
+  isAuthenticated: isAuthenticatedProp,
+}: {
+  /**
+   * Optional. When omitted, the component resolves the session client-side via
+   * /api/account/me. This lets the /pricing page stay free of `await auth()`
+   * so it doesn't get forced into dynamic (no-store) server rendering.
+   */
+  isAuthenticated?: boolean;
+}) {
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
+  const [resolvedAuth, setResolvedAuth] = useState<boolean>(isAuthenticatedProp ?? false);
+
+  useEffect(() => {
+    if (typeof isAuthenticatedProp === 'boolean') {
+      setResolvedAuth(isAuthenticatedProp);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/account/me', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled) setResolvedAuth(Boolean(data?.user));
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedAuth(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticatedProp]);
+
+  const isAuthenticated = resolvedAuth;
 
   function handleCheckout(tier: 'basic' | 'premium' | 'vip') {
     if (!isAuthenticated) {
