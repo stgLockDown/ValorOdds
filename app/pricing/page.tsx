@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import Navbar from '@/components/Navbar';
+import Navbar from '@/components/MarketingNavbar';
 import Footer from '@/components/Footer';
 import PricingCards from '@/components/PricingCards';
-import { auth } from '@/lib/auth';
+import CheckoutNotice from '@/components/CheckoutNotice';
 import { buildMetadata, breadcrumbJsonLd, faqJsonLd, canonical } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 
@@ -38,9 +38,7 @@ const PRICING_FAQS = [
   },
 ];
 
-export default async function PricingPage({ searchParams }: { searchParams: { checkout?: string } }) {
-  const session = await auth();
-
+export default function PricingPage() {
   return (
     <>
       <JsonLd
@@ -59,12 +57,10 @@ export default async function PricingPage({ searchParams }: { searchParams: { ch
           <p className="mt-3 text-brand-muted">
             Transparent pricing. Cancel anytime. Your Discord role is synced automatically.
           </p>
-          {searchParams.checkout === 'cancelled' && (
-            <div className="mt-6 badge-warning">Checkout canceled — you were not charged.</div>
-          )}
+          <CheckoutNotice />
         </div>
         <div className="mt-12">
-          <PricingCards isAuthenticated={!!session?.user} />
+          <PricingCards />
         </div>
         <div className="mt-14 text-center text-sm text-brand-muted space-y-1">
           <p>💳 Payments processed securely by Stripe</p>

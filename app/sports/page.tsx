@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import Navbar from '@/components/Navbar';
+import Navbar from '@/components/MarketingNavbar';
 import Footer from '@/components/Footer';
 import { buildMetadata, breadcrumbJsonLd, canonical, SPORTS } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
