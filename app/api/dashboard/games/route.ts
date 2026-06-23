@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { buildEspnScoreIndex } from '@/lib/espn-scores';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,6 +83,28 @@ export async function GET(req: Request) {
     }
   }
 
+  // The Sportsbook-API feeding `custom_api_events` carries odds only (no
+  // scores/status). Enrich every row with real scores from ESPN's public
+  // scoreboard API, matched by normalized team names. If ESPN is unreachable
+  // the index is empty and we gracefully fall back to whatever raw_data has.
+  const sportsInResult = Array.from(
+    new Set(
+      result.rows
+        .map((r: any) => (r.sport || '').toUpperCase())
+        .filter((s: string) => s.length > 0),
+    ),
+  );
+
+  let espnIndex: { match: (h: string, a: string, d?: string | null) => any; size: number } = {
+    match: () => null,
+    size: 0,
+  };
+  try {
+    espnIndex = await buildEspnScoreIndex(sportsInResult);
+  } catch {
+    // keep the no-op fallback index
+  }
+
   const data = result.rows.map((r: any) => {
     const rd = (() => {
       try {
@@ -90,26 +113,33 @@ export async function GET(req: Request) {
         return null;
       }
     })();
-    const isLive = Boolean(rd?.is_live);
+
+    // Try to attach a real ESPN score for this matchup.
+    const espn = espnIndex.match(r.home_team, r.away_team, r.commence_time);
+
+    const isLive = espn ? espn.isLive : Boolean(rd?.is_live);
+    const isFinal = espn ? espn.isFinal : Boolean(rd?.is_final);
+    const status = isLive ? 'in_progress' : isFinal ? 'final' : 'scheduled';
+
     return {
       game_id: r.event_id,
       sport: (r.sport || '').toUpperCase(),
       home_team: r.home_team,
-      home_team_abbrev: rd?.home_team_abbrev ?? null,
+      home_team_abbrev: espn?.homeAbbrev ?? rd?.home_team_abbrev ?? null,
       away_team: r.away_team,
-      away_team_abbrev: rd?.away_team_abbrev ?? null,
+      away_team_abbrev: espn?.awayAbbrev ?? rd?.away_team_abbrev ?? null,
       venue: rd?.venue ?? null,
       game_date: r.commence_time,
-      status: isLive ? 'in_progress' : 'scheduled',
-      status_detail: rd?.status_detail ?? null,
-      home_score: rd?.home_score ?? 0,
-      away_score: rd?.away_score ?? 0,
-      period: rd?.period ?? 0,
-      clock: rd?.clock ?? null,
+      status,
+      status_detail: espn?.statusDetail ?? rd?.status_detail ?? null,
+      home_score: espn ? espn.homeScore : (rd?.home_score ?? 0),
+      away_score: espn ? espn.awayScore : (rd?.away_score ?? 0),
+      period: espn ? espn.period : (rd?.period ?? 0),
+      clock: espn?.clock ?? rd?.clock ?? null,
       is_live: isLive,
-      is_final: Boolean(rd?.is_final),
-      home_record: rd?.home_record ?? null,
-      away_record: rd?.away_record ?? null,
+      is_final: isFinal,
+      home_record: espn?.homeRecord ?? rd?.home_record ?? null,
+      away_record: espn?.awayRecord ?? rd?.away_record ?? null,
       updated_at: r.fetched_at,
       num_sportsbooks: r.num_sportsbooks,
       recent_scoring: liveScores[r.event_id] || [],
