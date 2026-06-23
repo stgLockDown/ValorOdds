@@ -109,7 +109,8 @@ export default function PricingCards({
       return;
     }
     let cancelled = false;
-    fetch('/api/account/me', { credentials: 'include' })
+    // NextAuth session endpoint returns 200 for guests (no console 401).
+    fetch('/api/auth/session', { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!cancelled) setResolvedAuth(Boolean(data?.user));

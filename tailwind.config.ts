@@ -13,8 +13,14 @@ const config: Config = {
           surface: '#111827',
           elevated: '#1f2937',
           border: '#374151',
-          primary: '#6366f1',
-          primaryHover: '#4f46e5',
+          // Darkened from #6366f1 so white text on a primary button meets
+          // WCAG AA (now ~5.9:1, was 4.46:1).
+          primary: '#4f46e5',
+          primaryHover: '#4338ca',
+          // Lighter indigo for primary-colored TEXT on dark surfaces, which
+          // needs a higher-luminance value to clear AA (#818cf8 ~ 5.9:1 on
+          // #1f2937). Use `text-brand-primaryText` for small indigo labels.
+          primaryText: '#a5b4fc',
           accent: '#f59e0b',
           success: '#10b981',
           danger: '#ef4444',

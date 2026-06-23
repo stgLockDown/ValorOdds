@@ -15,6 +15,8 @@ import {
   allArticleMeta,
   type ArticleMeta,
 } from './manifest';
+import MarkdownArticle from './MarkdownArticle';
+import { MARKDOWN_ARTICLES } from './markdown-articles';
 
 // JSX article bodies. Each module exports a default React component.
 import WhatIsArbitrageBody from './articles/what-is-arbitrage-betting';
@@ -43,9 +45,20 @@ export function getArticle(
   slug: string,
 ): { meta: ArticleMeta; Body: ComponentType } | null {
   const meta = metaBySlug(slug);
-  const Body = BODIES[slug];
-  if (!meta || !Body) return null;
-  return { meta, Body };
+  if (!meta) return null;
+
+  // Prefer a hand-written TSX body; fall back to a Markdown-authored body.
+  const TsxBody = BODIES[slug];
+  if (TsxBody) return { meta, Body: TsxBody };
+
+  const md = MARKDOWN_ARTICLES[slug];
+  if (md) {
+    const Body = () => <MarkdownArticle markdown={md} />;
+    Body.displayName = `MarkdownArticle(${slug})`;
+    return { meta, Body };
+  }
+
+  return null;
 }
 
 export function allArticles(): ArticleMeta[] {

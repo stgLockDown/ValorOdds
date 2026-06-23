@@ -74,7 +74,7 @@ export default function RouteError({
               Try again
             </button>
           )}
-          <Link href="/" className="btn">
+          <Link href="/" className="btn-secondary">
             Go home
           </Link>
         </div>

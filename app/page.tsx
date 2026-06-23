@@ -183,7 +183,7 @@ export default function HomePage() {
               </div>
               <h3 className="mt-4 font-semibold text-base">{e.match}</h3>
               <div className="mt-4 rounded-lg bg-brand-elevated border border-brand-border p-3">
-                <div className="text-xs font-semibold text-brand-primary mb-1">🤖 AI Analysis</div>
+                <div className="text-xs font-semibold text-brand-primaryText mb-1">🤖 AI Analysis</div>
                 <div className="text-xs text-brand-muted">
                   <strong>Risk:</strong> {e.risk} · <strong>Confidence:</strong> {e.conf}
                 </div>

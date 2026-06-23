@@ -171,6 +171,44 @@ export const ARTICLE_MANIFEST: ArticleMeta[] = [
     ],
     author: 'Valor Odds',
   },
+  {
+    slug: 'best-odds-comparison-guide',
+    title: 'Odds comparison & line shopping: the easiest edge in betting',
+    description:
+      'Line shopping — always taking the best available price across sportsbooks — is the single most reliable habit in sports betting. Learn why a few cents of odds compounds into a real edge, and how to compare odds in seconds.',
+    category: 'Strategy',
+    published: '2026-06-23',
+    updated: '2026-06-23',
+    readingMinutes: 6,
+    keywords: [
+      'odds comparison',
+      'line shopping',
+      'best sportsbook odds',
+      'best odds today',
+      'compare betting odds',
+      'sports betting value',
+    ],
+    author: 'Valor Odds',
+  },
+  {
+    slug: 'how-sportsbooks-set-odds',
+    title: 'How sportsbooks set odds (and how to beat them)',
+    description:
+      'Understand how sportsbooks build opening lines, what the vig/juice is, why lines move, and where your edge actually comes from. A clear primer for finding value and arbitrage.',
+    category: 'Strategy',
+    published: '2026-06-23',
+    updated: '2026-06-23',
+    readingMinutes: 7,
+    keywords: [
+      'how do sportsbooks set odds',
+      'what is the vig',
+      'sportsbook margin',
+      'line movement',
+      'betting odds explained',
+      'how betting odds work',
+    ],
+    author: 'Valor Odds',
+  },
 ];
 
 export function metaBySlug(slug: string): ArticleMeta | null {

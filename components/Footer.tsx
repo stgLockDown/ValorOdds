@@ -16,7 +16,7 @@ export default function Footer() {
           </p>
         </div>
         <div>
-          <h4 className="text-sm font-semibold mb-3">Product</h4>
+          <h2 className="text-sm font-semibold mb-3">Product</h2>
           <ul className="space-y-2 text-sm text-brand-muted">
             <li><Link href="/#features" className="hover:text-brand-text">Features</Link></li>
             <li><Link href="/#examples" className="hover:text-brand-text">Live examples</Link></li>
@@ -25,14 +25,14 @@ export default function Footer() {
           </ul>
         </div>
         <div>
-          <h4 className="text-sm font-semibold mb-3">Company</h4>
+          <h2 className="text-sm font-semibold mb-3">Company</h2>
           <ul className="space-y-2 text-sm text-brand-muted">
             <li><Link href="/about" className="hover:text-brand-text">About</Link></li>
             <li><a href="https://discord.gg/MfD933h9jb" target="_blank" rel="noreferrer" className="hover:text-brand-text">Discord community</a></li>
           </ul>
         </div>
         <div>
-          <h4 className="text-sm font-semibold mb-3">Legal</h4>
+          <h2 className="text-sm font-semibold mb-3">Legal</h2>
           <ul className="space-y-2 text-sm text-brand-muted">
             <li><Link href="/terms" className="hover:text-brand-text">Terms of service</Link></li>
             <li><Link href="/privacy" className="hover:text-brand-text">Privacy policy</Link></li>

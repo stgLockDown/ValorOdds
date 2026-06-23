@@ -49,7 +49,11 @@ const CSP_DIRECTIVES = [
   "img-src 'self' data: blob: https://cdn.discordapp.com https://images.unsplash.com https://www.google-analytics.com",
   "connect-src 'self' https://*.stripe.com https://www.google-analytics.com https://region1.google-analytics.com",
   "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
-  'upgrade-insecure-requests',
+  // NOTE: `upgrade-insecure-requests` is intentionally omitted while the CSP
+  // is delivered Report-Only — browsers ignore it in report-only mode and log
+  // a console warning. Re-add it when flipping to an enforcing
+  // `Content-Security-Policy` header (HSTS already forces HTTPS in the
+  // meantime).
 ].join('; ');
 
 const securityHeaders = [
