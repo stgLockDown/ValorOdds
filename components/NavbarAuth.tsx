@@ -24,10 +24,9 @@ import { LayoutDashboard, User as UserIcon } from 'lucide-react';
  * started) which is exactly what we want them to see and follow.
  */
 
-type MeResponse = {
-  user?: { display_name: string | null; email: string } | null;
-  tier?: string | null;
-};
+type SessionResponse = {
+  user?: { name?: string | null; email?: string | null; tier?: string | null } | null;
+} | null;
 
 export default function NavbarAuth() {
   const [state, setState] = useState<'loading' | 'authed' | 'guest'>('loading');
@@ -36,13 +35,15 @@ export default function NavbarAuth() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/account/me', { credentials: 'include' })
+    // Use NextAuth's session endpoint: it returns 200 (body `null`) for
+    // guests, so it never logs a 401 in the console (unlike /api/account/me).
+    fetch('/api/auth/session', { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: MeResponse | null) => {
+      .then((data: SessionResponse) => {
         if (cancelled) return;
         if (data?.user) {
-          setLabel(data.user.display_name || data.user.email || 'Account');
-          setTier(data.tier && data.tier !== 'free' ? data.tier : null);
+          setLabel(data.user.name || data.user.email || 'Account');
+          setTier(data.user.tier && data.user.tier !== 'free' ? data.user.tier : null);
           setState('authed');
         } else {
           setState('guest');

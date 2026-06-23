@@ -5,11 +5,11 @@ import Navbar from '@/components/MarketingNavbar';
 import Footer from '@/components/Footer';
 import {
   buildMetadata,
-  breadcrumbJsonLd,
   articleJsonLd,
   canonical,
 } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
+import Breadcrumbs from '@/components/Breadcrumbs';
 import { getArticle, allArticles } from '@/components/learn';
 import { ARTICLE_MANIFEST } from '@/components/learn/manifest';
 
@@ -50,32 +50,25 @@ export default function ArticlePage({ params }: Params) {
   return (
     <>
       <JsonLd
-        data={[
-          articleJsonLd({
-            title: meta.title,
-            description: meta.description,
-            url: canonical(`/learn/${meta.slug}`),
-            datePublished: meta.published,
-            dateModified: meta.updated || meta.published,
-            author: meta.author,
-          }),
-          breadcrumbJsonLd([
-            { name: 'Home', url: canonical('/') },
-            { name: 'Learn', url: canonical('/learn') },
-            { name: meta.title, url: canonical(`/learn/${meta.slug}`) },
-          ]),
-        ]}
+        data={articleJsonLd({
+          title: meta.title,
+          description: meta.description,
+          url: canonical(`/learn/${meta.slug}`),
+          datePublished: meta.published,
+          dateModified: meta.updated || meta.published,
+          author: meta.author,
+        })}
       />
       <Navbar />
 
       <article className="container-px mx-auto max-w-3xl py-12">
-        <nav aria-label="Breadcrumb" className="text-xs text-brand-muted mb-6">
-          <Link href="/" className="hover:underline">Home</Link>
-          <span className="mx-2">/</span>
-          <Link href="/learn" className="hover:underline">Learn</Link>
-          <span className="mx-2">/</span>
-          <span className="text-white">{meta.category}</span>
-        </nav>
+        <Breadcrumbs
+          items={[
+            { name: 'Home', url: canonical('/') },
+            { name: 'Learn', url: canonical('/learn') },
+            { name: meta.title, url: canonical(`/learn/${meta.slug}`) },
+          ]}
+        />
 
         <header>
           <div className="text-xs uppercase tracking-widest text-brand-accent">
@@ -117,6 +110,20 @@ export default function ArticlePage({ params }: Params) {
             </ul>
           </aside>
         )}
+
+        {/* Internal-linking CTA — routes readers to product/money pages */}
+        <aside className="mt-8 rounded-2xl border border-brand-primary/30 bg-brand-primary/10 p-6">
+          <h2 className="text-lg font-bold">Put this into practice</h2>
+          <p className="mt-2 text-sm text-brand-muted">
+            Valor Odds turns these concepts into live, actionable opportunities across 25+ sports.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3 text-sm">
+            <Link href="/arbitrage" className="badge-secondary">Live arbitrage</Link>
+            <Link href="/sports" className="badge-secondary">Browse sports</Link>
+            <Link href="/learn" className="badge-secondary">All guides</Link>
+            <Link href="/pricing" className="badge-secondary">See pricing</Link>
+          </div>
+        </aside>
       </article>
 
       <Footer />

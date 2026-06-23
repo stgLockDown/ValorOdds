@@ -169,7 +169,7 @@ export function ConsentManager() {
               — declining means no analytics data is collected.{' '}
               <a
                 href="/privacy"
-                className="text-brand-primary underline underline-offset-2 hover:no-underline"
+                className="text-brand-primaryText underline underline-offset-2 hover:no-underline"
               >
                 Privacy Policy
               </a>

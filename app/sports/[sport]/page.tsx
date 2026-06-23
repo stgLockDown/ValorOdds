@@ -5,19 +5,20 @@ import Navbar from '@/components/MarketingNavbar';
 import Footer from '@/components/Footer';
 import {
   buildMetadata,
-  breadcrumbJsonLd,
   sportsEventJsonLd,
   canonical,
   SPORTS,
   MARKETS,
-  type SportSlug,
 } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
+import Breadcrumbs from '@/components/Breadcrumbs';
 import {
   getUpcomingGamesBySport,
   getArbStatsBySport,
   fmtAmerican,
   getBestOddsBySportMarket,
+  getTeamsBySport,
+  teamSlug,
 } from '@/lib/public-data';
 
 /**
@@ -84,16 +85,11 @@ export default async function SportHubPage({ params }: Params) {
   const sport = findSport(params.sport);
   if (!sport) notFound();
 
-  const [games, arbStats, bestMoneyline] = await Promise.all([
+  const [games, arbStats, bestMoneyline, teams] = await Promise.all([
     getUpcomingGamesBySport(sport.code, 16),
     getArbStatsBySport(sport.code),
     getBestOddsBySportMarket(sport.code, 'h2h', 8),
-  ]);
-
-  const breadcrumb = breadcrumbJsonLd([
-    { name: 'Home', url: canonical('/') },
-    { name: 'Sports', url: canonical('/sports') },
-    { name: sport.name, url: canonical(`/sports/${sport.slug}`) },
+    getTeamsBySport(sport.code),
   ]);
 
   const eventLd = games.slice(0, 10).map((g) =>
@@ -109,18 +105,17 @@ export default async function SportHubPage({ params }: Params) {
 
   return (
     <>
-      <JsonLd data={[breadcrumb, ...eventLd]} />
+      <JsonLd data={eventLd} />
       <Navbar />
 
       <main className="container-px mx-auto max-w-7xl py-12">
-        {/* Breadcrumb (visible) */}
-        <nav aria-label="Breadcrumb" className="text-xs text-brand-muted mb-6">
-          <Link href="/" className="hover:underline">Home</Link>
-          <span className="mx-2">/</span>
-          <Link href="/sports" className="hover:underline">Sports</Link>
-          <span className="mx-2">/</span>
-          <span className="text-white">{sport.name}</span>
-        </nav>
+        <Breadcrumbs
+          items={[
+            { name: 'Home', url: canonical('/') },
+            { name: 'Sports', url: canonical('/sports') },
+            { name: sport.name, url: canonical(`/sports/${sport.slug}`) },
+          ]}
+        />
 
         <header className="max-w-3xl">
           <div className="text-xs uppercase tracking-widest text-brand-accent">
@@ -198,7 +193,7 @@ export default async function SportHubPage({ params }: Params) {
                     <span className="text-brand-muted">@</span> {g.homeTeam}
                   </div>
                   <Link
-                    href={`/sports/${sport.slug}/odds/moneyline`}
+                    href={`/games/${sport.slug}/${encodeURIComponent(g.gameId)}`}
                     className="mt-2 inline-block text-xs text-brand-accent hover:underline"
                   >
                     See odds →
@@ -208,6 +203,27 @@ export default async function SportHubPage({ params }: Params) {
             </ul>
           )}
         </section>
+
+        {/* Teams (internal linking to per-team hubs) */}
+        {teams.length > 0 && (
+          <section className="mt-12">
+            <h2 className="text-2xl font-bold">{sport.name} teams</h2>
+            <p className="mt-2 text-brand-muted text-sm">
+              Jump to any team for its upcoming schedule and best available odds.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {teams.slice(0, 40).map((t) => (
+                <Link
+                  key={t}
+                  href={`/sports/${sport.slug}/teams/${teamSlug(t)}`}
+                  className="badge-secondary"
+                >
+                  {t}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Best moneyline snippets (SEO content body) */}
         {bestMoneyline.length > 0 && (

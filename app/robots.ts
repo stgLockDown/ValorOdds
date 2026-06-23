@@ -76,7 +76,12 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/'],
       })),
     ],
-    sitemap: [`${SITE.url}/sitemap.xml`],
+    sitemap: [
+      `${SITE.url}/sitemap-index.xml`,
+      `${SITE.url}/sitemap.xml`,
+      `${SITE.url}/sitemap-games.xml`,
+      `${SITE.url}/sitemap-teams.xml`,
+    ],
     host: SITE.url,
   };
 }
