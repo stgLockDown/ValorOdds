@@ -54,7 +54,7 @@ const TIERS: Tier[] = [
   {
     id: 'premium',
     name: 'Premium',
-    price: '$29',
+    price: '$30',
     period: '/ month',
     tagline: 'Full coverage across every sport we track.',
     featured: true,
@@ -73,7 +73,7 @@ const TIERS: Tier[] = [
   {
     id: 'vip',
     name: 'VIP',
-    price: '$79',
+    price: '$80',
     period: '/ month',
     tagline: 'Shape the future of Valor Odds.',
     ribbon: '🌟 Shape the future',

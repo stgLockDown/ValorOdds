@@ -16,8 +16,8 @@ type Tier = 'basic' | 'premium' | 'vip';
 
 const TIER_LABEL: Record<Tier, { name: string; price: string }> = {
   basic: { name: 'Basic', price: '$9.99/mo' },
-  premium: { name: 'Premium', price: '$29/mo' },
-  vip: { name: 'VIP', price: '$79/mo' },
+  premium: { name: 'Premium', price: '$30/mo' },
+  vip: { name: 'VIP', price: '$80/mo' },
 };
 
 export default function CheckoutClient({ tier }: { tier: Tier }) {
