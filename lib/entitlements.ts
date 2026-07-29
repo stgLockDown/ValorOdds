@@ -11,8 +11,8 @@
  *              sportsbooks — with a smaller results cap than premium/vip — plus
  *              a LIMITED arbitrage feed of 1 domestic + 1 international
  *              opportunity per day. No premium Discord channels.
- *  - premium : $29/mo. Full access (chat + arbitrage + steam + props).
- *  - vip     : $79/mo. Everything in premium + VIP extras.
+ *  - premium : $30/mo. Full access (chat + arbitrage + steam + props).
+ *  - vip     : $80/mo. Everything in premium + VIP extras.
  *
  * Adding `basic` must NOT change premium/vip behaviour — those tiers keep
  * every entitlement they had before this tier existed.
