@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { env } from '@/lib/env';
+import { query } from '@/lib/db';
 
 /**
  * GET /api/api-access/samples
@@ -60,7 +61,7 @@ type SamplesPayload = {
 type SampleTab = {
   id: string;
   label: string;
-  category: 'Sport Data' | 'Odds API';
+  category: 'Sport Data' | 'Odds API' | 'Intelligence';
   endpoint: string;
   method: 'GET';
   description: string;
@@ -282,6 +283,107 @@ async function collectOddsSnapshot(key: string): Promise<SampleTab> {
 }
 
 // ---------------------------------------------------------------------------
+// Intelligence product samples (DB-sourced)
+// ---------------------------------------------------------------------------
+
+async function collectArbitrageSample(): Promise<SampleTab> {
+  const result = await query(
+    `SELECT id, sport, home_team, away_team,
+            best_home_odds, best_home_book,
+            best_away_odds, best_away_book,
+            profit_percentage, implied_total, fetched_at
+     FROM custom_api_compare
+     WHERE is_arbitrage = TRUE
+       AND fetched_at > NOW() - INTERVAL '35 minutes'
+     ORDER BY profit_percentage DESC NULLS LAST
+     LIMIT 3`
+  );
+  return {
+    id: 'intel-arbitrage',
+    label: 'Arbitrage',
+    category: 'Intelligence',
+    endpoint: 'GET /v1/intelligence/arbitrage',
+    method: 'GET',
+    description:
+      'Live sure-bet opportunities across 20+ sportsbooks. Each row shows the best odds on each side, the sportsbook offering them, and the guaranteed profit percentage. Updated every 60 seconds.',
+    pingCost: 5,
+    status: 200,
+    json: { count: result.rows.length, data: result.rows },
+  };
+}
+
+async function collectSteamMovesSample(): Promise<SampleTab> {
+  const result = await query(
+    `SELECT id, sport, home_team, away_team, market_type, outcome_name,
+            before_avg_price, after_avg_price, books_moved, total_books,
+            direction, detected_at
+     FROM steam_moves
+     WHERE detected_at > NOW() - INTERVAL '60 minutes'
+     ORDER BY detected_at DESC
+     LIMIT 5`
+  );
+  return {
+    id: 'intel-steam',
+    label: 'Steam Moves',
+    category: 'Intelligence',
+    endpoint: 'GET /v1/intelligence/steam-moves',
+    method: 'GET',
+    description:
+      'Real-time line-movement alerts. When 3+ sportsbooks move a line in the same direction within a short window, we flag it — the sharpest signal in the market. Shows before/after prices, books moved, and direction.',
+    pingCost: 5,
+    status: 200,
+    json: { count: result.rows.length, data: result.rows },
+  };
+}
+
+async function collectInjuriesSample(): Promise<SampleTab> {
+  const result = await query(
+    `SELECT id, sport, player_name, team, position, status,
+            injury_type, description, source, reported_date, fetched_at
+     FROM injuries
+     WHERE fetched_at > NOW() - INTERVAL '48 hours'
+     ORDER BY fetched_at DESC
+     LIMIT 5`
+  );
+  return {
+    id: 'intel-injuries',
+    label: 'Injuries',
+    category: 'Intelligence',
+    endpoint: 'GET /v1/intelligence/injuries',
+    method: 'GET',
+    description:
+      'Standardized injury reports aggregated from ESPN and other sources. Each report includes player, team, position, status (Day-To-Day / IL / Out), injury type, and a full description.',
+    pingCost: 2,
+    status: 200,
+    json: { count: result.rows.length, data: result.rows },
+  };
+}
+
+async function collectAiAnalysisSample(): Promise<SampleTab> {
+  const result = await query(
+    `SELECT id, analysis_type, model,
+            LEFT(content, 1200) as content_preview,
+            confidence, generated_at
+     FROM ai_analysis
+     WHERE analysis_type = 'depthAnalysis'
+     ORDER BY generated_at DESC
+     LIMIT 2`
+  );
+  return {
+    id: 'intel-ai',
+    label: 'AI Analysis',
+    category: 'Intelligence',
+    endpoint: 'GET /v1/intelligence/ai-analysis',
+    method: 'GET',
+    description:
+      'GPT-4o-powered depth analysis for every game across all supported sports. Each report includes a recommended pick, confidence assessment, odds breakdown, and full reasoning in markdown. Content trimmed to 1,200 chars for preview.',
+    pingCost: 10,
+    status: 200,
+    json: { count: result.rows.length, data: result.rows },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Route handler
 // ---------------------------------------------------------------------------
 
@@ -295,7 +397,9 @@ export async function GET() {
 
   // Fetch all samples in parallel. If an individual fetch fails, we still
   // return the ones that succeeded so the page degrades gracefully.
-  const collectors = [
+  // Sport + Odds samples fetch from backend services; intelligence samples
+  // query the DB directly (no network hop).
+  const remoteCollectors = [
     collectBaseballLeagues,
     collectBaseballGames,
     collectBaseballTeam,
@@ -305,7 +409,13 @@ export async function GET() {
     collectOddsSnapshot,
   ];
 
-  const results = await Promise.allSettled(collectors.map((c) => c(key)));
+  const results = await Promise.allSettled([
+    ...remoteCollectors.map((c) => c(key)),
+    collectArbitrageSample(),
+    collectSteamMovesSample(),
+    collectInjuriesSample(),
+    collectAiAnalysisSample(),
+  ]);
 
   const samples: SampleTab[] = [];
   for (const r of results) {

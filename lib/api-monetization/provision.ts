@@ -17,6 +17,7 @@ export interface ApiCheckoutMetadata {
   apiAllAccess?: string;
   apiOddsAddon?: string;
   apiSports?: string;
+  apiIntelAddons?: string;
 }
 
 export function isApiMonetizationCheckout(
@@ -47,6 +48,7 @@ export async function provisionApiPlanFromCheckout(
   const allAccess = meta.apiAllAccess === 'true';
   const oddsAddon = meta.apiOddsAddon === 'true';
   const sports = (meta.apiSports || '').split(',').filter(Boolean);
+  const intelAddons = (meta.apiIntelAddons || '').split(',').filter(Boolean);
   const pingTierCode = meta.apiPingTierCode || null;
 
   let monthlyQuota = 0;
@@ -115,6 +117,19 @@ export async function provisionApiPlanFromCheckout(
   // all_access plans check the boolean flag directly and don't need per-row links).
   if (planType === 'bundle' && !allAccess && sports.length > 0) {
     for (const code of sports) {
+      await query(
+        `INSERT INTO customer_api_plan_products (plan_id, product_code) VALUES ($1, $2)
+         ON CONFLICT (plan_id, product_code) DO NOTHING`,
+        [planId, code]
+      );
+    }
+  }
+
+  // Link intelligence product add-ons (arbitrage, steam_moves, injuries, ai_analysis).
+  // These are always per-row links regardless of all_access — all_access only
+  // covers the 26 sport APIs, not the premium intelligence feeds.
+  if (planType === 'bundle' && intelAddons.length > 0) {
+    for (const code of intelAddons) {
       await query(
         `INSERT INTO customer_api_plan_products (plan_id, product_code) VALUES ($1, $2)
          ON CONFLICT (plan_id, product_code) DO NOTHING`,

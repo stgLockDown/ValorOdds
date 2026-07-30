@@ -40,6 +40,15 @@ const PRODUCT_BACKENDS = {
   // (it does not use the X-API-Key/api_keys-table pattern the sport APIs use —
   // it's an internal-only service today) — gateway still fronts it uniformly.
   odds: process.env.BACKEND_ODDS || 'sportsbook-api-production-296e.up.railway.app',
+
+  // Intelligence products are DB-sourced (no backend service to proxy to).
+  // They have null backend_url_env in api_products. We list them here so the
+  // gateway knows they're valid product codes, but the /v1/proxy route will
+  // never be used for them — they have dedicated /v1/intelligence/* routes.
+  arbitrage: null,
+  steam_moves: null,
+  injuries: null,
+  ai_analysis: null,
 };
 
 // Sport product codes use the shared per-schema X-API-Key auth pattern.
@@ -47,6 +56,13 @@ const PRODUCT_BACKENDS = {
 // the gateway is the ONLY auth boundary for it (backend trusts all callers
 // on its network / with no key). We still forward a marker header for
 // forward-compatibility if that service adds key auth later.
-const SPORT_PRODUCT_CODES = Object.keys(PRODUCT_BACKENDS).filter((c) => c !== 'odds');
+// Intelligence products (arbitrage, steam_moves, injuries, ai_analysis) are
+// DB-sourced and have dedicated /v1/intelligence/* routes — not sport proxies.
+const SPORT_PRODUCT_CODES = Object.keys(PRODUCT_BACKENDS).filter(
+  (c) => c !== 'odds' && c !== 'arbitrage' && c !== 'steam_moves' && c !== 'injuries' && c !== 'ai_analysis'
+);
 
-module.exports = { PRODUCT_BACKENDS, SPORT_PRODUCT_CODES };
+// Intelligence product codes (DB-sourced premium feeds).
+const INTELLIGENCE_PRODUCT_CODES = ['arbitrage', 'steam_moves', 'injuries', 'ai_analysis'];
+
+module.exports = { PRODUCT_BACKENDS, SPORT_PRODUCT_CODES, INTELLIGENCE_PRODUCT_CODES };

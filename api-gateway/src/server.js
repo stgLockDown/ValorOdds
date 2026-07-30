@@ -9,6 +9,7 @@ const {
   consumePings,
   logUsageEvent,
 } = require('./quota');
+const intelligenceRouter = require('./intelligence');
 
 const app = express();
 app.disable('x-powered-by');
@@ -50,6 +51,15 @@ app.all('/v1/proxy/:product/*', async (req, res) => {
 
   if (!PRODUCT_BACKENDS[product]) {
     return res.status(404).json({ error: 'unknown_product', product });
+  }
+
+  // Intelligence products have null backends — they use /v1/intelligence/* routes.
+  if (PRODUCT_BACKENDS[product] === null) {
+    return res.status(404).json({
+      error: 'wrong_endpoint',
+      message: `Product "${product}" is served at /v1/intelligence/${product.replace(/_/g, '-')}, not /v1/proxy/${product}.`,
+      correct_path: `/v1/intelligence/${product.replace(/_/g, '-')}`,
+    });
   }
 
   if (!rawKey) {
@@ -156,6 +166,17 @@ app.all('/v1/proxy/:product/*', async (req, res) => {
     res.status(502).json({ error: 'backend_unavailable', product });
   }
 });
+
+/**
+ * Intelligence product routes — DB-sourced premium feeds (arbitrage,
+ * steam-moves, injuries, ai-analysis). These query the ValorOdds Postgres
+ * database directly rather than proxying to a backend service.
+ *   GET /v1/intelligence/arbitrage
+ *   GET /v1/intelligence/steam-moves
+ *   GET /v1/intelligence/injuries
+ *   GET /v1/intelligence/ai-analysis
+ */
+app.use('/v1/intelligence', intelligenceRouter);
 
 // Usage snapshot for a given key (used by the customer dashboard indirectly
 // via the ValorOdds web app's own /api/api-access/usage route which calls
