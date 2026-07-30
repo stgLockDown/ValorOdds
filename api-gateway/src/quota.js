@@ -36,9 +36,32 @@ async function planHasProduct(plan, productCode) {
     if (plan.plan_type === 'bundle' && plan.odds_addon) return true;
     return false;
   }
+  // Intelligence products (arbitrage, steam_moves, injuries, ai_analysis):
+  //   - If the plan is a standalone intelligence plan, it's handled by the
+  //     web app's checkout creating a bundle plan with the product in
+  //     customer_api_plan_products. So the standard product-membership check
+  //     below covers both add-on and standalone cases.
+  //   - all_access grants every sport, but NOT intelligence products (they
+  //     are premium add-ons that must be purchased separately).
   // sport product
-  if (plan.plan_type === 'odds_standalone') return false; // odds-only plan grants nothing else
-  if (plan.all_access) return true;
+  if (plan.plan_type === 'odds_standalone') {
+    // odds-only plan grants nothing else (including intelligence products)
+    return false;
+  }
+  if (plan.all_access) {
+    // All-Access covers the 26 sports but not intelligence / odds add-ons.
+    // Intelligence products still require explicit plan_products membership.
+    const intelCodes = ['arbitrage', 'steam_moves', 'injuries', 'ai_analysis'];
+    if (intelCodes.includes(productCode)) {
+      const row = await queryOne(
+        `SELECT 1 FROM customer_api_plan_products WHERE plan_id = $1 AND product_code = $2`,
+        [plan.plan_id, productCode]
+      );
+      return !!row;
+    }
+    return true;
+  }
+  // Standard bundle: check explicit product membership.
   const row = await queryOne(
     `SELECT 1 FROM customer_api_plan_products WHERE plan_id = $1 AND product_code = $2`,
     [plan.plan_id, productCode]

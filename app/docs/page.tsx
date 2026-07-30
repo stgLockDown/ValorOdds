@@ -98,6 +98,7 @@ export default function DocsPage() {
                 ['gateway-endpoints', 'Gateway Endpoints'],
                 ['sport-endpoints', 'Sport API Endpoints'],
                 ['odds-endpoints', 'Odds API Endpoints'],
+                ['intel-endpoints', 'Intelligence Endpoints'],
                 ['pricing', 'Pricing & Quotas'],
                 ['rate-limits', 'Rate Limits & Overages'],
                 ['errors', 'Error Codes'],
@@ -398,6 +399,172 @@ curl "${GATEWAY_BASE}/v1/proxy/odds/v1/odds" \\
                   API call consumes 5 pings. With a 50,000 ping pool (standalone or from your
                   bundle), that gives you 10,000 effective odds calls per month.
                 </p>
+              </div>
+            </section>
+
+            {/* Intelligence Endpoints */}
+            <section id="intel-endpoints">
+              <h2 className="text-2xl font-bold mb-4">Intelligence Endpoints</h2>
+              <p className="text-brand-muted leading-relaxed mb-4">
+                Intelligence products are premium analytics feeds sourced from our real-time data
+                pipeline. Unlike sport APIs (which proxy to backend services), these endpoints query
+                our database directly and return pre-computed, value-added intelligence. There are
+                four products, each available as a bundle add-on or standalone subscription.
+              </p>
+
+              <h3 className="text-lg font-semibold mt-6 mb-3">
+                Arbitrage &amp; Sure-Bet Feed — <code className="docs-inline-code">arbitrage</code>
+              </h3>
+              <p className="text-brand-muted leading-relaxed mb-3">
+                Live sure-bet opportunities across 20+ sportsbooks. Every row includes the best odds
+                on each side, the sportsbook offering them, the guaranteed profit percentage, and the
+                full per-book odds breakdown in the <code className="docs-inline-code">all_odds</code>
+                field. Updated every 60 seconds. Each call consumes <strong className="text-brand-text">5 pings</strong>.
+              </p>
+              <CodeBlock
+                language="bash"
+                code={`# Get the top 20 live arbitrage opportunities
+curl "${GATEWAY_BASE}/v1/intelligence/arbitrage?limit=20&min_profit=1" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"
+
+# Filter by sport
+curl "${GATEWAY_BASE}/v1/intelligence/arbitrage?sport=soccer&stake=500" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"`}
+              />
+              <div className="mt-3 mb-6 overflow-x-auto">
+                <table className="w-full text-sm border border-brand-border rounded-lg">
+                  <thead className="bg-brand-surface">
+                    <tr className="text-left">
+                      <th className="px-4 py-2 font-semibold">Parameter</th>
+                      <th className="px-4 py-2 font-semibold">Default</th>
+                      <th className="px-4 py-2 font-semibold">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-brand-border">
+                    <tr><td className="px-4 py-2 font-mono">sport</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">Filter by sport (case-insensitive)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">min_profit</td><td className="px-4 py-2 text-brand-muted">0</td><td className="px-4 py-2 text-brand-muted">Minimum profit percentage</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">limit</td><td className="px-4 py-2 text-brand-muted">50</td><td className="px-4 py-2 text-brand-muted">Max results (up to 200)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">stake</td><td className="px-4 py-2 text-brand-muted">100</td><td className="px-4 py-2 text-brand-muted">Bankroll for stake allocation calculation</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">window</td><td className="px-4 py-2 text-brand-muted">35</td><td className="px-4 py-2 text-brand-muted">Lookback window in minutes</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <h3 className="text-lg font-semibold mt-6 mb-3">
+                Steam Moves &amp; Line Movement — <code className="docs-inline-code">steam_moves</code>
+              </h3>
+              <p className="text-brand-muted leading-relaxed mb-3">
+                Real-time line-movement alerts. When 3+ sportsbooks move a line in the same direction
+                within a short window, we flag it as a steam move — the sharpest signal in the market.
+                Each alert includes before/after average prices, the number of books that moved, total
+                books tracked, and the direction (UP or DOWN). Each call consumes{' '}
+                <strong className="text-brand-text">5 pings</strong>.
+              </p>
+              <CodeBlock
+                language="bash"
+                code={`# Get recent steam moves across all sports
+curl "${GATEWAY_BASE}/v1/intelligence/steam-moves?limit=50" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"
+
+# Filter by sport and direction
+curl "${GATEWAY_BASE}/v1/intelligence/steam-moves?sport=BASEBALL&direction=UP" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"`}
+              />
+              <div className="mt-3 mb-6 overflow-x-auto">
+                <table className="w-full text-sm border border-brand-border rounded-lg">
+                  <thead className="bg-brand-surface">
+                    <tr className="text-left">
+                      <th className="px-4 py-2 font-semibold">Parameter</th>
+                      <th className="px-4 py-2 font-semibold">Default</th>
+                      <th className="px-4 py-2 font-semibold">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-brand-border">
+                    <tr><td className="px-4 py-2 font-mono">sport</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">Filter by sport (case-insensitive)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">direction</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">UP or DOWN</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">market</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">Market type (spreads, totals, etc.)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">min_books</td><td className="px-4 py-2 text-brand-muted">1</td><td className="px-4 py-2 text-brand-muted">Minimum books that moved</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">limit</td><td className="px-4 py-2 text-brand-muted">50</td><td className="px-4 py-2 text-brand-muted">Max results (up to 200)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">window</td><td className="px-4 py-2 text-brand-muted">60</td><td className="px-4 py-2 text-brand-muted">Lookback in minutes (max 1440)</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <h3 className="text-lg font-semibold mt-6 mb-3">
+                Injury Reports — <code className="docs-inline-code">injuries</code>
+              </h3>
+              <p className="text-brand-muted leading-relaxed mb-3">
+                Standardized injury reports aggregated from ESPN and other sources. Each report
+                includes the player name, team, position, status (Day-To-Day, IL, Out, etc.), injury
+                type, and a full text description. Each call consumes{' '}
+                <strong className="text-brand-text">2 pings</strong>.
+              </p>
+              <CodeBlock
+                language="bash"
+                code={`# Get recent injury reports
+curl "${GATEWAY_BASE}/v1/intelligence/injuries?limit=50" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"
+
+# Filter by sport and team
+curl "${GATEWAY_BASE}/v1/intelligence/injuries?sport=MLB&team=Yankees" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"`}
+              />
+              <div className="mt-3 mb-6 overflow-x-auto">
+                <table className="w-full text-sm border border-brand-border rounded-lg">
+                  <thead className="bg-brand-surface">
+                    <tr className="text-left">
+                      <th className="px-4 py-2 font-semibold">Parameter</th>
+                      <th className="px-4 py-2 font-semibold">Default</th>
+                      <th className="px-4 py-2 font-semibold">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-brand-border">
+                    <tr><td className="px-4 py-2 font-mono">sport</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">Filter by sport (e.g. MLB, NBA)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">team</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">Partial team name match (case-insensitive)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">status</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">Filter by status (Day-To-Day, Out, IL, etc.)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">limit</td><td className="px-4 py-2 text-brand-muted">50</td><td className="px-4 py-2 text-brand-muted">Max results (up to 200)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">window</td><td className="px-4 py-2 text-brand-muted">48</td><td className="px-4 py-2 text-brand-muted">Lookback in hours (max 720 = 30 days)</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <h3 className="text-lg font-semibold mt-6 mb-3">
+                AI Betting Intelligence — <code className="docs-inline-code">ai_analysis</code>
+              </h3>
+              <p className="text-brand-muted leading-relaxed mb-3">
+                GPT-4o-powered depth analysis for every game across all supported sports. Each report
+                includes a recommended pick, confidence assessment, odds breakdown, and full reasoning
+                in markdown. This is our highest-weight product — each call consumes{' '}
+                <strong className="text-brand-text">10 pings</strong> due to the compute cost of
+                generating each analysis.
+              </p>
+              <CodeBlock
+                language="bash"
+                code={`# Get the 20 most recent AI analyses
+curl "${GATEWAY_BASE}/v1/intelligence/ai-analysis?limit=20" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"
+
+# Get analysis without the full content (metadata only, lighter response)
+curl "${GATEWAY_BASE}/v1/intelligence/ai-analysis?include_content=false" \\
+  -H "X-API-Key: $VALORODDS_API_KEY"`}
+              />
+              <div className="mt-3 mb-6 overflow-x-auto">
+                <table className="w-full text-sm border border-brand-border rounded-lg">
+                  <thead className="bg-brand-surface">
+                    <tr className="text-left">
+                      <th className="px-4 py-2 font-semibold">Parameter</th>
+                      <th className="px-4 py-2 font-semibold">Default</th>
+                      <th className="px-4 py-2 font-semibold">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-brand-border">
+                    <tr><td className="px-4 py-2 font-mono">analysis_type</td><td className="px-4 py-2 text-brand-muted">depthAnalysis</td><td className="px-4 py-2 text-brand-muted">Type of analysis to retrieve</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">model</td><td className="px-4 py-2 text-brand-muted">all</td><td className="px-4 py-2 text-brand-muted">Filter by model (e.g. gpt-4o)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">limit</td><td className="px-4 py-2 text-brand-muted">20</td><td className="px-4 py-2 text-brand-muted">Max results (up to 100)</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">include_content</td><td className="px-4 py-2 text-brand-muted">true</td><td className="px-4 py-2 text-brand-muted">Include full markdown content</td></tr>
+                    <tr><td className="px-4 py-2 font-mono">include_sports_data</td><td className="px-4 py-2 text-brand-muted">false</td><td className="px-4 py-2 text-brand-muted">Include the source sports data JSONB</td></tr>
+                  </tbody>
+                </table>
               </div>
             </section>
 

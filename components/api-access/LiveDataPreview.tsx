@@ -11,12 +11,13 @@ import {
   Terminal,
   CheckCircle2,
   AlertCircle,
+  Brain,
 } from 'lucide-react';
 
 interface SampleTab {
   id: string;
   label: string;
-  category: 'Sport Data' | 'Odds API';
+  category: 'Sport Data' | 'Odds API' | 'Intelligence';
   endpoint: string;
   method: 'GET';
   description: string;
@@ -103,6 +104,7 @@ export default function LiveDataPreview() {
 
   const sportTabs = data?.samples.filter((s) => s.category === 'Sport Data') ?? [];
   const oddsTabs = data?.samples.filter((s) => s.category === 'Odds API') ?? [];
+  const intelTabs = data?.samples.filter((s) => s.category === 'Intelligence') ?? [];
 
   const handleCopy = async () => {
     if (!active) return;
@@ -190,6 +192,21 @@ export default function LiveDataPreview() {
               label={tab.label}
             />
           ))}
+          {intelTabs.length > 0 && (
+            <>
+              <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-brand-muted mx-2">
+                <Brain className="h-3 w-3" /> Intelligence
+              </span>
+              {intelTabs.map((tab) => (
+                <TabButton
+                  key={tab.id}
+                  active={activeId === tab.id}
+                  onClick={() => setActiveId(tab.id)}
+                  label={tab.label}
+                />
+              ))}
+            </>
+          )}
         </div>
 
         {/* Content area */}

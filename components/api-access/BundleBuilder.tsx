@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, Zap, Info } from 'lucide-react';
+import { Check, Loader2, Zap, Info, Brain, TrendingUp, HeartPulse, Activity } from 'lucide-react';
 
 interface Product {
   code: string;
@@ -25,6 +25,17 @@ function fmtCents(cents: number): string {
   return d % 1 === 0 ? `$${d}` : `$${d.toFixed(2)}`;
 }
 
+const INTEL_DESCRIPTIONS: Record<string, string> = {
+  arbitrage:
+    'Live sure-bet opportunities across 20+ sportsbooks with full per-book odds breakdowns.',
+  steam_moves:
+    'Real-time line-movement alerts when 3+ books move a line in the same direction.',
+  injuries:
+    'Standardized injury reports from ESPN and other sources — player, team, status, type.',
+  ai_analysis:
+    'GPT-4o-powered depth analysis for every game with recommended picks and full reasoning.',
+};
+
 export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: boolean }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [tiers, setTiers] = useState<PingTier[]>([]);
@@ -33,6 +44,7 @@ export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: bo
   const [allAccess, setAllAccess] = useState(false);
   const [selectedSports, setSelectedSports] = useState<Set<string>>(new Set());
   const [oddsAddon, setOddsAddon] = useState(false);
+  const [intelAddons, setIntelAddons] = useState<Set<string>>(new Set());
   const [oddsStandaloneMode, setOddsStandaloneMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +62,26 @@ export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: bo
 
   const sportProducts = products.filter((p) => p.category === 'sport');
   const oddsProduct = products.find((p) => p.code === 'odds');
+  const intelligenceProducts = products.filter(
+    (p) => p.category === 'premium' && p.code !== 'odds'
+  );
+
+  // Icon mapping for intelligence products
+  const intelIcons: Record<string, typeof Brain> = {
+    arbitrage: Activity,
+    steam_moves: TrendingUp,
+    injuries: HeartPulse,
+    ai_analysis: Brain,
+  };
+
+  function toggleIntel(code: string) {
+    setIntelAddons((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
 
   function toggleSport(code: string) {
     setSelectedSports((prev) => {
@@ -79,8 +111,12 @@ export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: bo
     if (oddsAddon) {
       cents += oddsProduct?.addon_monthly_price_cents ?? 0;
     }
+    for (const code of intelAddons) {
+      const p = intelligenceProducts.find((ip) => ip.code === code);
+      cents += p?.addon_monthly_price_cents ?? 0;
+    }
     return cents;
-  }, [oddsStandaloneMode, oddsProduct, tiers, pingTierCode, allAccess, products, selectedSports, sportProducts, oddsAddon]);
+  }, [oddsStandaloneMode, oddsProduct, tiers, pingTierCode, allAccess, products, selectedSports, sportProducts, oddsAddon, intelAddons, intelligenceProducts]);
 
   async function handleCheckout() {
     if (!isAuthenticated) {
@@ -98,6 +134,7 @@ export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: bo
             allAccess,
             sports: allAccess ? [] : Array.from(selectedSports),
             oddsAddon,
+            intelligenceAddons: Array.from(intelAddons),
           };
       const resp = await fetch('/api/api-access/checkout', {
         method: 'POST',
@@ -253,6 +290,57 @@ export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: bo
               </span>
             </label>
           </div>
+
+          {/* Intelligence products */}
+          {intelligenceProducts.length > 0 && (
+            <div className="card p-5">
+              <h3 className="font-semibold mb-1">4. Intelligence add-ons</h3>
+              <p className="text-sm text-brand-muted mb-4">
+                Premium analytics feeds sourced from our real-time data pipeline. Add any
+                combination to your bundle — each draws from your shared ping pool at its own
+                weight.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {intelligenceProducts.map((p) => {
+                  const Icon = intelIcons[p.code] ?? Brain;
+                  return (
+                    <label
+                      key={p.code}
+                      className={`flex flex-col gap-2 rounded-lg border p-4 cursor-pointer transition-colors ${
+                        intelAddons.has(p.code)
+                          ? 'border-brand-primary bg-brand-primary/10'
+                          : 'border-brand-border hover:border-brand-primary/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={intelAddons.has(p.code)}
+                            onChange={() => toggleIntel(p.code)}
+                            className="h-4 w-4 mt-0.5"
+                          />
+                          <Icon className="h-4 w-4 text-brand-accent shrink-0" />
+                          <span className="font-semibold text-sm">{p.name}</span>
+                        </span>
+                      </div>
+                      <p className="text-xs text-brand-muted pl-6">
+                        {INTEL_DESCRIPTIONS[p.code] ?? ''}
+                      </p>
+                      <div className="flex items-center justify-between pl-6">
+                        <span className="text-xs text-brand-muted">
+                          {p.ping_weight}x weight per call
+                        </span>
+                        <span className="font-bold text-sm">
+                          +{fmtCents(p.addon_monthly_price_cents ?? 0)}/mo
+                        </span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </fieldset>
 
         {error && <div className="text-sm text-red-400">{error}</div>}
@@ -303,6 +391,15 @@ export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: bo
                   <span>+{fmtCents(oddsProduct?.addon_monthly_price_cents ?? 0)}</span>
                 </div>
               )}
+              {Array.from(intelAddons).map((code) => {
+                const p = intelligenceProducts.find((ip) => ip.code === code);
+                return (
+                  <div key={code} className="flex justify-between text-brand-muted">
+                    <span>{p?.name}</span>
+                    <span>+{fmtCents(p?.addon_monthly_price_cents ?? 0)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
           <div className="border-t border-brand-border pt-3 flex justify-between font-bold text-lg">
@@ -311,7 +408,7 @@ export default function BundleBuilder({ isAuthenticated }: { isAuthenticated: bo
           </div>
           <button
             onClick={handleCheckout}
-            disabled={submitting || (!oddsStandaloneMode && !allAccess && selectedSports.size === 0 && !oddsAddon)}
+            disabled={submitting || (!oddsStandaloneMode && !allAccess && selectedSports.size === 0 && !oddsAddon && intelAddons.size === 0)}
             className="btn-primary w-full justify-center"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}

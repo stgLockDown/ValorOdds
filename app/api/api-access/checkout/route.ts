@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { getStripe, isStripeConfigured, StripeNotConfiguredError } from '@/lib/stripe';
 import { env } from '@/lib/env';
 import { query, queryOne } from '@/lib/db';
-import { isSportCode } from '@/lib/api-monetization/pricing';
+import { isSportCode, isIntelligenceCode } from '@/lib/api-monetization/pricing';
 
 export const runtime = 'nodejs';
 
@@ -14,6 +14,7 @@ const Body = z.object({
   sports: z.array(z.string()).optional().default([]),
   allAccess: z.boolean().optional().default(false),
   oddsAddon: z.boolean().optional().default(false),
+  intelligenceAddons: z.array(z.string()).optional().default([]),
 });
 
 export async function POST(req: Request) {
@@ -39,6 +40,10 @@ export async function POST(req: Request) {
   const badSports = input.sports.filter((s) => !isSportCode(s));
   if (badSports.length > 0) {
     return NextResponse.json({ error: `Unknown sport code(s): ${badSports.join(', ')}` }, { status: 400 });
+  }
+  const badIntel = input.intelligenceAddons.filter((s) => !isIntelligenceCode(s));
+  if (badIntel.length > 0) {
+    return NextResponse.json({ error: `Unknown intelligence product code(s): ${badIntel.join(', ')}` }, { status: 400 });
   }
 
   try {
@@ -91,6 +96,17 @@ export async function POST(req: Request) {
           lineItems.push({ price: odds.stripe_price_id_addon, quantity: 1 });
         }
       }
+
+      // Intelligence product add-ons (arbitrage, steam_moves, injuries, ai_analysis)
+      if (input.intelligenceAddons.length > 0) {
+        const intelRows = await query<{ code: string; stripe_price_id_addon: string | null }>(
+          `SELECT code, stripe_price_id_addon FROM api_products WHERE code = ANY($1::text[])`,
+          [input.intelligenceAddons]
+        );
+        for (const r of intelRows.rows) {
+          if (r.stripe_price_id_addon) lineItems.push({ price: r.stripe_price_id_addon, quantity: 1 });
+        }
+      }
     }
 
     if (lineItems.length === 0) {
@@ -109,6 +125,7 @@ export async function POST(req: Request) {
       apiAllAccess: String(input.allAccess),
       apiOddsAddon: String(input.oddsAddon),
       apiSports: input.sports.join(','),
+      apiIntelAddons: input.intelligenceAddons.join(','),
     };
 
     const checkoutSession = await stripe.checkout.sessions.create({
