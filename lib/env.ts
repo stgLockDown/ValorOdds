@@ -72,6 +72,10 @@ export const env = {
   botApiBaseUrl: () =>
     optional('BOT_API_BASE_URL', 'https://valoroddsdiscordbot-production.up.railway.app'),
 
+  // API Gateway internal key — used by the samples preview route to fetch
+  // real data from the backend sport/odds services for the API Access page.
+  gatewayInternalKey: () => optional('GATEWAY_INTERNAL_KEY', ''),
+
   // Stripe
   stripeSecretKey: () => readOptionalWithWarning('STRIPE_SECRET_KEY', ''),
   stripePublishableKey: optional('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'),
