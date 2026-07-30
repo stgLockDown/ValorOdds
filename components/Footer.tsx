@@ -21,6 +21,8 @@ export default function Footer() {
             <li><Link href="/#features" className="hover:text-brand-text">Features</Link></li>
             <li><Link href="/#examples" className="hover:text-brand-text">Live examples</Link></li>
             <li><Link href="/pricing" className="hover:text-brand-text">Pricing</Link></li>
+            <li><Link href="/api-access" className="hover:text-brand-text">API Access</Link></li>
+            <li><Link href="/docs" className="hover:text-brand-text">API Docs</Link></li>
             <li><Link href="/dashboard" className="hover:text-brand-text">Dashboard</Link></li>
           </ul>
         </div>
