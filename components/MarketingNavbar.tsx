@@ -39,6 +39,9 @@ export default function MarketingNavbar() {
           <Link href="/pricing" className="hover:text-brand-text transition-colors">
             Pricing
           </Link>
+          <Link href="/api-access" className="hover:text-brand-text transition-colors">
+            API Access
+          </Link>
         </div>
 
         <div className="flex items-center gap-2">

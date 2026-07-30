@@ -15,7 +15,10 @@ export type UsageEventType =
   | 'chat_sent'
   | 'chat_export'
   | 'account_linked'
-  | 'page_view';
+  | 'page_view'
+  | 'api_checkout_completed'
+  | 'api_key_regenerated'
+  | 'api_overage_toggled';
 
 export async function logEvent(opts: {
   userId?: string | null;

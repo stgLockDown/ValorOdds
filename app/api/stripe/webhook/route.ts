@@ -16,6 +16,13 @@ import {
   paymentFailedEmail,
   sendEmail,
 } from '@/lib/email';
+import {
+  isApiMonetizationCheckout,
+  provisionApiPlanFromCheckout,
+  syncApiPlanFromSubscription,
+  cancelApiPlan,
+} from '@/lib/api-monetization/provision';
+import { apiKeyIssuedEmail } from '@/lib/api-monetization/email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -109,6 +116,33 @@ async function handleEvent(event: Stripe.Event) {
 
       const stripe = getStripe();
       const sub = await stripe.subscriptions.retrieve(subscriptionId, { expand: ['items.data.price.product'] });
+
+      // API monetization checkouts are a separate purchase flow from the
+      // premium/vip chat subscription — route them to their own provisioner
+      // instead of upsertSubscriptionFromStripe (which only knows tiers).
+      if (isApiMonetizationCheckout(sess.metadata)) {
+        const result = await provisionApiPlanFromCheckout(sess, sub);
+        const ctx = await resolveUserContext({
+          customerId: typeof sub.customer === 'string' ? sub.customer : sub.customer.id,
+          webUserId,
+          discordId: discordIdFromMeta,
+        });
+        if (result?.rawKeyIfNew && ctx.email) {
+          const tmpl = apiKeyIssuedEmail({
+            rawKey: result.rawKeyIfNew,
+            manageUrl: `${env.appUrl}/api-access/manage`,
+          });
+          sendEmail({ to: ctx.email, ...tmpl });
+        }
+        await logEvent({
+          userId: ctx.userId,
+          discordId: ctx.discordId,
+          eventType: 'api_checkout_completed',
+          metadata: { sessionId: sess.id, planId: result?.planId },
+        });
+        break;
+      }
+
       const saved = await upsertSubscriptionFromStripe(sub, webUserId, discordIdFromMeta);
 
       const ctx = await resolveUserContext({
@@ -154,6 +188,16 @@ async function handleEvent(event: Stripe.Event) {
       const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
       const metaUserId = (sub.metadata?.webUserId as string | undefined) ?? null;
       const metaDiscordId = (sub.metadata?.discordId as string | undefined) || null;
+
+      // API monetization subscriptions are tracked in customer_api_plans,
+      // NOT web_subscriptions (which is chat-tier only and has a tier CHECK
+      // constraint that doesn't know about API plans). Detect via metadata
+      // and route accordingly so we never write a spurious tier='free' row.
+      if (isApiMonetizationCheckout(sub.metadata)) {
+        await syncApiPlanFromSubscription(sub).catch(() => undefined);
+        break;
+      }
+
       const saved = await upsertSubscriptionFromStripe(sub, metaUserId, metaDiscordId);
 
       const ctx = await resolveUserContext({ customerId, webUserId: metaUserId, discordId: metaDiscordId });
@@ -169,6 +213,7 @@ async function handleEvent(event: Stripe.Event) {
         `UPDATE web_subscriptions SET status = 'canceled', tier = 'free' WHERE stripe_subscription_id = $1`,
         [sub.id]
       );
+      await cancelApiPlan(sub.id).catch(() => undefined);
       const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
       const ctx = await resolveUserContext({ customerId });
       if (ctx.discordId) {
