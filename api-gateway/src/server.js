@@ -49,10 +49,6 @@ app.all('/v1/proxy/:product/*', async (req, res) => {
   const rawKey = req.header('X-API-Key');
   const subPath = req.params[0] || '';
 
-  if (!PRODUCT_BACKENDS[product]) {
-    return res.status(404).json({ error: 'unknown_product', product });
-  }
-
   // Intelligence products have null backends — they use /v1/intelligence/* routes.
   if (PRODUCT_BACKENDS[product] === null) {
     return res.status(404).json({
@@ -60,6 +56,10 @@ app.all('/v1/proxy/:product/*', async (req, res) => {
       message: `Product "${product}" is served at /v1/intelligence/${product.replace(/_/g, '-')}, not /v1/proxy/${product}.`,
       correct_path: `/v1/intelligence/${product.replace(/_/g, '-')}`,
     });
+  }
+
+  if (PRODUCT_BACKENDS[product] === undefined) {
+    return res.status(404).json({ error: 'unknown_product', product });
   }
 
   if (!rawKey) {
