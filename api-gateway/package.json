@@ -1,0 +1,19 @@
+{
+  "name": "valorodds-api-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Customer-facing API Gateway in front of the 26 sport APIs + Odds API. Owns customer key auth, quota enforcement, usage logging, overage billing.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "express": "^4.21.1",
+    "pg": "^8.13.0",
+    "node-fetch": "^2.7.0",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -194,6 +194,42 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* API Access banner */}
+      <section className="container-px mx-auto max-w-7xl py-16">
+        <div className="rounded-2xl bg-gradient-card border border-brand-primary/30 p-8 sm:p-10 flex flex-col lg:flex-row items-center gap-8">
+          <div className="flex-1 text-center lg:text-left">
+            <div className="badge-secondary mx-auto lg:mx-0 w-fit mb-4">⚡ DEVELOPER / API PLATFORM</div>
+            <h2 className="text-3xl sm:text-4xl font-bold">Build on our sports data & odds APIs</h2>
+            <p className="mt-3 text-brand-muted max-w-2xl">
+              Get direct API access to real-time data across 26 sports and our premium Odds API.
+              Build your own bundle, pick a monthly ping pool, and monitor everything from your own
+              API dashboard — with optional pay-per-overage billing so you're never caught off guard.
+            </p>
+            <div className="mt-6 flex gap-3 justify-center lg:justify-start flex-wrap">
+              <Link href="/api-access" className="btn-primary px-6 py-3">
+                Explore API Access <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link href="/api-access/manage" className="btn-secondary px-6 py-3">
+                API Dashboard
+              </Link>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[280px]">
+            {[
+              { label: '26 sports', d: 'Real-time data feeds' },
+              { label: 'Odds API', d: 'Premium, priced separately' },
+              { label: 'Build-your-own', d: 'Bundle any sports you need' },
+              { label: 'Live usage', d: 'Track pings in real time' },
+            ].map((b) => (
+              <div key={b.label} className="card p-3 text-center">
+                <div className="font-semibold text-sm">{b.label}</div>
+                <div className="text-xs text-brand-muted mt-1">{b.d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* VIP highlight */}
       <section className="container-px mx-auto max-w-7xl py-20">
         <div className="rounded-2xl bg-gradient-card border border-brand-primary/30 p-10 text-center">
