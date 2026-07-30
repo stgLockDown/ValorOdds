@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import Navbar from '@/components/MarketingNavbar';
 import Footer from '@/components/Footer';
 import BundleBuilder from '@/components/api-access/BundleBuilder';
+import LiveDataPreview from '@/components/api-access/LiveDataPreview';
 import { buildMetadata, breadcrumbJsonLd, faqJsonLd, canonical } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 
@@ -87,6 +88,8 @@ export default async function ApiAccessPage() {
         <div className="mt-12">
           <BundleBuilder isAuthenticated={isAuthenticated} />
         </div>
+
+        <LiveDataPreview />
 
         <div className="mt-16 max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold text-center mb-6">Frequently asked questions</h2>
