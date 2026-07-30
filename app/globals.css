@@ -118,3 +118,23 @@
 .prose-learn blockquote {
   @apply my-4 border-l-4 border-brand-accent pl-4 italic text-slate-300;
 }
+
+/* ======================== Documentation page ======================== */
+.docs-inline-code {
+  @apply rounded bg-black/40 px-1.5 py-0.5 text-xs font-mono text-brand-accent;
+}
+.docs-codeblock {
+  @apply rounded-lg border border-brand-border overflow-hidden;
+}
+.docs-codeblock-header {
+  @apply flex items-center justify-between bg-brand-elevated px-4 py-2 border-b border-brand-border;
+}
+.docs-codeblock-lang {
+  @apply text-xs font-mono uppercase tracking-wider text-brand-muted;
+}
+.docs-codeblock-pre {
+  @apply overflow-x-auto bg-black/50 p-4 text-sm leading-relaxed;
+}
+.docs-codeblock-pre code {
+  @apply font-mono text-slate-200 whitespace-pre;
+}

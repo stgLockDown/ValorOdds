@@ -19,6 +19,7 @@ export default async function Navbar() {
           <Link href="/#examples" className="hover:text-brand-text transition-colors">Live Examples</Link>
           <Link href="/pricing" className="hover:text-brand-text transition-colors">Pricing</Link>
           <Link href="/api-access" className="hover:text-brand-text transition-colors">API Access</Link>
+          <Link href="/docs" className="hover:text-brand-text transition-colors">Docs</Link>
         </div>
 
         <div className="flex items-center gap-2">
