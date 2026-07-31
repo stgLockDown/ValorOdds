@@ -19,6 +19,7 @@ export default function Footer() {
           <h2 className="text-sm font-semibold mb-3">Product</h2>
           <ul className="space-y-2 text-sm text-brand-muted">
             <li><Link href="/#features" className="hover:text-brand-text">Features</Link></li>
+            <li><Link href="/market-intelligence" className="hover:text-brand-text">Market Intelligence</Link></li>
             <li><Link href="/#examples" className="hover:text-brand-text">Live examples</Link></li>
             <li><Link href="/pricing" className="hover:text-brand-text">Pricing</Link></li>
             <li><Link href="/api-access" className="hover:text-brand-text">API Access</Link></li>

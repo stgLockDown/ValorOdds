@@ -33,6 +33,13 @@ export default function MarketingNavbar() {
           <Link href="/arbitrage" className="hover:text-brand-text transition-colors">
             Arbitrage
           </Link>
+          <Link
+            href="/market-intelligence"
+            className="flex items-center gap-1 hover:text-brand-text transition-colors"
+          >
+            Market Intel
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          </Link>
           <Link href="/learn" className="hover:text-brand-text transition-colors">
             Learn
           </Link>

@@ -192,6 +192,15 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+        <div className="mt-10 text-center">
+          <Link
+            href="/market-intelligence"
+            className="inline-flex items-center gap-2 text-brand-primary hover:text-brand-accent font-semibold transition-colors"
+          >
+            See our live market intelligence dashboard
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
       </section>
 
       {/* API Access banner */}
