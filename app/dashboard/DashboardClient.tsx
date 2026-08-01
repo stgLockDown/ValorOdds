@@ -223,7 +223,7 @@ function OddsTab() {
                   <p className="text-xs text-brand-muted">{new Date(game.commence_time).toLocaleString()}</p>
                 </div>
               </div>
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs text-brand-muted uppercase tracking-wider">
@@ -699,7 +699,7 @@ function SportsbooksTab() {
                     <p className="text-xs text-brand-muted">{book.lines_tracked?.toLocaleString() || 0} lines tracked</p>
                   </div>
                 </div>
-                <div className="flex gap-4 text-right">
+                <div className="flex gap-3 sm:gap-4 text-right">
                   {book.avg_clv !== null && (
                     <div>
                       <p className={`font-mono font-bold ${parseFloat(book.avg_clv) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1058,7 +1058,7 @@ function LiveScoresStrip() {
         {games.map((g) => {
           const when = g.game_date ? new Date(g.game_date) : null;
           return (
-            <div key={g.game_id} className="min-w-[200px] rounded-lg bg-brand-elevated p-3 flex-shrink-0">
+            <div key={g.game_id} className="min-w-[170px] sm:min-w-[200px] rounded-lg bg-brand-elevated p-3 flex-shrink-0">
               <div className="flex items-center justify-between mb-2">
                 <Badge text={g.sport} color="bg-brand-bg text-brand-muted" />
                 {g.is_live ? (

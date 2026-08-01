@@ -16,7 +16,7 @@ export const runtime = 'edge';
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const title = (searchParams.get('title') || 'Valor Odds').slice(0, 120);
-  const subtitle = (searchParams.get('subtitle') || 'AI-Powered Sports Betting Intelligence').slice(0, 160);
+  const subtitle = (searchParams.get('subtitle') || 'AI-Powered Sports Analytics').slice(0, 160);
   const kicker = (searchParams.get('kicker') || 'VALOR ODDS').slice(0, 40);
 
   return new ImageResponse(

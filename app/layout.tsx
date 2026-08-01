@@ -60,10 +60,10 @@ export const metadata: Metadata = {
     locale: SITE.locale,
     images: [
       {
-        url: `${SITE.url}/api/og?title=${encodeURIComponent('Valor Odds')}&subtitle=${encodeURIComponent('AI-Powered Sports Betting Intelligence')}`,
+        url: `${SITE.url}/api/og?title=${encodeURIComponent('Valor Odds')}&subtitle=${encodeURIComponent('AI-Powered Sports Analytics')}`,
         width: 1200,
         height: 630,
-        alt: 'Valor Odds — AI sports betting intelligence',
+        alt: 'Valor Odds — AI sports analytics',
       },
     ],
   },
@@ -71,7 +71,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: SITE.twitter,
     creator: SITE.twitter,
-    title: 'Valor Odds — AI-Powered Sports Betting Intelligence',
+    title: 'Valor Odds — AI-Powered Sports Analytics',
     description: SITE.shortDescription,
     images: [`${SITE.url}/api/og?title=${encodeURIComponent('Valor Odds')}`],
   },

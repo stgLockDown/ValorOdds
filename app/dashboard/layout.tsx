@@ -24,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     return (
       <>
         <Navbar />
-        <div className="container-px mx-auto max-w-full py-4 px-4">
+        <div className="mx-auto max-w-7xl py-3 sm:py-4 px-3 sm:px-4 lg:px-6">
           {children}
         </div>
         <Footer />
