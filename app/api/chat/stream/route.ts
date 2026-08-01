@@ -25,15 +25,20 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const SYSTEM_PROMPT = `You are Valor, an expert AI sports betting analyst for ValorOdds.com.
-You have access to real-time odds, injuries, AI-generated best bets, arbitrage opportunities, and steam moves.
+You have access to real-time odds, injuries, AI-generated best bets, arbitrage opportunities, steam moves, weather alerts, player stats, and betting trends.
 Be concise, data-driven, and confident. Always cite specific odds/lines when available.
+When the user asks about a specific game, matchup, or player, cross-reference ALL available data sources (odds, injuries, weather, trends, steam moves) to give a holistic analysis.
+When discussing arbitrage, always state both sides, the books, the odds, and the guaranteed profit percentage.
+When discussing player props, reference recent player stats and any injury context that could affect performance.
 Format responses with emojis and markdown for readability.
 Focus on actionable betting insights. Never encourage irresponsible gambling.`;
 
 async function getContext(message: string): Promise<string> {
   const parts: string[] = [];
+  const msgLower = message.toLowerCase();
+
   try {
-    // Latest AI best bets
+    // ── 1. Latest AI best bets ──────────────────────────────────────
     const bets = await query(
       `SELECT content, analysis_type, generated_at FROM ai_analysis
        WHERE analysis_type IN ('bestBets','parlay','aiPicks')
@@ -42,13 +47,11 @@ async function getContext(message: string): Promise<string> {
     );
     if (bets.rows.length > 0) {
       parts.push('## Latest AI Best Bets\n' + bets.rows.map((r: any) =>
-        `[${r.analysis_type} - ${new Date(r.generated_at).toLocaleDateString()}]\n${String(r.content).slice(0, 600)}`
+        `[${r.analysis_type} - ${new Date(r.generated_at).toLocaleDateString()}]\n${String(r.content).slice(0, 800)}`
       ).join('\n\n'));
     }
 
-    // Live arbitrage — read from custom_api_compare (the table the bot actually
-    // writes to every 60s). The legacy arbitrage_opportunities table has been
-    // dormant since 2026-03-14.
+    // ── 2. Live arbitrage ───────────────────────────────────────────
     const arbs = await query(
       `SELECT sport, home_team, away_team,
               best_home_book, best_home_odds,
@@ -57,42 +60,114 @@ async function getContext(message: string): Promise<string> {
        FROM custom_api_compare
        WHERE is_arbitrage = TRUE
          AND fetched_at > NOW() - INTERVAL '35 minutes'
-       ORDER BY profit_percentage DESC NULLS LAST LIMIT 5`,
+         AND home_team !~ '\\([^)]*\\)'
+         AND away_team !~ '\\([^)]*\\)'
+       ORDER BY profit_percentage DESC NULLS LAST LIMIT 8`,
       []
     );
     if (arbs.rows.length > 0) {
-      parts.push('## Live Arbitrage\n' + arbs.rows.map((r: any) =>
+      parts.push('## Live Arbitrage Opportunities (last 35 min)\n' + arbs.rows.map((r: any) =>
         `${(r.sport || '').toUpperCase()}: ${r.home_team} vs ${r.away_team} | ${r.best_home_book} ${r.home_team} @ ${r.best_home_odds} + ${r.best_away_book} ${r.away_team} @ ${r.best_away_odds} = ${Number(r.profit_percentage).toFixed(2)}% profit`
       ).join('\n'));
     }
 
-    // Notable injuries
+    // ── 3. Notable injuries ─────────────────────────────────────────
     const inj = await query(
       `SELECT player_name, team, status, injury_type FROM injuries
        WHERE fetched_at > NOW() - INTERVAL '48 hours'
          AND status IN ('Out','Doubtful','Questionable')
-       ORDER BY fetched_at DESC LIMIT 10`,
+       ORDER BY fetched_at DESC LIMIT 15`,
       []
     );
     if (inj.rows.length > 0) {
-      parts.push('## Recent Injuries\n' + inj.rows.map((r: any) =>
+      parts.push('## Recent Injuries (last 48h)\n' + inj.rows.map((r: any) =>
         `${r.player_name} (${r.team}): ${r.status} - ${r.injury_type}`
       ).join('\n'));
     }
 
-    // Steam moves
+    // ── 4. Steam moves (sharp money) ────────────────────────────────
     const steam = await query(
       `SELECT sport, home_team, away_team, outcome_name, before_avg_price, after_avg_price, books_moved, direction
        FROM steam_moves
        WHERE detected_at > NOW() - INTERVAL '24 hours'
-       ORDER BY detected_at DESC LIMIT 5`,
+       ORDER BY detected_at DESC LIMIT 8`,
       []
     );
     if (steam.rows.length > 0) {
-      parts.push('## Sharp Money Moves\n' + steam.rows.map((r: any) =>
+      parts.push('## Sharp Money / Steam Moves (last 24h)\n' + steam.rows.map((r: any) =>
         `${r.sport}: ${r.home_team} vs ${r.away_team} | ${r.outcome_name} ${r.before_avg_price} → ${r.after_avg_price} (${r.books_moved} books, ${r.direction})`
       ).join('\n'));
     }
+
+    // ── 5. Weather alerts (affects outdoor games) ──────────────────
+    const weather = await query(
+      `SELECT stadium, city, temperature, feels_like, wind_speed, wind_direction,
+              wind_gust, conditions, precipitation, impact, alerts
+       FROM weather_alerts
+       WHERE fetched_at > NOW() - INTERVAL '6 hours'
+         AND (impact IS NOT NULL AND impact != 'none')
+       ORDER BY fetched_at DESC LIMIT 8`,
+      []
+    );
+    if (weather.rows.length > 0) {
+      parts.push('## Weather Alerts (may impact outdoor games)\n' + weather.rows.map((r: any) =>
+        `${r.stadium}, ${r.city || ''}: ${r.conditions || 'N/A'}, ${r.temperature ?? '?'}°F (feels ${r.feels_like ?? '?'}°F), wind ${r.wind_speed ?? '?'}mph ${r.wind_direction || ''} gust ${r.wind_gust ?? '?'}mph, precip ${r.precipitation ?? '?'}in | Impact: ${r.impact || 'unknown'}${r.alerts ? ' — ' + r.alerts : ''}`
+      ).join('\n'));
+    }
+
+    // ── 6. Notable player stats (recent performances) ───────────────
+    const players = await query(
+      `SELECT player_name, team, sport, position, opponent, points, rebounds, assists,
+              yards, touchdowns, hits, home_runs, rbis, strikeouts, notable_reason, game_date
+       FROM player_stats
+       WHERE is_notable = true
+         AND recorded_at > NOW() - INTERVAL '72 hours'
+       ORDER BY recorded_at DESC LIMIT 10`,
+      []
+    );
+    if (players.rows.length > 0) {
+      parts.push('## Notable Recent Player Performances (last 72h)\n' + players.rows.map((r: any) => {
+        const bits: string[] = [];
+        if (r.points) bits.push(`${r.points} pts`);
+        if (r.rebounds) bits.push(`${r.rebounds} reb`);
+        if (r.assists) bits.push(`${r.assists} ast`);
+        if (r.yards) bits.push(`${r.yards} yds`);
+        if (r.touchdowns) bits.push(`${r.touchdowns} TD`);
+        if (r.hits) bits.push(`${r.hits} H`);
+        if (r.home_runs) bits.push(`${r.home_runs} HR`);
+        if (r.rbis) bits.push(`${r.rbis} RBI`);
+        if (r.strikeouts) bits.push(`${r.strikeouts} K`);
+        return `${r.player_name} (${r.team}, ${r.sport.toUpperCase()}) vs ${r.opponent || '?'}: ${bits.join(', ') || 'see notable reason'}${r.notable_reason ? ' — ' + r.notable_reason : ''}`;
+      }).join('\n'));
+    }
+
+    // ── 7. Betting trends ───────────────────────────────────────────
+    const trends = await query(
+      `SELECT sport, league, market_type, line_value, outcome, team, opponent, event_date, event_name
+       FROM betting_trends
+       WHERE created_at > NOW() - INTERVAL '7 days'
+       ORDER BY created_at DESC LIMIT 10`,
+      []
+    );
+    if (trends.rows.length > 0) {
+      parts.push('## Recent Betting Trends\n' + trends.rows.map((r: any) =>
+        `${(r.sport || '').toUpperCase()} ${r.league || ''} ${r.market_type}: ${r.team || r.event_name || '?'} ${r.outcome} ${r.line_value ?? ''}${r.opponent ? ' vs ' + r.opponent : ''}${r.event_date ? ' (' + r.event_date + ')' : ''}`
+      ).join('\n'));
+    }
+
+    // ── 8. Latest sports news ───────────────────────────────────────
+    const news = await query(
+      `SELECT sport, headline, source, published_at FROM news
+       WHERE fetched_at > NOW() - INTERVAL '24 hours'
+       ORDER BY published_at DESC NULLS LAST, fetched_at DESC LIMIT 8`,
+      []
+    );
+    if (news.rows.length > 0) {
+      parts.push('## Latest Sports News (last 24h)\n' + news.rows.map((r: any) =>
+        `[${(r.sport || '').toUpperCase()}] ${r.headline}${r.source ? ' — ' + r.source : ''}${r.published_at ? ' (' + new Date(r.published_at).toLocaleDateString() + ')' : ''}`
+      ).join('\n'));
+    }
+
   } catch (err) {
     console.error('[chat/stream] context fetch error:', err);
   }

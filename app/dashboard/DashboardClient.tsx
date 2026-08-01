@@ -1209,7 +1209,7 @@ function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumO
           </button>
         </div>
         {canChat ? (
-          <ChatClient user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />
+          <ChatClient embedded user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />
         ) : (
           <div className="p-6 text-center">
             <MessageSquare className="h-10 w-10 mx-auto mb-3 text-brand-muted" />
@@ -1253,31 +1253,33 @@ export default function DashboardClient({ user }: { user: any }) {
 
   return (
     <div className="min-h-screen bg-brand-bg">
-      <div className="mx-auto px-4 py-4">
-        {/* Tab Nav */}
-        <div className="flex flex-wrap gap-1 mb-4">
-          {TABS.map(({ id, label, icon: Icon, premium }) => {
-            // Arbitrage is available to Basic+ (capped); other premium tabs
-            // (steam, etc.) stay Premium/VIP-only.
-            const locked = id === 'arbitrage'
-              ? !canSeeArbitrage
-              : premium && !isPremiumOrVip;
-            return (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeTab === id
-                    ? 'bg-brand-primary text-white'
-                    : 'text-brand-muted hover:text-white hover:bg-brand-elevated'
-                } ${locked ? 'opacity-60' : ''}`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-                {locked && <span className="text-xs">🔒</span>}
-              </button>
-            );
-          })}
+      <div className="mx-auto px-3 sm:px-4 py-4">
+        {/* Tab Nav — horizontally scrollable on mobile, wraps on desktop */}
+        <div className="mb-4 -mx-3 sm:mx-0 px-3 sm:px-0">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-2 sm:pb-0 sm:flex-wrap">
+            {TABS.map(({ id, label, icon: Icon, premium }) => {
+              // Arbitrage is available to Basic+ (capped); other premium tabs
+              // (steam, etc.) stay Premium/VIP-only.
+              const locked = id === 'arbitrage'
+                ? !canSeeArbitrage
+                : premium && !isPremiumOrVip;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex-shrink-0 ${
+                    activeTab === id
+                      ? 'bg-brand-primary text-white'
+                      : 'text-brand-muted hover:text-white hover:bg-brand-elevated'
+                  } ${locked ? 'opacity-60' : ''}`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                  {locked && <span className="text-xs">🔒</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Tab Content */}

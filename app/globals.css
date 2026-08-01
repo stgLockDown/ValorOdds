@@ -138,3 +138,14 @@
 .docs-codeblock-pre code {
   @apply font-mono text-slate-200 whitespace-pre;
 }
+
+/* ======================== Scrollbar-hide utility ======================== */
+/* Used for horizontally-scrollable tab bars on mobile — hide the scrollbar
+   while keeping scroll functionality. */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
