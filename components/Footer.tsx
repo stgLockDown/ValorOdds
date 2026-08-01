@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ShieldLogo } from '@/components/ShieldLogo';
+import { BrandLogo } from '@/components/BrandLogo';
 import { CookieSettingsButton } from '@/components/CookieSettingsButton';
 
 export default function Footer() {
@@ -7,10 +7,7 @@ export default function Footer() {
     <footer className="border-t border-brand-border mt-24">
       <div className="container-px mx-auto max-w-7xl py-12 grid gap-10 md:grid-cols-4">
         <div>
-          <div className="flex items-center gap-2 font-bold text-lg">
-            <ShieldLogo className="h-6 w-6" />
-            <span>Valor Odds</span>
-          </div>
+          <BrandLogo withTagline={false} showLink={false} />
           <p className="mt-3 text-sm text-brand-muted max-w-xs">
             Professional sports betting intelligence powered by AI. Arbitrage and prop predictions across 25+ sports.
           </p>
