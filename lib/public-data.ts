@@ -827,43 +827,53 @@ function mapSportEmoji(sport: string): string {
 export const getTopOpportunities = unstable_cache(
   async (limit = 6): Promise<TopOpportunity[]> => {
     try {
-      // Fetch a wider candidate pool than the requested limit so we have
-      // enough rows after same-book + simulated-team filtering.
-      const fetchLimit = Math.max(limit * 4, 40);
+      // We use a subquery so that:
+      //   1. Simulated/esports teams (with parenthetical suffixes like
+      //      "Arsenal (flamez)") are filtered out IN SQL, not in JS — this
+      //      ensures the candidate pool is all real teams.
+      //   2. DISTINCT ON (home_team, away_team) keeps the best profit % per
+      //      matchup (it requires ORDER BY to start with those columns).
+      //   3. The OUTER query then sorts by profit DESC and applies the LIMIT,
+      //      so we actually get the TOP opportunities — not just the first N
+      //      matchups alphabetically (which was the bug that caused the
+      //      homepage to show an empty state: the alphabetical-first rows
+      //      were almost all simulated teams that got filtered in JS).
+      const fetchLimit = Math.max(limit * 4, 24);
 
       const r = await query(
-        `SELECT DISTINCT ON (home_team, away_team)
-            sport, home_team, away_team,
-            best_home_odds, best_home_book,
-            best_away_odds, best_away_book,
-            profit_percentage, fetched_at,
-            raw_data->>'start_time' AS start_time
-         FROM custom_api_compare
-         WHERE is_arbitrage = TRUE
-           AND profit_percentage > 0
-           AND fetched_at > NOW() - INTERVAL '24 hours'
-         ORDER BY home_team, away_team,
-                  profit_percentage DESC, fetched_at DESC
+        `SELECT * FROM (
+            SELECT DISTINCT ON (home_team, away_team)
+                sport, home_team, away_team,
+                best_home_odds, best_home_book,
+                best_away_odds, best_away_book,
+                profit_percentage, fetched_at,
+                raw_data->>'start_time' AS start_time
+            FROM custom_api_compare
+            WHERE is_arbitrage = TRUE
+              AND profit_percentage > 0
+              AND fetched_at > NOW() - INTERVAL '24 hours'
+              AND home_team !~ '\\([^)]*\\)'
+              AND away_team !~ '\\([^)]*\\)'
+            ORDER BY home_team, away_team,
+                     profit_percentage DESC, fetched_at DESC
+          ) t
+         ORDER BY profit_percentage DESC
          LIMIT $1`,
         [fetchLimit],
       );
 
       const rows = r.rows as any[];
 
-      // Filter: drop same-book arbs (duplicate feeds of the same sportsbook).
-      // Filter: drop simulated/esports teams with parenthetical suffixes.
-      const clean = rows.filter((row) => {
-        if (isSameBook(row.best_home_book, row.best_away_book)) return false;
-        // Skip teams with parenthetical suffixes like "Team (username)"
-        // — these are from gaming simulation leagues, not real matches.
-        if (/\([^)]*\)/.test(row.home_team) || /\([^)]*\)/.test(row.away_team)) return false;
-        return true;
-      });
+      // Same-book filter stays in JS because it relies on normalizeBookName()
+      // alias logic that is complex to replicate in pure SQL. With the
+      // simulated-team filter now in SQL, this pool is large enough that
+      // dropping a few same-book pairs still leaves plenty for the top N.
+      const clean = rows.filter(
+        (row) => !isSameBook(row.best_home_book, row.best_away_book),
+      );
 
-      // Sort by profit descending and take the top N.
-      const top = clean
-        .sort((a, b) => Number(b.profit_percentage) - Number(a.profit_percentage))
-        .slice(0, limit);
+      // Already sorted by profit DESC by the outer query; just slice.
+      const top = clean.slice(0, limit);
 
       return top.map((row) => {
         const secsAgo = Math.floor(
@@ -891,7 +901,8 @@ export const getTopOpportunities = unstable_cache(
           freshness,
         };
       });
-    } catch {
+    } catch (err) {
+      console.error('[getTopOpportunities] query failed:', err);
       return [];
     }
   },
