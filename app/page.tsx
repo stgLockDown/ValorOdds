@@ -6,6 +6,7 @@ import { Target, Bot, Trophy, Zap, BarChart3, Bell, Sparkles, ArrowRight, Check 
 import { buildMetadata, faqJsonLd, breadcrumbJsonLd, canonical, SITE } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 import CommunityPolls from '@/components/CommunityPolls';
+import { getTopOpportunities } from '@/lib/public-data';
 
 export const metadata: Metadata = buildMetadata({
   title: 'Valor Odds — AI-Powered Sports Arbitrage & Player Props',
@@ -47,7 +48,8 @@ const HOME_FAQS = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const topOpportunities = await getTopOpportunities(6);
   return (
     <>
       <JsonLd
@@ -144,58 +146,55 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Live examples preview */}
+      {/* Live examples preview — real arbitrage data from custom_api_compare */}
       <section id="examples" className="container-px mx-auto max-w-7xl py-16">
         <div className="text-center max-w-2xl mx-auto">
           <h2 className="text-3xl sm:text-4xl font-bold">Today's top opportunities</h2>
-          <p className="mt-3 text-brand-muted">Real examples from the last 24 hours.</p>
+          <p className="mt-3 text-brand-muted">Real arbitrage opportunities detected in the last 24 hours.</p>
         </div>
-        <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {[
-            {
-              sport: '🏈 NFL',
-              match: 'Kansas City Chiefs vs Buffalo Bills',
-              profit: '2.8% profit',
-              risk: 'LOW',
-              conf: '8/10',
-              analysis:
-                'High-quality arbitrage with minimal risk. Both sportsbooks are reputable with fast payouts. Execute immediately.',
-            },
-            {
-              sport: '🏀 NBA',
-              match: 'Lakers vs Warriors',
-              profit: '2.1% profit',
-              risk: 'MEDIUM',
-              conf: '7/10',
-              analysis:
-                "Solid opportunity with moderate risk. Lakers' home advantage is significant. Monitor injury reports.",
-            },
-            {
-              sport: '⚽ Soccer',
-              match: 'Man United vs Liverpool',
-              profit: '3.2% profit',
-              risk: 'LOW',
-              conf: '9/10',
-              analysis:
-                "Excellent arbitrage. Liverpool's form is strong, odds discrepancy creates guaranteed profit.",
-            },
-          ].map((e) => (
-            <div key={e.match} className="card-interactive">
-              <div className="flex items-center justify-between">
-                <span className="badge-primary">{e.sport}</span>
-                <span className="badge-success">{e.profit}</span>
-              </div>
-              <h3 className="mt-4 font-semibold text-base">{e.match}</h3>
-              <div className="mt-4 rounded-lg bg-brand-elevated border border-brand-border p-3">
-                <div className="text-xs font-semibold text-brand-primaryText mb-1">🤖 AI Analysis</div>
-                <div className="text-xs text-brand-muted">
-                  <strong>Risk:</strong> {e.risk} · <strong>Confidence:</strong> {e.conf}
+        {topOpportunities.length > 0 ? (
+          <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {topOpportunities.map((opp) => (
+              <div key={opp.match} className="card-interactive">
+                <div className="flex items-center justify-between">
+                  <span className="badge-primary">{opp.sportEmoji} {opp.sportLabel}</span>
+                  <span className="badge-success">{opp.profitPct.toFixed(1)}% profit</span>
                 </div>
-                <p className="mt-2 text-sm text-brand-text">{e.analysis}</p>
+                <h3 className="mt-4 font-semibold text-base">{opp.match}</h3>
+                <div className="mt-4 rounded-lg bg-brand-elevated border border-brand-border p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-semibold text-brand-primaryText">
+                      {opp.freshness === 'LIVE' ? '🟢 Live' : opp.freshness === 'RECENT' ? '🟡 Recent' : '⚪ Detected'}
+                    </div>
+                    <div className="text-xs text-brand-muted">
+                      {opp.detectedMinutesAgo < 1 ? 'just now' : opp.detectedMinutesAgo === 1 ? '1 min ago' : `${opp.detectedMinutesAgo} min ago`}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded bg-brand-surface border border-brand-border p-2">
+                      <div className="text-brand-muted">{opp.homeTeam}</div>
+                      <div className="font-bold text-brand-text">{opp.bestHomeOdds > 0 ? `+${opp.bestHomeOdds}` : opp.bestHomeOdds}</div>
+                      <div className="text-brand-primary text-[10px] truncate">{opp.bestHomeBook}</div>
+                    </div>
+                    <div className="rounded bg-brand-surface border border-brand-border p-2">
+                      <div className="text-brand-muted">{opp.awayTeam}</div>
+                      <div className="font-bold text-brand-text">{opp.bestAwayOdds > 0 ? `+${opp.bestAwayOdds}` : opp.bestAwayOdds}</div>
+                      <div className="text-brand-primary text-[10px] truncate">{opp.bestAwayBook}</div>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-brand-muted">
+                    Guaranteed profit across two sportsbooks. Stake on both sides to lock in {opp.profitPct.toFixed(1)}% regardless of outcome.
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-10 text-center text-brand-muted">
+            <p>Scanning 57+ sportsbooks for live arbitrage opportunities…</p>
+            <p className="text-sm mt-1">Opportunities appear here as soon as they're detected.</p>
+          </div>
+        )}
         <div className="mt-10 text-center">
           <Link
             href="/market-intelligence"

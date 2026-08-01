@@ -15,6 +15,7 @@
 import { query } from '@/lib/db';
 import { unstable_cache } from 'next/cache';
 import { sportFilterClause } from '@/lib/sport-filter';
+import { isSameBook } from '@/lib/sportsbooks';
 
 /**
  * Sport filter logic lives in `@/lib/sport-filter` so authenticated
@@ -725,5 +726,175 @@ export const getLiveNewsFeed = unstable_cache(
     }
   },
   ['public:news-feed'],
+  { revalidate: 300, tags: ['public-odds'] },
+);
+export type TopOpportunity = {
+  sport: string;
+  sportLabel: string;
+  sportEmoji: string;
+  homeTeam: string;
+  awayTeam: string;
+  match: string;
+  profitPct: number;
+  bestHomeOdds: number;
+  bestHomeBook: string;
+  bestAwayOdds: number;
+  bestAwayBook: string;
+  commenceTime: string | null;
+  detectedMinutesAgo: number;
+  freshness: 'LIVE' | 'RECENT' | 'STALE';
+};
+
+/**
+ * Maps a raw sport string (which can be uppercase codes like "SOCCER",
+ * lowercase like "mlb", or display names like "Soccer") to a short label
+ * suitable for badge display.
+ */
+function mapSportLabel(sport: string): string {
+  const s = (sport || '').toUpperCase().replace(/_/g, ' ').trim();
+  const map: Record<string, string> = {
+    'AMERICAN FOOTBALL': 'NFL',
+    BASKETBALL: 'NBA',
+    BASEBALL: 'MLB',
+    MLB: 'MLB',
+    'ICE HOCKEY': 'NHL',
+    NHL: 'NHL',
+    SOCCER: 'Soccer',
+    MMA: 'MMA',
+    BOXING: 'Boxing',
+    TENNIS: 'Tennis',
+    GOLF: 'Golf',
+    NASCAR: 'NASCAR',
+    'RUGBY LEAGUE': 'Rugby',
+    'RUGBY UNION': 'Rugby',
+    CRICKET: 'Cricket',
+    DARTS: 'Darts',
+    'AUSSIE RULES': 'AFL',
+    HANDBALL: 'Handball',
+    VOLLEYBALL: 'Volleyball',
+    'TABLE TENNIS': 'Table Tennis',
+    ESPORTS: 'Esports',
+  };
+  return map[s] ?? s;
+}
+
+/**
+ * Emoji for a given sport string (flexible — handles both "mlb" and "BASEBALL").
+ */
+function mapSportEmoji(sport: string): string {
+  const s = (sport || '').toUpperCase().replace(/_/g, ' ').trim();
+  const map: Record<string, string> = {
+    'AMERICAN FOOTBALL': '🏈',
+    NFL: '🏈',
+    BASKETBALL: '🏀',
+    NBA: '🏀',
+    BASEBALL: '⚾',
+    MLB: '⚾',
+    'ICE HOCKEY': '🏒',
+    NHL: '🏒',
+    SOCCER: '⚽',
+    MMA: '🥊',
+    BOXING: '🥊',
+    TENNIS: '🎾',
+    GOLF: '⛳',
+    NASCAR: '🏁',
+    'RUGBY LEAGUE': '🏉',
+    'RUGBY UNION': '🏉',
+    CRICKET: '🏏',
+  };
+  return map[s] ?? '🏆';
+}
+
+/**
+ * Top real arbitrage opportunities from the last 24 hours.
+ *
+ * Data source: `custom_api_compare` (same table the Discord bot uses and the
+ * same table the authenticated dashboard reads from). We:
+ *   1. Dedupe by matchup (home_team + away_team), keeping the best profit %.
+ *   2. Filter out "same-book" arbs (duplicate feeds of the same sportsbook).
+ *   3. Filter out simulated/esports teams with parenthetical suffixes like
+ *      "Team (username)" which come from gaming simulation leagues, not real
+ *      sportsbooks tracking real games.
+ *   4. Sort by profit % descending and return the top N.
+ *
+ * Unlike the masked `getArbitrageTeasers`, this function exposes team names,
+ * bookmaker names, and exact odds — the homepage already shows this level of
+ * detail (it was previously hardcoded) and it serves as a powerful
+ * conversion incentive for visitors to sign up and get the full dashboard.
+ *
+ * Cached for 5 minutes so crawlers and visitors don't hammer the DB.
+ */
+export const getTopOpportunities = unstable_cache(
+  async (limit = 6): Promise<TopOpportunity[]> => {
+    try {
+      // Fetch a wider candidate pool than the requested limit so we have
+      // enough rows after same-book + simulated-team filtering.
+      const fetchLimit = Math.max(limit * 4, 40);
+
+      const r = await query(
+        `SELECT DISTINCT ON (home_team, away_team)
+            sport, home_team, away_team,
+            best_home_odds, best_home_book,
+            best_away_odds, best_away_book,
+            profit_percentage, fetched_at,
+            raw_data->>'start_time' AS start_time
+         FROM custom_api_compare
+         WHERE is_arbitrage = TRUE
+           AND profit_percentage > 0
+           AND fetched_at > NOW() - INTERVAL '24 hours'
+         ORDER BY home_team, away_team,
+                  profit_percentage DESC, fetched_at DESC
+         LIMIT $1`,
+        [fetchLimit],
+      );
+
+      const rows = r.rows as any[];
+
+      // Filter: drop same-book arbs (duplicate feeds of the same sportsbook).
+      // Filter: drop simulated/esports teams with parenthetical suffixes.
+      const clean = rows.filter((row) => {
+        if (isSameBook(row.best_home_book, row.best_away_book)) return false;
+        // Skip teams with parenthetical suffixes like "Team (username)"
+        // — these are from gaming simulation leagues, not real matches.
+        if (/\([^)]*\)/.test(row.home_team) || /\([^)]*\)/.test(row.away_team)) return false;
+        return true;
+      });
+
+      // Sort by profit descending and take the top N.
+      const top = clean
+        .sort((a, b) => Number(b.profit_percentage) - Number(a.profit_percentage))
+        .slice(0, limit);
+
+      return top.map((row) => {
+        const secsAgo = Math.floor(
+          (Date.now() - new Date(row.fetched_at).getTime()) / 1000,
+        );
+        const minsAgo = Math.floor(secsAgo / 60);
+        let freshness: 'LIVE' | 'RECENT' | 'STALE' = 'STALE';
+        if (minsAgo <= 35) freshness = 'LIVE';
+        else if (minsAgo <= 120) freshness = 'RECENT';
+
+        return {
+          sport: row.sport,
+          sportLabel: mapSportLabel(row.sport),
+          sportEmoji: mapSportEmoji(row.sport),
+          homeTeam: row.home_team,
+          awayTeam: row.away_team,
+          match: `${row.home_team} vs ${row.away_team}`,
+          profitPct: Number(row.profit_percentage),
+          bestHomeOdds: Number(row.best_home_odds),
+          bestHomeBook: row.best_home_book,
+          bestAwayOdds: Number(row.best_away_odds),
+          bestAwayBook: row.best_away_book,
+          commenceTime: row.start_time ?? null,
+          detectedMinutesAgo: minsAgo,
+          freshness,
+        };
+      });
+    } catch {
+      return [];
+    }
+  },
+  ['public:top-opportunities'],
   { revalidate: 300, tags: ['public-odds'] },
 );
