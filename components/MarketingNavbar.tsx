@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Zap } from 'lucide-react';
+import { ShieldLogo } from '@/components/ShieldLogo';
 import NavbarAuth from './NavbarAuth';
 
 /**
@@ -22,7 +22,7 @@ export default function MarketingNavbar() {
         aria-label="Primary"
       >
         <Link href="/" className="flex items-center gap-2 font-bold text-lg">
-          <Zap className="h-5 w-5 text-brand-primary" />
+          <ShieldLogo className="h-6 w-6" />
           <span>Valor Odds</span>
         </Link>
 
