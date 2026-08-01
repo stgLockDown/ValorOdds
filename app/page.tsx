@@ -5,6 +5,7 @@ import Footer from '@/components/Footer';
 import { Target, Bot, Trophy, Zap, BarChart3, Bell, Sparkles, ArrowRight, Check } from 'lucide-react';
 import { buildMetadata, faqJsonLd, breadcrumbJsonLd, canonical, SITE } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
+import CommunityPolls from '@/components/CommunityPolls';
 
 export const metadata: Metadata = buildMetadata({
   title: 'Valor Odds — AI-Powered Sports Arbitrage & Player Props',
@@ -94,6 +95,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Community Poll — Who will win today? */}
+      <CommunityPolls />
 
       {/* Features */}
       <section id="features" className="container-px mx-auto max-w-7xl py-16">
