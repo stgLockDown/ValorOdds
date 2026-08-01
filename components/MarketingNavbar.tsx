@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ShieldLogo } from '@/components/ShieldLogo';
+import { BrandLogo } from '@/components/BrandLogo';
 import NavbarAuth from './NavbarAuth';
 
 /**
@@ -21,10 +21,7 @@ export default function MarketingNavbar() {
         className="container-px mx-auto max-w-7xl flex h-16 items-center justify-between"
         aria-label="Primary"
       >
-        <Link href="/" className="flex items-center gap-2 font-bold text-lg">
-          <ShieldLogo className="h-6 w-6" />
-          <span>Valor Odds</span>
-        </Link>
+        <BrandLogo />
 
         <div className="hidden md:flex items-center gap-6 text-sm text-brand-muted">
           <Link href="/sports" className="hover:text-brand-text transition-colors">
