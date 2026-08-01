@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Zap } from 'lucide-react';
+import { ShieldLogo } from '@/components/ShieldLogo';
 import { CookieSettingsButton } from '@/components/CookieSettingsButton';
 
 export default function Footer() {
@@ -8,7 +8,7 @@ export default function Footer() {
       <div className="container-px mx-auto max-w-7xl py-12 grid gap-10 md:grid-cols-4">
         <div>
           <div className="flex items-center gap-2 font-bold text-lg">
-            <Zap className="h-5 w-5 text-brand-primary" />
+            <ShieldLogo className="h-6 w-6" />
             <span>Valor Odds</span>
           </div>
           <p className="mt-3 text-sm text-brand-muted max-w-xs">

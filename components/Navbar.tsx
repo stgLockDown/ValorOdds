@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { auth, signOut } from '@/lib/auth';
-import { Zap, LogOut, LayoutDashboard, User as UserIcon } from 'lucide-react';
+import { LogOut, LayoutDashboard, User as UserIcon } from 'lucide-react';
+import { ShieldLogo } from '@/components/ShieldLogo';
 
 export default async function Navbar() {
   const session = await auth();
@@ -10,7 +11,7 @@ export default async function Navbar() {
     <header className="sticky top-0 z-40 backdrop-blur-md bg-brand-bg/80 border-b border-brand-border">
       <nav className="container-px mx-auto max-w-7xl flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg">
-          <Zap className="h-5 w-5 text-brand-primary" />
+          <ShieldLogo className="h-6 w-6" />
           <span>Valor Odds</span>
         </Link>
 
