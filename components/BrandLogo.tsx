@@ -3,7 +3,7 @@ import { ShieldLogo } from '@/components/ShieldLogo';
 
 /**
  * Brand wordmark — shield logo + "Valor Odds" text with "Odds" in light blue,
- * and a small "AI Sports Betting Intelligence" tagline below.
+ * and a small "AI Sports Analytics Tool" tagline below.
  *
  * Used in the navbar (horizontal layout) and footer (stacked layout).
  * Set `withTagline={false}` to omit the tagline (e.g. in tight spaces).
@@ -32,7 +32,7 @@ export function BrandLogo({
         </span>
         {withTagline && (
           <span className="text-[10px] text-brand-muted font-normal tracking-wide mt-0.5">
-            AI Sports Betting Intelligence
+            AI Sports Analytics Tool
           </span>
         )}
       </div>
