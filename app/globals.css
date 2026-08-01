@@ -38,7 +38,7 @@
     @apply btn bg-brand-danger text-white hover:bg-red-600;
   }
   .card {
-    @apply bg-brand-surface border border-brand-border rounded-xl p-6 transition-all;
+    @apply bg-brand-surface border border-brand-border rounded-xl p-4 sm:p-6 transition-all;
   }
   .card-interactive {
     @apply card hover:border-brand-primary/50 hover:shadow-lg hover:shadow-brand-primary/10;
@@ -82,11 +82,24 @@
 }
 .prose-chat table {
   @apply my-3 w-full border-collapse text-xs;
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
 }
 .prose-chat th, .prose-chat td {
   @apply border border-brand-border px-2 py-1;
 }
 .prose-chat a { @apply text-brand-primaryText underline; }
+
+/* Mobile-friendly scrollable table wrapper */
+.table-scroll {
+  @apply overflow-x-auto -mx-4 sm:mx-0;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll table {
+  @apply min-w-[480px];
+}
 /* Long-form article rendering (Learn pages) */
 .prose-learn {
   @apply text-base leading-relaxed text-slate-200;

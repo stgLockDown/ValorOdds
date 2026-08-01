@@ -362,7 +362,7 @@ export default function ChatClient({
   // parent card control the outer chrome. When standalone (chat tab) we use
   // the viewport height minus navbar.
   const containerHeight = embedded
-    ? 'h-[70vh] min-h-[420px] max-h-[800px]'
+    ? 'h-[60vh] min-h-[380px] max-h-[800px] sm:h-[70vh] sm:min-h-[420px]'
     : 'h-[calc(100vh-4rem)]';
 
   return (

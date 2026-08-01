@@ -15,8 +15,8 @@ export const SITE = {
   legalName: 'Valor Odds',
   url: 'https://valorodds.com',
   description:
-    'Real-time arbitrage opportunities and AI-powered player props analysis across MLB, NFL, NBA, NHL, soccer, MMA, and more. Professional sports betting intelligence delivered to Discord and the web.',
-  shortDescription: 'Professional sports betting intelligence powered by AI.',
+    'Real-time arbitrage opportunities and AI-powered player props analysis across MLB, NFL, NBA, NHL, soccer, MMA, and more. Professional sports analytics delivered to Discord and the web.',
+  shortDescription: 'Professional sports analytics powered by AI.',
   locale: 'en_US',
   twitter: '@valorodds',
   keywords: [

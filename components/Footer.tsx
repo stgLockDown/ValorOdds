@@ -4,12 +4,12 @@ import { CookieSettingsButton } from '@/components/CookieSettingsButton';
 
 export default function Footer() {
   return (
-    <footer className="border-t border-brand-border mt-24">
-      <div className="container-px mx-auto max-w-7xl py-12 grid gap-10 md:grid-cols-4">
-        <div>
+    <footer className="border-t border-brand-border mt-16 sm:mt-24">
+      <div className="container-px mx-auto max-w-7xl py-8 sm:py-12 grid gap-8 sm:gap-10 grid-cols-2 md:grid-cols-4">
+        <div className="col-span-2 md:col-span-1">
           <BrandLogo withTagline={false} showLink={false} />
           <p className="mt-3 text-sm text-brand-muted max-w-xs">
-            Professional sports betting intelligence powered by AI. Arbitrage and prop predictions across 25+ sports.
+            Professional sports analytics powered by AI. Arbitrage and prop predictions across 25+ sports.
           </p>
         </div>
         <div>
