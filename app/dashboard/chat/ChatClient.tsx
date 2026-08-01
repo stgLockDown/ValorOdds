@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Send, Loader2, Mic, MicOff, Plus, MessageSquare, Trash2, Menu, X } from 'lucide-react';
+import { Send, Loader2, Mic, MicOff, Plus, MessageSquare, Trash2, Menu, X, Sparkles } from 'lucide-react';
 import type { Tier } from '@/lib/env';
 
 type Msg = { role: 'user' | 'assistant' | 'system'; content: string; pending?: boolean };
@@ -32,16 +32,19 @@ function renderMarkdown(src: string): string {
   });
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>')
-    .replace(/"/g, '"').replace(/'/g, '&#39;');
-}
+const QUICK_SUGGESTIONS = [
+  'What are the best arbitrage opportunities right now?',
+  'Any notable injuries affecting tonight’s games?',
+  'Which way is the sharp money moving?',
+  'Give me your top picks for today',
+];
 
 export default function ChatClient({
   user,
+  embedded = false,
 }: {
   user: { id: string; email: string; tier: Tier; discordId: string | null };
+  embedded?: boolean;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
@@ -49,11 +52,28 @@ export default function ChatClient({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar starts CLOSED on mobile, OPEN on desktop. We detect viewport once
+  // on mount to avoid hydration mismatch.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [loadingConversations, setLoadingConversations] = useState(true);
-  
+
   const scrollerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Detect desktop breakpoint on mount (avoids SSR mismatch)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const update = () => {
+      const desktop = mq.matches;
+      setIsDesktop(desktop);
+      setSidebarOpen(desktop); // open by default on desktop, closed on mobile
+    };
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   // Load CDN libs once
   useEffect(() => {
@@ -88,6 +108,11 @@ export default function ChatClient({
       loadMessages(currentConversationId);
     }
   }, [currentConversationId]);
+
+  // Close mobile drawer when a conversation is selected (mobile UX)
+  useEffect(() => {
+    if (!isDesktop) setSidebarOpen(false);
+  }, [currentConversationId, isDesktop]);
 
   async function loadConversations() {
     setLoadingConversations(true);
@@ -133,7 +158,7 @@ export default function ChatClient({
   async function deleteConversation(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     if (!confirm('Delete this conversation?')) return;
-    
+
     try {
       await fetch(`/api/chat/conversations?id=${id}`, { method: 'DELETE' });
       setConversations(conversations.filter(c => c.id !== id));
@@ -143,21 +168,6 @@ export default function ChatClient({
       }
     } catch (err) {
       console.error('Failed to delete conversation:', err);
-    }
-  }
-
-  async function saveConversation() {
-    if (!currentConversationId) return;
-    
-    try {
-      await fetch(`/api/chat/conversations/${currentConversationId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages }),
-      });
-      loadConversations();
-    } catch (err) {
-      console.error('Failed to save conversation:', err);
     }
   }
 
@@ -176,8 +186,8 @@ export default function ChatClient({
     }
   }
 
-  async function send() {
-    const q = input.trim();
+  async function send(questionOverride?: string) {
+    const q = (questionOverride ?? input).trim();
     if (!q || sending) return;
     setInput('');
     setSending(true);
@@ -192,7 +202,7 @@ export default function ChatClient({
       { role: 'user' as const, content: q },
       { role: 'assistant' as const, content: '', pending: true },
     ];
-    
+
     setMessages(newMessages);
 
     // Create new conversation if needed
@@ -288,7 +298,7 @@ export default function ChatClient({
         }
         return copy;
       });
-      
+
       // Save conversation
       if (convId) {
         const finalMessages = [
@@ -348,18 +358,54 @@ export default function ChatClient({
     setListening(true);
   }
 
+  // When embedded in the Command Center, we render full-height and let the
+  // parent card control the outer chrome. When standalone (chat tab) we use
+  // the viewport height minus navbar.
+  const containerHeight = embedded
+    ? 'h-[70vh] min-h-[420px] max-h-[800px]'
+    : 'h-[calc(100vh-4rem)]';
+
   return (
-    <div className="h-[calc(100vh-4rem)] flex bg-brand-bg">
-      {/* Sidebar - Chat History */}
-      <div className={`${sidebarOpen ? 'w-72' : 'w-0'} transition-all duration-300 flex-shrink-0 flex flex-col bg-brand-elevated border-r border-brand-border`}>
+    <div className={`${containerHeight} flex bg-brand-bg overflow-hidden relative`}>
+      {/* ── Sidebar (chat history) ──────────────────────────────────────
+          Desktop (lg+): fixed left rail, w-72, slides in/out.
+          Mobile: full overlay drawer with dark backdrop. */}
+      {/* Backdrop for mobile drawer */}
+      {sidebarOpen && !isDesktop && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`${
+          isDesktop
+            ? `relative ${sidebarOpen ? 'w-72' : 'w-0'}`
+            : `fixed top-0 left-0 bottom-0 z-50 ${sidebarOpen ? 'w-[85vw] max-w-72 translate-x-0' : '-translate-x-full w-[85vw] max-w-72'}`
+        } transition-all duration-300 flex-shrink-0 flex flex-col bg-brand-elevated border-r border-brand-border overflow-hidden`}
+      >
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-brand-border">
+        <div className="p-4 border-b border-brand-border flex items-center justify-between">
+          <span className="text-sm font-semibold text-brand-muted uppercase tracking-wider">History</span>
+          {!isDesktop && (
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-1.5 rounded-lg hover:bg-brand-surface transition-colors"
+              aria-label="Close sidebar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="p-3 border-b border-brand-border">
           <button
             onClick={newChat}
-            className="w-full flex items-center gap-2 px-4 py-2 rounded-lg border border-brand-border bg-brand-bg hover:bg-brand-surface transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-brand-border bg-brand-bg hover:bg-brand-surface hover:border-brand-primary/50 transition-colors text-sm font-medium"
           >
             <Plus className="h-4 w-4" />
-            <span className="text-sm">New chat</span>
+            <span>New chat</span>
           </button>
         </div>
 
@@ -370,8 +416,10 @@ export default function ChatClient({
               <Loader2 className="h-6 w-6 animate-spin text-brand-muted" />
             </div>
           ) : conversations.length === 0 ? (
-            <div className="text-center py-8 text-brand-muted text-sm">
-              No conversations yet
+            <div className="text-center py-8 text-brand-muted text-sm px-3">
+              No conversations yet.
+              <br />
+              Start by asking a question below.
             </div>
           ) : (
             conversations.map((conv) => (
@@ -384,15 +432,21 @@ export default function ChatClient({
                     : 'hover:bg-brand-surface text-brand-muted hover:text-white'
                 }`}
               >
-                <div className="truncate text-sm font-medium">{conv.title}</div>
-                <div className="text-xs opacity-60 mt-1">
-                  {new Date(conv.updated_at).toLocaleDateString()}
+                <div className="flex items-start gap-2">
+                  <MessageSquare className="h-4 w-4 mt-0.5 flex-shrink-0 opacity-60" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{conv.title}</div>
+                    <div className="text-xs opacity-60 mt-0.5">
+                      {new Date(conv.updated_at).toLocaleDateString()}
+                    </div>
+                  </div>
                 </div>
                 <button
                   onClick={(e) => deleteConversation(e, conv.id)}
                   className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
                     currentConversationId === conv.id ? 'hover:bg-white/20' : 'hover:bg-brand-bg'
                   }`}
+                  aria-label="Delete conversation"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -404,46 +458,65 @@ export default function ChatClient({
         {/* Sidebar Footer - User Info */}
         <div className="p-4 border-t border-brand-border">
           <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <div className="text-sm font-medium truncate">{user.email.split("@" )[0] || user.email}</div>
-              <div className="text-xs text-brand-muted.capitalize">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{user.email.split('@')[0] || user.email}</div>
+              <div className="text-xs text-brand-muted capitalize">
                 {user.tier}
                 {user.discordId && ' • Discord linked'}
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      {/* ── Main Chat Area ─────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-brand-border">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-brand-border flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg hover:bg-brand-surface transition-colors"
+              className="p-2 rounded-lg hover:bg-brand-surface transition-colors flex-shrink-0"
+              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
             >
-              {sidebarOpen ? <Menu className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <h1 className="font-semibold">
-              {currentConversationId
-                ? conversations.find(c => c.id === currentConversationId)?.title || 'Chat'
-                : 'AI Chat'}
-            </h1>
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles className="h-5 w-5 text-brand-primary flex-shrink-0" />
+              <h1 className="font-semibold truncate text-sm sm:text-base">
+                {currentConversationId
+                  ? conversations.find(c => c.id === currentConversationId)?.title || 'Chat'
+                  : 'Valor AI Analyst'}
+              </h1>
+            </div>
           </div>
         </div>
 
         {/* Messages */}
-        <div ref={scrollerRef} className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="max-w-4xl mx-auto space-y-6">
+        <div ref={scrollerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+          <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
             {messages.length === 0 ? (
-              <div className="text-center py-20">
-                <MessageSquare className="h-16 w-16 mx-auto mb-4 text-brand-muted opacity-30" />
-                <h2 className="text-xl font-semibold mb-2">Ask me anything</h2>
-                <p className="text-brand-muted">
-                  About sports betting, odds analysis, player props, or upcoming games
+              <div className="text-center py-8 sm:py-16">
+                <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-brand-primary/15 mb-4">
+                  <Sparkles className="h-8 w-8 text-brand-primary" />
+                </div>
+                <h2 className="text-lg sm:text-xl font-semibold mb-2">Ask Valor anything</h2>
+                <p className="text-brand-muted text-sm mb-6 max-w-md mx-auto px-4">
+                  Live odds, injuries, arbitrage opportunities, sharp money moves, and AI-generated best bets — all in real time.
                 </p>
+                {/* Quick suggestion chips */}
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2 justify-center max-w-2xl mx-auto px-4">
+                  {QUICK_SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { send(s); inputRef.current?.focus(); }}
+                      disabled={sending}
+                      className="text-left text-xs sm:text-sm px-3 py-2 rounded-xl border border-brand-border bg-brand-surface hover:bg-brand-elevated hover:border-brand-primary/40 transition-colors text-brand-muted hover:text-white disabled:opacity-50"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
               messages.map((m, i) => (
@@ -452,7 +525,7 @@ export default function ChatClient({
                   className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    className={`max-w-[85%] sm:max-w-[80%] rounded-2xl px-3.5 sm:px-4 py-3 ${
                       m.role === 'user'
                         ? 'bg-brand-primary text-white rounded-br-sm'
                         : 'bg-brand-elevated text-brand-text border border-brand-border rounded-bl-sm'
@@ -466,7 +539,7 @@ export default function ChatClient({
                         }}
                       />
                     ) : (
-                      <div className="text-sm whitespace-pre-wrap">{m.content}</div>
+                      <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>
                     )}
                     {m.pending && (
                       <div className="mt-1 inline-block w-2 h-4 bg-brand-primary/60 animate-pulse align-middle" />
@@ -479,8 +552,8 @@ export default function ChatClient({
         </div>
 
         {/* Input */}
-        <div className="px-6 py-4 border-t border-brand-border">
-          <div className="max-w-4xl mx-auto">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-brand-border flex-shrink-0">
+          <div className="max-w-3xl mx-auto">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -491,17 +564,19 @@ export default function ChatClient({
               <button
                 type="button"
                 onClick={toggleVoice}
-                className={`p-3 rounded-lg transition-colors ${
+                className={`p-3 rounded-lg transition-colors flex-shrink-0 ${
                   listening ? 'bg-red-500/20 text-red-400' : 'hover:bg-brand-surface text-brand-muted'
                 }`}
                 title={listening ? 'Stop listening' : 'Voice input'}
+                aria-label={listening ? 'Stop voice input' : 'Start voice input'}
               >
                 {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </button>
               <input
+                ref={inputRef}
                 type="text"
-                className="flex-1 input"
-                placeholder="Message AI assistant..."
+                className="flex-1 input min-w-0"
+                placeholder="Message Valor…"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 disabled={sending}
@@ -509,12 +584,16 @@ export default function ChatClient({
               />
               <button
                 type="submit"
-                className="btn-primary px-5"
+                className="btn-primary px-4 sm:px-5 flex-shrink-0"
                 disabled={sending || !input.trim()}
+                aria-label="Send message"
               >
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </button>
             </form>
+            <p className="text-[10px] text-brand-muted/60 text-center mt-2 hidden sm:block">
+              Valor has access to live odds &amp; data. AI can make mistakes — verify before betting.
+            </p>
           </div>
         </div>
       </div>
