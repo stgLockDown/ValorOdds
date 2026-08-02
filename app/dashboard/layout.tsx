@@ -78,7 +78,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             )}
           </nav>
         </aside>
-        <main>{children}</main>
+        <main className="min-w-0">{children}</main>
       </div>
       <Footer />
     </>

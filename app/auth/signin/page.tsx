@@ -8,7 +8,7 @@ import { buildMetadata } from '@/lib/seo';
 export const metadata: Metadata = buildMetadata({
   title: 'Sign in',
   description:
-    'Sign in to Valor Odds to access live sports arbitrage, AI-powered player props, and your personalized betting dashboard.',
+    'Sign in to Valor Odds to access live sports arbitrage, AI-powered player props, and your personalized analytics dashboard.',
   path: '/auth/signin',
 });
 
