@@ -1,7 +1,7 @@
 /**
  * AI Chat stream endpoint — runs directly in the web app.
  * PRIMARY:  OpenAI (OPENAI_API_KEY)   — models configurable via env vars.
- * FALLBACK: GitHub Models (GITHUB_TOKEN, gpt-4o) — used only if OpenAI fails.
+ * FALLBACK: DeepSeek (DEEPSEEK_API_KEY) — used only if OpenAI fails.
  * Pulls live context from shared Postgres DB.
  *
  * Env vars (set these in Railway):
@@ -9,10 +9,10 @@
  *   OPENAI_CHAT_MODEL         — primary model id        (default: "gpt-5.5").
  *   OPENAI_CHAT_FALLBACK_MODEL— secondary OpenAI model   (default: "gpt-5.4").
  *   OPENAI_CHAT_MINI_MODEL    — last-resort OpenAI model  (default: "gpt-5.4-mini").
- *   GITHUB_TOKEN              — GitHub Models token (FALLBACK provider).
+ *   DEEPSEEK_API_KEY          — DeepSeek API key (FALLBACK provider).
  *
  * NOTE: If an OpenAI model id isn't available on the account, OpenAI returns an
- * error and we automatically try the next model, then fall back to GitHub Models.
+ * error and we automatically try the next model, then fall back to DeepSeek.
  * You can override any model id from Railway without a code change.
  */
 import { NextResponse } from 'next/server';
@@ -202,8 +202,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Message required' }, { status: 400 });
   }
 
-  const githubToken = process.env.GITHUB_TOKEN;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
 
   const encoder = new TextEncoder();
 
@@ -217,8 +217,8 @@ export async function POST(req: Request) {
     });
   }
 
-  if (!githubToken && !openaiKey) {
-    return new Response(sseStream('⚠️ AI chat is not yet configured. Please set GITHUB_TOKEN or OPENAI_API_KEY in Railway environment variables.'), {
+  if (!openaiKey && !deepseekKey) {
+    return new Response(sseStream('⚠️ AI chat is not yet configured. Please set OPENAI_API_KEY or DEEPSEEK_API_KEY in Railway environment variables.'), {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }
     });
   }
@@ -239,8 +239,7 @@ export async function POST(req: Request) {
   }).catch(() => {});
 
   // ── Provider chain ──────────────────────────────────────────────────────
-  // GitHub Models (gpt-4o) has aggressive free-tier rate limits, so OpenAI is
-  // now the PRIMARY provider with GitHub Models only as a fallback. For each
+  // OpenAI is the PRIMARY provider with DeepSeek as a fallback. For each
   // provider we (1) retry with backoff on transient 429/5xx, and (2) advance to
   // the next provider/model on any hard failure. Only when ALL options are
   // exhausted do we surface an error to the user — with a friendlier, actionable
@@ -248,7 +247,7 @@ export async function POST(req: Request) {
   // `style` controls the request body shape:
   //   'gpt5'   → OpenAI GPT-5.x family: requires `max_completion_tokens` and
   //              ONLY supports the default temperature (so we omit it).
-  //   'legacy' → GPT-4-class / GitHub Models: `max_tokens` + custom temperature.
+  //   'legacy' → GPT-4-class / DeepSeek: `max_tokens` + custom temperature.
   type PayloadStyle = 'gpt5' | 'legacy';
   type Provider = { name: string; baseUrl: string; apiKey: string; model: string; style: PayloadStyle };
   const providers: Provider[] = [];
@@ -276,13 +275,13 @@ export async function POST(req: Request) {
     }
   }
 
-  // FALLBACK: GitHub Models (gpt-4o) — used only if every OpenAI attempt fails.
-  if (githubToken) {
+  // FALLBACK: DeepSeek — used only if every OpenAI attempt fails.
+  if (deepseekKey) {
     providers.push({
-      name: 'github-models',
-      baseUrl: 'https://models.inference.ai.azure.com',
-      apiKey: githubToken,
-      model: 'gpt-4o',
+      name: 'deepseek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: deepseekKey,
+      model: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-chat',
       style: 'legacy',
     });
   }

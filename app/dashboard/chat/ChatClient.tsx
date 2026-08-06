@@ -61,6 +61,13 @@ export default function ChatClient({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Ref flag: when true, the "load messages on conversation change" effect is
+  // suppressed. This prevents a race condition where send() sets
+  // currentConversationId (to a freshly-created conversation), which triggers
+  // loadMessages() — overwriting the in-flight user message + pending assistant
+  // response with whatever the server has for the brand-new (empty) conversation.
+  // Set to true at the start of send(), cleared after the stream completes.
+  const sendingRef = useRef(false);
 
   // Detect desktop breakpoint on mount (avoids SSR mismatch)
   useEffect(() => {
@@ -102,9 +109,14 @@ export default function ChatClient({
     loadConversations();
   }, []);
 
-  // Load messages when conversation changes
+  // Load messages when the user selects a conversation from the sidebar.
+  // SKIPPED while a send() is in progress (sendingRef) — send() sets
+  // currentConversationId to a newly-created conversation and manages the
+  // messages state itself; loadMessages() would otherwise clobber the
+  // in-flight user message + streaming assistant response with stale/empty
+  // server data, making it appear as though the chat input doesn't work.
   useEffect(() => {
-    if (currentConversationId) {
+    if (currentConversationId && !sendingRef.current) {
       loadMessages(currentConversationId);
     }
   }, [currentConversationId]);
@@ -142,6 +154,10 @@ export default function ChatClient({
   }
 
   async function newChat() {
+    // Suppress the loadMessages effect — we're creating a fresh conversation
+    // and explicitly clearing messages; we don't want a stale server fetch to
+    // race with setMessages([]).
+    sendingRef.current = true;
     try {
       const resp = await fetch('/api/chat/conversations', { method: 'POST' });
       if (resp.ok) {
@@ -152,6 +168,8 @@ export default function ChatClient({
       }
     } catch (err) {
       console.error('Failed to create conversation:', err);
+    } finally {
+      sendingRef.current = false;
     }
   }
 
@@ -191,6 +209,7 @@ export default function ChatClient({
     if (!q || sending) return;
     setInput('');
     setSending(true);
+    sendingRef.current = true; // suppress loadMessages() during this send
 
     // Build history from current messages
     const history = messages
@@ -235,6 +254,7 @@ export default function ChatClient({
           return copy;
         });
         setSending(false);
+        sendingRef.current = false;
         return;
       }
 
@@ -322,6 +342,7 @@ export default function ChatClient({
       });
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   }
 
