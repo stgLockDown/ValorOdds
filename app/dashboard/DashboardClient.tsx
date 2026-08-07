@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TrendingUp, Zap, Activity, AlertTriangle, BarChart2,
-  Star, Settings, MessageSquare, RefreshCw, ChevronRight,
+  Star, Settings, MessageSquare, RefreshCw, ChevronRight, ChevronLeft,
   Shield, Users, Trophy, Target, Flame, DollarSign
 } from 'lucide-react';
 import ChatClient from './chat/ChatClient';
@@ -1014,6 +1014,9 @@ function OverviewTab({ user }: { user: any }) {
 function LiveScoresStrip() {
   const [games, setGames] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => {
     fetch('/api/dashboard/games?limit=40')
@@ -1036,6 +1039,29 @@ function LiveScoresStrip() {
     return () => clearInterval(t);
   }, [load]);
 
+  // Update arrow visibility based on scroll position
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    updateScrollState();
+  }, [games, updateScrollState]);
+
+  const scrollByPage = (direction: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Scroll by roughly the visible width (one "page" of cards)
+    const scrollAmount = el.clientWidth * 0.8;
+    el.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth',
+    });
+  };
+
   if (loading) {
     return <div className="card"><LoadingSpinner /></div>;
   }
@@ -1052,13 +1078,35 @@ function LiveScoresStrip() {
     <div className="card">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold flex items-center gap-2"><Activity className="h-4 w-4 text-green-400" /> Live &amp; Upcoming Scores</h3>
-        <span className="text-xs text-brand-muted">auto-refreshes</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-brand-muted hidden sm:inline">auto-refreshes</span>
+          <button
+            onClick={() => scrollByPage('left')}
+            disabled={!canScrollLeft}
+            aria-label="Previous scores"
+            className="p-1 rounded-md bg-brand-elevated border border-brand-border text-brand-muted hover:text-brand-fg hover:border-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => scrollByPage('right')}
+            disabled={!canScrollRight}
+            aria-label="Next scores"
+            className="p-1 rounded-md bg-brand-elevated border border-brand-border text-brand-muted hover:text-brand-fg hover:border-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
-      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+      <div
+        ref={scrollRef}
+        onScroll={updateScrollState}
+        className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scroll-smooth snap-x snap-mandatory scrollbar-hide"
+      >
         {games.map((g) => {
           const when = g.game_date ? new Date(g.game_date) : null;
           return (
-            <div key={g.game_id} className="min-w-[170px] sm:min-w-[200px] rounded-lg bg-brand-elevated p-3 flex-shrink-0">
+            <div key={g.game_id} className="min-w-[170px] sm:min-w-[200px] rounded-lg bg-brand-elevated p-3 flex-shrink-0 snap-start">
               <div className="flex items-center justify-between mb-2">
                 <Badge text={g.sport} color="bg-brand-bg text-brand-muted" />
                 {g.is_live ? (
