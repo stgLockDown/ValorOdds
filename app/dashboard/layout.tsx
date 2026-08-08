@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon } from 'lucide-react';
+import FloatingSupportButton from '@/components/FloatingSupportButton';
+import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon, LifeBuoy, Headphones } from 'lucide-react';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -14,6 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { href: '/dashboard/stats', label: 'Your stats', icon: BarChart3 },
     { href: '/account', label: 'Account', icon: UserIcon },
     { href: '/account/link-discord', label: 'Link Discord', icon: LinkIcon },
+    { href: '/dashboard/support', label: 'Support', icon: LifeBuoy },
   ];
 
   // Check if current page is the main dashboard (DashboardClient)
@@ -27,6 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="mx-auto max-w-7xl py-3 sm:py-4 px-3 sm:px-4 lg:px-6">
           {children}
         </div>
+        <FloatingSupportButton isAdmin={user?.isAdmin ?? false} />
         <Footer />
       </>
     );
@@ -76,10 +79,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 Admin
               </Link>
             )}
+            {user?.isAdmin && (
+              <Link
+                href="/admin/support"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors"
+              >
+                <Headphones className="h-4 w-4" />
+                Support Tickets
+              </Link>
+            )}
           </nav>
         </aside>
         <main className="min-w-0">{children}</main>
       </div>
+      <FloatingSupportButton isAdmin={user?.isAdmin ?? false} />
       <Footer />
     </>
   );

@@ -3,6 +3,7 @@ import Footer from '@/components/Footer';
 import { query } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import Link from 'next/link';
+import { Headphones } from 'lucide-react';
 
 export default async function AdminPage() {
   const session = await auth();
@@ -47,6 +48,10 @@ export default async function AdminPage() {
             <p className="text-brand-muted mt-1">Platform-wide metrics for the Valor Odds web app.</p>
           </div>
           <div className="flex gap-2">
+            <Link href="/admin/support" className="btn-primary">
+              <Headphones className="h-4 w-4" />
+              Support Tickets
+            </Link>
             <Link href="/dashboard" className="btn-secondary">Back to dashboard</Link>
           </div>
         </div>
