@@ -16,5 +16,22 @@ export const authConfig: NextAuthConfig = {
     authorized({ auth }) {
       return !!auth;
     },
+    // Map custom JWT claims (isAdmin, tier, userId, discordId) onto the
+    // session.user object so middleware can read session.user.isAdmin without
+    // needing the full Node-based auth.ts callbacks.
+    jwt({ token }) {
+      // Custom claims are already on the token from the Node-side jwt callback.
+      // Nothing to do here — just pass through.
+      return token;
+    },
+    session({ session, token }) {
+      if (session.user) {
+        (session.user as any).id = String(token.userId ?? token.sub ?? '');
+        (session.user as any).discordId = (token.discordId as string | null | undefined) ?? null;
+        (session.user as any).tier = (token.tier as string | undefined) ?? 'free';
+        (session.user as any).isAdmin = Boolean(token.isAdmin);
+      }
+      return session;
+    },
   },
 };
