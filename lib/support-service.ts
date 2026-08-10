@@ -367,8 +367,12 @@ export async function getAllTickets(
   const offset = filter?.offset ?? 0;
   const statusFilter = filter?.status && filter.status !== 'all' ? filter.status : null;
 
-  const whereClause = statusFilter ? 'WHERE t.status = $3' : '';
-  const params: unknown[] = statusFilter ? [limit, offset, statusFilter] : [limit, offset];
+  // The main query uses $1=limit, $2=offset, $3=status (when filtering).
+  // The count query uses $1=status (when filtering) — different param order.
+  const ticketsWhere = statusFilter ? 'WHERE t.status = $3' : '';
+  const countWhere = statusFilter ? 'WHERE t.status = $1' : '';
+  const ticketsParams: unknown[] = statusFilter ? [limit, offset, statusFilter] : [limit, offset];
+  const countParams: unknown[] = statusFilter ? [statusFilter] : [];
 
   const ticketsResult = await query<TicketRow>(
     `SELECT t.id, t.user_id, t.subject, t.category, t.priority, t.status,
@@ -378,17 +382,17 @@ export async function getAllTickets(
             (SELECT COUNT(*)::text FROM web_support_messages WHERE ticket_id = t.id) AS message_count
      FROM web_support_tickets t
      LEFT JOIN web_users u ON u.id = t.user_id
-     ${whereClause}
+     ${ticketsWhere}
      ORDER BY
        CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
        t.created_at DESC
      LIMIT $1 OFFSET $2`,
-    params
+    ticketsParams
   );
 
   const countResult = await query<{ c: string }>(
-    `SELECT COUNT(*)::text AS c FROM web_support_tickets ${whereClause}`,
-    statusFilter ? [statusFilter] : []
+    `SELECT COUNT(*)::text AS c FROM web_support_tickets t ${countWhere}`,
+    countParams
   );
 
   return {
