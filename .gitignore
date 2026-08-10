@@ -36,3 +36,6 @@ coverage/
 *.tsbuildinfo
 next-env.d.ts
 todo.md
+
+# Stale vendored repo copy — never commit
+valorodds-web-repo/

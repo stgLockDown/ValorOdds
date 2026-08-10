@@ -1,0 +1,26 @@
+# Exclude stale/vendored copies of the repo from Docker/Nixpacks builds.
+# The valorodds-web-repo/ directory was an old snapshot that contaminated
+# Railway builds (stale .next/cache) — it has been removed, but this ensures
+# any similar duplicate directory never ships in the build context.
+valorodds-web-repo/
+valorodds-web-repo/**
+
+# Standard Next.js / Node exclusions
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/
+*.swp
+todo*.md
