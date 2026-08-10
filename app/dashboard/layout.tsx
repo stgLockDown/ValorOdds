@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import FloatingSupportButton from '@/components/FloatingSupportButton';
-import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon, LifeBuoy, Headphones } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon, LifeBuoy, Headphones, Code2 } from 'lucide-react';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -16,6 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { href: '/account', label: 'Account', icon: UserIcon },
     { href: '/account/link-discord', label: 'Link Discord', icon: LinkIcon },
     { href: '/dashboard/support', label: 'Support', icon: LifeBuoy },
+    { href: '/api-access/manage', label: 'API Dashboard', icon: Code2 },
   ];
 
   // Check if current page is the main dashboard (DashboardClient)
@@ -86,6 +87,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
               >
                 <Headphones className="h-4 w-4" />
                 Support Tickets
+              </Link>
+            )}
+            {user?.isAdmin && (
+              <Link
+                href="/admin/api-access"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors"
+              >
+                <Code2 className="h-4 w-4" />
+                API Monetization
               </Link>
             )}
           </nav>

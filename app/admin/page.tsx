@@ -3,7 +3,7 @@ import Footer from '@/components/Footer';
 import { query } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import Link from 'next/link';
-import { Headphones } from 'lucide-react';
+import { Headphones, Code2 } from 'lucide-react';
 
 export default async function AdminPage() {
   const session = await auth();
@@ -11,7 +11,7 @@ export default async function AdminPage() {
     return <div className="p-8">Not authorized</div>;
   }
 
-  const [users, subs, events, last24] = await Promise.all([
+  const [users, subs, events, last24, apiPlans, apiMrr] = await Promise.all([
     query<{ total: string; with_discord: string; verified: string }>(
       `SELECT COUNT(*)::text AS total,
               SUM(CASE WHEN discord_id IS NOT NULL THEN 1 ELSE 0 END)::text AS with_discord,
@@ -33,10 +33,20 @@ export default async function AdminPage() {
     query<{ c: string }>(
       `SELECT COUNT(*)::text AS c FROM web_usage_events WHERE created_at > NOW() - INTERVAL '24 hours'`
     ),
+    query<{ c: string }>(
+      `SELECT COUNT(*)::text AS c FROM customer_api_plans WHERE status IN ('active','trialing','past_due')`
+    ),
+    query<{ pings: string }>(
+      `SELECT COALESCE(SUM(weight), 0)::text AS pings
+       FROM api_key_usage_events
+       WHERE called_at >= date_trunc('month', now())`
+    ),
   ]);
 
   const u = users.rows[0];
   const totalEvents24 = last24.rows[0]?.c ?? '0';
+  const apiPlanCount = apiPlans.rows[0]?.c ?? '0';
+  const apiMonthPings = apiMrr.rows[0]?.pings ?? '0';
 
   return (
     <>
@@ -52,6 +62,10 @@ export default async function AdminPage() {
               <Headphones className="h-4 w-4" />
               Support Tickets
             </Link>
+            <Link href="/admin/api-access" className="btn-secondary">
+              <Code2 className="h-4 w-4" />
+              API Monetization
+            </Link>
             <Link href="/dashboard" className="btn-secondary">Back to dashboard</Link>
           </div>
         </div>
@@ -62,6 +76,22 @@ export default async function AdminPage() {
           <Stat label="Email verified" value={u?.verified ?? '0'} />
           <Stat label="Events (24h)" value={totalEvents24} />
         </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Stat label="Active API plans" value={apiPlanCount} />
+          <Stat label="API pings (this month)" value={Number(apiMonthPings).toLocaleString()} />
+        </div>
+
+        <Link href="/admin/api-access" className="card p-5 flex items-center justify-between hover:border-brand-primary/40 transition-colors group">
+          <div className="flex items-center gap-3">
+            <Code2 className="h-6 w-6 text-brand-primary" />
+            <div>
+              <div className="font-semibold group-hover:text-brand-primary transition-colors">API Monetization Dashboard</div>
+              <div className="text-sm text-brand-muted">View all customer plans, usage, revenue &amp; Stripe catalog sync</div>
+            </div>
+          </div>
+          <span className="text-brand-primary text-sm font-semibold">Open →</span>
+        </Link>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="card overflow-hidden p-0">

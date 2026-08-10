@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Key, RefreshCw, Copy, Check, Loader2, AlertTriangle, ShieldCheck,
-  BarChart2, Zap, ChevronDown, ChevronUp,
+  BarChart2, Zap, ChevronDown, ChevronUp, Code2,
 } from 'lucide-react';
 
 interface Plan {
@@ -361,6 +361,7 @@ export default function ApiManageClient() {
 
   return (
     <div className="space-y-6">
+      <QuickStart />
       {plans.map((p) => (
         <PlanCard key={p.id} plan={p} onChanged={load} />
       ))}
@@ -369,6 +370,62 @@ export default function ApiManageClient() {
           + Add another plan or change your bundle
         </Link>
       </div>
+    </div>
+  );
+}
+
+function QuickStart() {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const sample = `curl https://api-gateway-production-12e8.up.railway.app/v1/odds \\
+  -H "X-API-Key: vok_YOUR_KEY_HERE" \\
+  -H "Accept: application/json"`;
+
+  function copy() {
+    navigator.clipboard.writeText(sample).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="card overflow-hidden p-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-5 py-3 flex items-center justify-between hover:bg-brand-surface/40 transition-colors"
+      >
+        <span className="font-semibold flex items-center gap-2">
+          <Code2 className="h-4 w-4 text-brand-primary" />
+          Quick start — how to use your API key
+        </span>
+        {open ? <ChevronUp className="h-4 w-4 text-brand-muted" /> : <ChevronDown className="h-4 w-4 text-brand-muted" />}
+      </button>
+      {open && (
+        <div className="px-5 py-4 border-t border-brand-border space-y-3 text-sm">
+          <p className="text-brand-muted">
+            Pass your API key as the <code className="text-brand-text bg-brand-surface px-1 rounded">X-API-Key</code> header
+            on every request to the gateway. Each call consumes pings from your monthly pool
+            (1 ping per sport call, 5 pings per Odds API call).
+          </p>
+          <div className="relative">
+            <pre className="bg-black/40 rounded-lg p-3 text-xs font-mono overflow-x-auto text-brand-text">
+{sample}
+            </pre>
+            <button
+              onClick={copy}
+              className="absolute top-2 right-2 btn-secondary text-xs px-2 py-1 flex items-center gap-1"
+            >
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <p className="text-xs text-brand-muted">
+            Need the full endpoint reference?{' '}
+            <Link href="/docs" className="text-brand-primary underline">Read the API docs →</Link>
+          </p>
+        </div>
+      )}
     </div>
   );
 }
