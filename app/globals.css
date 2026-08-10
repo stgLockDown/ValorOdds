@@ -44,7 +44,18 @@
     @apply card hover:border-brand-primary/50 hover:shadow-lg hover:shadow-brand-primary/10;
   }
   .input {
-    @apply w-full rounded-lg bg-brand-elevated border border-brand-border px-4 py-2.5 text-brand-text placeholder:text-brand-muted focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-colors;
+    @apply w-full rounded-lg bg-brand-elevated border border-brand-border px-4 py-2.5 text-brand-text placeholder:text-brand-muted focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all duration-200;
+  }
+  /* Dark dropdown options for select elements */
+  .input option {
+    @apply bg-brand-surface text-brand-text;
+  }
+  .input option:hover {
+    @apply bg-brand-primary/20;
+  }
+  /* Smooth focus glow for all inputs */
+  .input:focus {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
   }
   .label {
     @apply block text-sm font-medium text-brand-text mb-1.5;

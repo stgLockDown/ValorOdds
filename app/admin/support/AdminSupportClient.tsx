@@ -329,11 +329,11 @@ function AdminTicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () 
       </div>
 
       <form onSubmit={handleReply} className="card space-y-3">
-        <label className="form-label">Admin reply</label>
+        <label className="block text-sm font-medium text-brand-text mb-1.5">Admin reply</label>
         <textarea
           value={reply}
           onChange={(e) => setReply(e.target.value)}
-          className="form-input min-h-[80px] resize-y"
+          className="input min-h-[90px] resize-y leading-relaxed"
           placeholder="Type your reply to the user..."
           maxLength={5000}
         />
