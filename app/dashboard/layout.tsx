@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import FloatingSupportButton from '@/components/FloatingSupportButton';
-import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon, LifeBuoy, Headphones, Code2 } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon, LifeBuoy, Headphones, Code2, Activity } from 'lucide-react';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
