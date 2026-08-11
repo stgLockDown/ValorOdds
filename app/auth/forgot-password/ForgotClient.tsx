@@ -11,13 +11,16 @@ export default function ForgotClient() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    await fetch('/api/auth/forgot-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    }).catch(() => undefined);
-    setSubmitted(true);
-    setLoading(false);
+    try {
+      await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }).catch(() => undefined);
+    } finally {
+      setSubmitted(true);
+      setLoading(false);
+    }
   }
 
   if (submitted) {

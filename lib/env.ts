@@ -69,6 +69,7 @@ export const env = {
 
   // Internal API
   internalApiKey: () => readOptionalWithWarning('INTERNAL_API_KEY', ''),
+  adminSetupToken: () => readOptionalWithWarning('ADMIN_SETUP_TOKEN', ''),
   botApiBaseUrl: () =>
     optional('BOT_API_BASE_URL', 'https://valoroddsdiscordbot-production.up.railway.app'),
 

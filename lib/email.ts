@@ -25,6 +25,12 @@ export type EmailPayload = {
 };
 
 export async function sendEmail(payload: EmailPayload) {
+  const apiKey = env.resendApiKey();
+  if (!apiKey || apiKey.startsWith('__buildtime_placeholder')) {
+    // eslint-disable-next-line no-console
+    console.error('[email] RESEND_API_KEY is not configured — skipping send to', payload.to);
+    return null;
+  }
   try {
     const resend = getResend();
     const { data, error } = await resend.emails.send({
