@@ -66,6 +66,7 @@ function PlanCard({ plan, onChanged }: { plan: Plan; onChanged: () => void }) {
   const [usage, setUsage] = useState<{ period: UsagePeriod; recentCalls: UsageEvent[]; byProduct: ProductUsage[] } | null>(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [revealing, setRevealing] = useState(false);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [togglingOverage, setTogglingOverage] = useState(false);
@@ -128,6 +129,26 @@ function PlanCard({ plan, onChanged }: { plan: Plan; onChanged: () => void }) {
     }
   }
 
+  async function handleRevealKey() {
+    setRevealing(true);
+    setError(null);
+    setRevealedKey(null);
+    try {
+      const resp = await fetch('/api/api-access/keys/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: plan.id }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Failed to retrieve key');
+      setRevealedKey(data.apiKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retrieve key');
+    } finally {
+      setRevealing(false);
+    }
+  }
+
   function copyKey() {
     if (!revealedKey) return;
     navigator.clipboard.writeText(revealedKey).then(() => {
@@ -178,6 +199,15 @@ function PlanCard({ plan, onChanged }: { plan: Plan; onChanged: () => void }) {
             {plan.key_prefix ? `${plan.key_prefix}••••••••` : 'no key issued'}
           </div>
           <button
+            onClick={handleRevealKey}
+            disabled={revealing || !plan.key_prefix}
+            className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
+            title="Reveal and copy your existing API key"
+          >
+            {revealing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+            Copy key
+          </button>
+          <button
             onClick={handleRegenerate}
             disabled={regenerating}
             className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
@@ -192,7 +222,7 @@ function PlanCard({ plan, onChanged }: { plan: Plan; onChanged: () => void }) {
         <div className="rounded-lg border border-brand-accent/40 bg-brand-accent/5 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-semibold text-brand-accent">
             <AlertTriangle className="h-4 w-4" />
-            Copy your new key now — it won't be shown again
+            Your API key — copy it now and store it securely
           </div>
           <div className="flex items-center gap-2">
             <code className="text-xs bg-black/30 rounded px-2 py-1.5 break-all flex-1">{revealedKey}</code>
@@ -201,6 +231,9 @@ function PlanCard({ plan, onChanged }: { plan: Plan; onChanged: () => void }) {
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
+          <p className="text-xs text-brand-muted">
+            You can reveal this key again anytime with the “Copy key” button — no need to regenerate.
+          </p>
         </div>
       )}
 

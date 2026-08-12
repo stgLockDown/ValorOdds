@@ -18,6 +18,7 @@ export type UsageEventType =
   | 'page_view'
   | 'api_checkout_completed'
   | 'api_key_regenerated'
+  | 'api_key_revealed'
   | 'api_overage_toggled';
 
 export async function logEvent(opts: {

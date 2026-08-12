@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { auth, signOut } from '@/lib/auth';
-import { LogOut, LayoutDashboard, User as UserIcon } from 'lucide-react';
+import { LogOut, LayoutDashboard, User as UserIcon, KeyRound } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 
 export default async function Navbar() {
@@ -25,6 +25,9 @@ export default async function Navbar() {
             <>
               <Link href="/dashboard" className="btn-ghost hidden sm:inline-flex">
                 <LayoutDashboard className="h-4 w-4" /> Dashboard
+              </Link>
+              <Link href="/api-access/manage" className="btn-ghost hidden sm:inline-flex" title="API Dashboard — manage your API keys and usage">
+                <KeyRound className="h-4 w-4" /> API Keys
               </Link>
               <Link href="/account" className="btn-ghost">
                 <UserIcon className="h-4 w-4" />

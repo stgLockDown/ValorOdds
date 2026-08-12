@@ -3,7 +3,7 @@ import Footer from '@/components/Footer';
 import { query } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import Link from 'next/link';
-import { Headphones, Code2 } from 'lucide-react';
+import { Headphones, Code2, FlaskConical } from 'lucide-react';
 
 export default async function AdminPage() {
   const session = await auth();
@@ -88,6 +88,17 @@ export default async function AdminPage() {
             <div>
               <div className="font-semibold group-hover:text-brand-primary transition-colors">API Monetization Dashboard</div>
               <div className="text-sm text-brand-muted">View all customer plans, usage, revenue &amp; Stripe catalog sync</div>
+            </div>
+          </div>
+          <span className="text-brand-primary text-sm font-semibold">Open →</span>
+        </Link>
+
+        <Link href="/admin/api-playground" className="card p-5 flex items-center justify-between hover:border-brand-primary/40 transition-colors group">
+          <div className="flex items-center gap-3">
+            <FlaskConical className="h-6 w-6 text-brand-primary" />
+            <div>
+              <div className="font-semibold group-hover:text-brand-primary transition-colors">API Playground</div>
+              <div className="text-sm text-brand-muted">Test any API endpoint live — verify responses, status codes &amp; ping costs</div>
             </div>
           </div>
           <span className="text-brand-primary text-sm font-semibold">Open →</span>

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Key, Activity, DollarSign, Users, Loader2, RefreshCw, Search,
   TrendingUp, Zap, ChevronDown, ChevronUp, Code2, Settings2,
-  CheckCircle2, XCircle, AlertCircle,
+  CheckCircle2, XCircle, AlertCircle, FlaskConical,
 } from 'lucide-react';
 import { formatCents } from '@/lib/api-monetization/pricing';
 
@@ -479,6 +479,10 @@ export default function AdminApiAccessClient() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Link href="/admin/api-playground" className="btn-primary flex items-center gap-2">
+              <FlaskConical className="h-4 w-4" />
+              API Playground
+            </Link>
             <button onClick={refreshAll} className="btn-secondary flex items-center gap-2">
               <RefreshCw className="h-4 w-4" />
               Refresh

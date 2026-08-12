@@ -6,6 +6,7 @@ import { getActiveSubscriptionForUser } from '@/lib/subscriptions';
 import { isStripeConfigured } from '@/lib/stripe';
 import ManageBillingButton from './ManageBillingButton';
 import Link from 'next/link';
+import { KeyRound } from 'lucide-react';
 
 export default async function AccountPage({ searchParams }: { searchParams: { checkout?: string } }) {
   const session = await auth();
@@ -119,6 +120,19 @@ export default async function AccountPage({ searchParams }: { searchParams: { ch
             </div>
           )}
         </div>
+
+        <Link href="/api-access/manage" className="card p-5 flex items-center justify-between hover:border-brand-primary/50 transition-colors group">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-brand-primary/10 p-2.5">
+              <KeyRound className="h-5 w-5 text-brand-primary" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">API Dashboard</h2>
+              <p className="text-sm text-brand-muted">Manage your API keys, monitor usage, and control overage billing.</p>
+            </div>
+          </div>
+          <span className="text-brand-primary group-hover:translate-x-1 transition-transform">→</span>
+        </Link>
       </main>
       <Footer />
     </>

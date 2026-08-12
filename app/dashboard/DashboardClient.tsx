@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TrendingUp, Zap, Activity, AlertTriangle, BarChart2,
   Star, Settings, MessageSquare, RefreshCw, ChevronRight, ChevronLeft,
-  Shield, Users, Trophy, Target, Flame, DollarSign
+  Shield, Users, Trophy, Target, Flame, DollarSign, KeyRound
 } from 'lucide-react';
+import Link from 'next/link';
 import ChatClient from './chat/ChatClient';
 import { formatOddsByPref, oddsColorClass } from '@/lib/format-odds';
 import { useOddsFormat, setOddsFormatCache } from '@/lib/use-odds-format';
@@ -937,6 +938,20 @@ function OverviewTab({ user }: { user: any }) {
           </div>
         </div>
       </div>
+
+      {/* API Dashboard quick link */}
+      <Link href="/api-access/manage" className="card flex items-center justify-between p-4 hover:border-brand-primary/50 transition-colors group">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-brand-primary/10 p-2.5">
+            <KeyRound className="h-5 w-5 text-brand-primary" />
+          </div>
+          <div>
+            <p className="font-semibold">API Dashboard</p>
+            <p className="text-sm text-brand-muted">Manage your API keys, view usage, and test endpoints</p>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-brand-muted group-hover:text-brand-primary group-hover:translate-x-1 transition-all" />
+      </Link>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
