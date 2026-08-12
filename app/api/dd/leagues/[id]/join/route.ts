@@ -23,7 +23,7 @@ export async function POST(
     season_year: number;
   }>(
     `SELECT id::text, name, sport, commissioner_id::text, is_public, invite_code,
-            num_teams, status, scoring_preset, roster_preset, season_year
+            num_teams, status, scoring_preset, roster_config->>'name' AS roster_preset, season_year
      FROM dd_leagues WHERE id = $1`,
     [leagueId]
   );

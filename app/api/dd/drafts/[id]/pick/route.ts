@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryOne, tx } from '@/lib/db';
-import { generateDraftOrder, getRosterPreset, type Sport } from '@/lib/dd/presets';
+import { generateDraftOrder, type Sport } from '@/lib/dd/presets';
 import { awardXp } from '@/lib/dd/gamification';
 
 // ─── POST /api/dd/drafts/[id]/pick ── Make a draft pick ───────────────────────
@@ -31,7 +31,7 @@ export async function POST(
   }>(
     `SELECT d.id::text, d.league_id::text, d.draft_type, d.status, d.round_count,
             d.current_round, d.current_pick,
-            l.name AS league_name, l.sport, l.num_teams, l.roster_preset,
+            l.name AS league_name, l.sport, l.num_teams, l.roster_config->>'name' AS roster_preset,
             l.commissioner_id::text
      FROM dd_drafts d
      JOIN dd_leagues l ON l.id = d.league_id

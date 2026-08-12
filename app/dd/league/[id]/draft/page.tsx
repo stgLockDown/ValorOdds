@@ -36,7 +36,7 @@ export default async function DraftRoomPage({
     status: string; num_teams: number; roster_preset: string; season_year: number;
   }>(
     `SELECT id::text, name, sport, commissioner_id::text, status, num_teams,
-            roster_preset, season_year
+            roster_config->>'name' AS roster_preset, season_year
      FROM dd_leagues WHERE id = $1`,
     [leagueId]
   );

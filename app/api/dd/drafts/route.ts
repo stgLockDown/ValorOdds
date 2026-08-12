@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryOne, tx } from '@/lib/db';
-import { generateDraftOrder, getRosterPreset, type Sport } from '@/lib/dd/presets';
+import { generateDraftOrder, type Sport, type RosterConfig } from '@/lib/dd/presets';
 import { awardXp } from '@/lib/dd/gamification';
 
 // ─── POST /api/dd/drafts ── Create / start a draft for a league ───────────────
@@ -24,9 +24,12 @@ export async function POST(req: NextRequest) {
     id: string; name: string; sport: Sport; commissioner_id: string;
     format: string; scoring_preset: string; roster_preset: string;
     num_teams: number; status: string; draft_type: string; season_year: number;
+    roster_config: any;
   }>(
     `SELECT id::text, name, sport, commissioner_id::text, format, scoring_preset,
-            roster_preset, num_teams, status, draft_type, season_year
+            roster_config->>'name' AS roster_preset,
+            roster_config,
+            num_teams, status, settings->>'draftType' AS draft_type, season_year
      FROM dd_leagues WHERE id = $1`,
     [BigInt(leagueId)]
   );
@@ -77,7 +80,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Compute rounds from roster preset (total roster size)
-  const rosterConfig = getRosterPreset(league.sport, league.roster_preset);
+  // Use the roster_config stored on the league directly rather than re-deriving
+  // by key (the key is not persisted — only the full config is).
+  const rosterConfig: RosterConfig =
+    typeof league.roster_config === 'string'
+      ? JSON.parse(league.roster_config)
+      : league.roster_config;
   const rounds = rosterConfig.totalRosterSize;
   const numTeams = membersRes.rows.length;
   const draftType = (league.draft_type as any) ?? 'snake';
@@ -175,7 +183,8 @@ export async function GET(req: NextRequest) {
       `SELECT d.id::text, d.league_id::text, d.draft_type, d.status, d.round_count,
               d.current_round, d.current_pick, d.pick_timer_seconds, d.is_mock,
               d.started_at, d.completed_at,
-              l.name AS league_name, l.sport, l.num_teams, l.roster_preset,
+              l.name AS league_name, l.sport, l.num_teams, l.roster_config->>'name' AS roster_preset,
+              l.roster_config, l.scoring_config,
               l.scoring_preset, l.commissioner_id::text AS commissioner_id
        FROM dd_drafts d
        JOIN dd_leagues l ON l.id = d.league_id
@@ -187,7 +196,8 @@ export async function GET(req: NextRequest) {
       `SELECT d.id::text, d.league_id::text, d.draft_type, d.status, d.round_count,
               d.current_round, d.current_pick, d.pick_timer_seconds, d.is_mock,
               d.started_at, d.completed_at,
-              l.name AS league_name, l.sport, l.num_teams, l.roster_preset,
+              l.name AS league_name, l.sport, l.num_teams, l.roster_config->>'name' AS roster_preset,
+              l.roster_config, l.scoring_config,
               l.scoring_preset, l.commissioner_id::text AS commissioner_id
        FROM dd_drafts d
        JOIN dd_leagues l ON l.id = d.league_id
@@ -204,7 +214,13 @@ export async function GET(req: NextRequest) {
   const draftId = BigInt(draftRow.id);
   const numTeams = draftRow.num_teams;
   const sport = draftRow.sport as Sport;
-  const rosterConfig = getRosterPreset(sport, draftRow.roster_preset);
+  // Use the roster_config stored on the league directly (already contains the
+  // full preset including slots, totalRosterSize, totalStarters) instead of
+  // re-deriving by key — the key is not persisted, only the full config is.
+  const rosterConfig: RosterConfig =
+    typeof draftRow.roster_config === 'string'
+      ? JSON.parse(draftRow.roster_config)
+      : draftRow.roster_config;
   const rounds = draftRow.round_count;
 
   // Generate the full draft order

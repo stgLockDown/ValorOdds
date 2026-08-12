@@ -38,8 +38,9 @@ export default async function LeagueHomePage({
     keeper_type: string; draft_type: string;
   }>(
     `SELECT id::text, name, sport, commissioner_id::text, format, scoring_preset,
-            roster_preset, num_teams, status, season_year, is_public, invite_code,
-            settings, keeper_type, draft_type
+            roster_config->>'name' AS roster_preset,
+            num_teams, status, season_year, is_public, invite_code,
+            settings, keeper_type, settings->>'draftType' AS draft_type
      FROM dd_leagues WHERE id = $1`,
     [leagueId]
   );
