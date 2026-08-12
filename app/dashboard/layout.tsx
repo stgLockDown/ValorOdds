@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import FloatingSupportButton from '@/components/FloatingSupportButton';
-import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon, LifeBuoy, Headphones, Code2, Activity } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield, Link as LinkIcon, LifeBuoy, Headphones, Code2, Activity, Trophy } from 'lucide-react';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -11,6 +11,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const nav = [
     { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+    { href: '/dd', label: 'DiamondDraft', icon: Trophy },
     { href: '/dashboard/chat', label: 'AI Chat', icon: MessageSquare },
     { href: '/dashboard/stats', label: 'Your stats', icon: BarChart3 },
     { href: '/account', label: 'Account', icon: UserIcon },

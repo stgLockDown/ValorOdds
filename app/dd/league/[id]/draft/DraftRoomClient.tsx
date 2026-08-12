@@ -1,0 +1,545 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
+import {
+  Trophy, Search, Clock, Pause, Play, Check, Loader2, ArrowLeft,
+  Target, Shield, Crown, ChevronRight, X, Filter, Zap,
+} from 'lucide-react';
+
+interface Player {
+  id: string; playerName: string; team: string | null; position: string | null;
+  rank: number | null; tier: number | null; projectedPoints: number | null;
+  adp: number | null;
+}
+
+interface DraftPick {
+  id: string; playerName: string; playerId: string | null;
+  team: string | null; position: string | null;
+  round: number; overallPick: number;
+  isAutoPicked: boolean; pickedAt: string;
+}
+
+interface DraftBoardEntry {
+  round: number; pickInRound: number; overallPick: number; slot: number;
+  memberId?: string; teamName?: string; displayName?: string;
+  pick?: { playerName: string; position: string | null; team: string | null; isAutoPicked: boolean } | null;
+}
+
+interface Member {
+  id: string; userId: string; teamName: string; draftPosition: number | null;
+  displayName: string;
+}
+
+interface DraftState {
+  draft: {
+    id: string; leagueId: string; leagueName: string; sport: string;
+    draftType: string; status: string; rounds: number; numTeams: number;
+    currentRound: number; currentPick: number; timerSeconds: number | null;
+    startedAt: string | null; completedAt: string | null;
+    isComplete: boolean; picksMade: number; totalPicks: number;
+  };
+  currentTurn: {
+    overallPick: number; round: number; pickInRound: number; slot: number;
+    memberId: string; teamName: string; displayName: string;
+  } | null;
+  members: Member[];
+  draftBoard: DraftBoardEntry[];
+  teamRosters: Record<string, { playerName: string; position: string | null; team: string | null; round: number; overallPick: number }[]>;
+}
+
+export default function DraftRoomClient({
+  leagueId,
+  leagueName,
+  sport,
+  seasonYear,
+  currentMemberId,
+  currentTeamName,
+  currentDraftPosition,
+  isCommissioner,
+}: {
+  leagueId: string;
+  leagueName: string;
+  sport: string;
+  seasonYear: number;
+  currentMemberId: string;
+  currentTeamName: string;
+  currentDraftPosition: number | null;
+  isCommissioner: boolean;
+}) {
+  const [draftState, setDraftState] = useState<DraftState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [positionFilter, setPositionFilter] = useState<string>('');
+  const [playersLoading, setPlayersLoading] = useState(false);
+  const [picking, setPicking] = useState<string | null>(null);
+  const [lastPollTime, setLastPollTime] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sportIcon = sport === 'NFL'
+    ? <Shield className="w-5 h-5" />
+    : <Target className="w-5 h-5" />;
+
+  // Fetch draft state
+  const fetchDraftState = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/dd/drafts?leagueId=${leagueId}`);
+      const data = await res.json();
+      if (res.ok) {
+        setDraftState(data);
+        setLastPollTime(Date.now());
+      } else if (data.error?.includes('not found') || data.error?.includes('Draft not found')) {
+        setError('No draft has been started yet. The commissioner needs to start the draft.');
+      }
+    } catch {
+      // Silently fail, will retry
+    } finally {
+      setLoading(false);
+    }
+  }, [leagueId]);
+
+  // Fetch available players
+  const fetchPlayers = useCallback(async () => {
+    setPlayersLoading(true);
+    try {
+      const params = new URLSearchParams({
+        sport,
+        seasonYear: String(seasonYear),
+        excludeDrafted: leagueId,
+        sort: 'rank',
+        limit: '100',
+      });
+      if (playerSearch) params.set('search', playerSearch);
+      if (positionFilter) params.set('position', positionFilter);
+
+      const res = await fetch(`/api/dd/players?${params}`);
+      const data = await res.json();
+      if (res.ok) {
+        setPlayers(data.players || []);
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setPlayersLoading(false);
+    }
+  }, [sport, seasonYear, leagueId, playerSearch, positionFilter]);
+
+  // Initial load
+  useEffect(() => {
+    fetchDraftState();
+    fetchPlayers();
+  }, [fetchDraftState, fetchPlayers]);
+
+  // Polling for live draft updates
+  useEffect(() => {
+    if (!draftState || draftState.draft.isComplete) return;
+
+    const poll = () => {
+      fetchDraftState();
+      pollRef.current = setTimeout(poll, 5000); // Poll every 5 seconds
+    };
+
+    pollRef.current = setTimeout(poll, 5000);
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, [draftState?.draft.isComplete, fetchDraftState]);
+
+  // Debounced player search
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      fetchPlayers();
+    }, 300);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [playerSearch, positionFilter, fetchPlayers]);
+
+  const makePick = async (player: Player) => {
+    if (!draftState?.currentTurn) return;
+    setPicking(player.playerName);
+    setError('');
+    try {
+      const res = await fetch(`/api/dd/drafts/${draftState.draft.id}/pick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerName: player.playerName,
+          playerId: player.id,
+          team: player.team,
+          position: player.position,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to make pick');
+      } else {
+        // Immediately refresh draft state
+        fetchDraftState();
+        fetchPlayers();
+      }
+    } catch {
+      setError('Network error');
+    } finally {
+      setPicking(null);
+    }
+  };
+
+  const togglePause = async () => {
+    if (!draftState) return;
+    const action = draftState.draft.status === 'paused' ? 'resume' : 'pause';
+    try {
+      await fetch(`/api/dd/drafts/${draftState.draft.id}/${action}`, { method: 'POST' });
+      fetchDraftState();
+    } catch {
+      setError('Failed to toggle draft');
+    }
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-20 text-center">
+        <Loader2 className="w-8 h-8 text-brand-primary animate-spin mx-auto" />
+        <p className="text-brand-muted mt-3">Loading draft room...</p>
+      </div>
+    );
+  }
+
+  // No draft yet
+  if (!draftState) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-12">
+        <Link href={`/dd/league/${leagueId}`} className="inline-flex items-center gap-1 text-sm text-brand-muted hover:text-brand-text mb-4">
+          <ArrowLeft className="w-4 h-4" /> League Home
+        </Link>
+        <div className="card text-center py-12">
+          <Clock className="w-12 h-12 text-brand-muted mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-brand-text mb-2">No Active Draft</h2>
+          <p className="text-brand-muted mb-6">{error || 'The draft hasn\'t started yet.'}</p>
+          {isCommissioner && (
+            <Link href={`/dd/league/${leagueId}`} className="btn-primary">
+              Start the Draft
+            </Link>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const { draft, currentTurn, members, draftBoard, teamRosters } = draftState;
+  const isMyTurn = currentTurn?.memberId === currentMemberId;
+  const myRoster = teamRosters[currentMemberId] || [];
+
+  // Position filter options based on sport
+  const positions = sport === 'NFL'
+    ? ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']
+    : ['C', '1B', '2B', '3B', 'SS', 'OF', 'SP', 'RP'];
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Link href={`/dd/league/${leagueId}`} className="btn-ghost p-2">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex items-center gap-2">
+            {sportIcon}
+            <div>
+              <h1 className="text-xl font-bold text-brand-text">{leagueName} — Draft</h1>
+              <p className="text-xs text-brand-muted">
+                {draft.draftType.replace(/_/g, ' ')} · {draft.picksMade}/{draft.totalPicks} picks
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {draft.status === 'in_progress' && (
+            <span className="flex items-center gap-1.5 text-xs text-brand-success">
+              <span className="w-2 h-2 rounded-full bg-brand-success animate-pulse" />
+              Live
+            </span>
+          )}
+          {draft.status === 'paused' && (
+            <span className="flex items-center gap-1.5 text-xs text-brand-accent">
+              <Pause className="w-3 h-3" /> Paused
+            </span>
+          )}
+          {isCommissioner && draft.status !== 'completed' && (
+            <button onClick={togglePause} className="btn-secondary text-sm py-2">
+              {draft.status === 'paused' ? <><Play className="w-4 h-4" /> Resume</> : <><Pause className="w-4 h-4" /> Pause</>}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* On the clock banner */}
+      {currentTurn && !draft.isComplete && (
+        <div className={`rounded-xl p-4 mb-4 border-2 transition-all ${
+          isMyTurn
+            ? 'border-brand-primary bg-brand-primary/10 animate-pulse'
+            : 'border-brand-border bg-brand-surface'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Clock className={`w-6 h-6 ${isMyTurn ? 'text-brand-primary' : 'text-brand-muted'}`} />
+              <div>
+                <div className="text-sm text-brand-muted">On the clock</div>
+                <div className={`text-lg font-bold ${isMyTurn ? 'text-brand-primaryText' : 'text-brand-text'}`}>
+                  {isMyTurn ? 'YOUR PICK' : currentTurn.displayName}
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-brand-muted">Pick #{currentTurn.overallPick}</div>
+              <div className="text-sm text-brand-text">Round {currentTurn.round}</div>
+            </div>
+          </div>
+          {isMyTurn && (
+            <div className="mt-2 text-sm text-brand-primaryText font-medium">
+              Select a player from the list below ↓
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Draft complete banner */}
+      {draft.isComplete && (
+        <div className="rounded-xl p-6 mb-4 border-2 border-brand-success bg-brand-success/10 text-center">
+          <Trophy className="w-10 h-10 text-brand-accent mx-auto mb-2" />
+          <h2 className="text-xl font-bold text-brand-text">Draft Complete!</h2>
+          <p className="text-brand-muted mt-1">All {draft.totalPicks} picks have been made.</p>
+          <Link href={`/dd/league/${leagueId}`} className="btn-primary mt-4">
+            Go to League Home
+          </Link>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-brand-danger/10 text-brand-danger text-sm rounded-lg p-3 mb-4">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        {/* Left: Draft Board (2 cols on xl) */}
+        <div className="xl:col-span-2 space-y-4">
+          {/* Draft Board */}
+          <div className="card overflow-hidden">
+            <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-brand-accent" />
+              Draft Board
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-brand-border">
+                    <th className="text-left py-2 px-2 text-brand-muted font-medium sticky left-0 bg-brand-surface z-10">
+                      Round
+                    </th>
+                    {members.map((m) => (
+                      <th key={m.id} className="text-center py-2 px-1 text-brand-muted font-medium min-w-[80px]">
+                        <div className="truncate" title={m.teamName}>{m.teamName}</div>
+                        <div className="text-xs text-brand-muted">#{m.draftPosition}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: draft.rounds }).map((_, roundIdx) => {
+                    const round = roundIdx + 1;
+                    const roundPicks = draftBoard.filter((p) => p.round === round);
+                    return (
+                      <tr key={round} className="border-b border-brand-border/50">
+                        <td className="py-2 px-2 text-brand-muted font-medium sticky left-0 bg-brand-surface z-10">
+                          {round}
+                        </td>
+                        {members.map((m) => {
+                          const pick = roundPicks.find((p) => p.memberId === m.id);
+                          const isCurrent = currentTurn?.memberId === m.id && currentTurn?.round === round;
+                          return (
+                            <td key={m.id} className="py-1.5 px-1 text-center">
+                              {pick?.pick ? (
+                                <div className={`rounded-md py-1.5 px-1 ${
+                                  pick.pick.isAutoPicked ? 'bg-brand-elevated' : 'bg-brand-primary/10'
+                                }`}>
+                                  <div className="text-xs font-medium text-brand-text truncate" title={pick.pick.playerName}>
+                                    {pick.pick.playerName}
+                                  </div>
+                                  <div className="text-xs text-brand-muted">
+                                    {pick.pick.position} · {pick.pick.team}
+                                  </div>
+                                </div>
+                              ) : isCurrent ? (
+                                <div className="rounded-md py-1.5 px-1 border-2 border-brand-primary bg-brand-primary/10">
+                                  <div className="text-xs text-brand-primaryText font-medium">On Clock</div>
+                                </div>
+                              ) : (
+                                <div className="rounded-md py-1.5 px-1 bg-brand-elevated/30">
+                                  <div className="text-xs text-brand-muted">—</div>
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* My Team Roster */}
+          <div className="card">
+            <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
+              <Crown className="w-5 h-5 text-brand-accent" />
+              Your Team — {currentTeamName}
+              <span className="text-sm text-brand-muted font-normal">({myRoster.length} players)</span>
+            </h3>
+            {myRoster.length === 0 ? (
+              <p className="text-sm text-brand-muted text-center py-4">
+                No players drafted yet.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {myRoster.map((p, i) => (
+                  <div key={i} className="bg-brand-elevated rounded-lg p-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-brand-muted">R{p.round}</span>
+                      <span className="text-xs text-brand-muted">#{p.overallPick}</span>
+                    </div>
+                    <div className="text-sm font-medium text-brand-text truncate mt-1">{p.playerName}</div>
+                    <div className="text-xs text-brand-muted">{p.position} · {p.team}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Player Search & Available Players */}
+        <div className="space-y-4">
+          <div className="card">
+            <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
+              <Search className="w-5 h-5 text-brand-primaryText" />
+              Available Players
+            </h3>
+
+            {/* Search */}
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-muted" />
+              <input
+                type="text"
+                className="input pl-10"
+                placeholder="Search players..."
+                value={playerSearch}
+                onChange={(e) => setPlayerSearch(e.target.value)}
+              />
+            </div>
+
+            {/* Position filter */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <button
+                onClick={() => setPositionFilter('')}
+                className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+                  !positionFilter ? 'bg-brand-primary text-white' : 'bg-brand-elevated text-brand-muted hover:text-brand-text'
+                }`}
+              >
+                All
+              </button>
+              {positions.map((pos) => (
+                <button
+                  key={pos}
+                  onClick={() => setPositionFilter(pos === positionFilter ? '' : pos)}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+                    pos === positionFilter ? 'bg-brand-primary text-white' : 'bg-brand-elevated text-brand-muted hover:text-brand-text'
+                  }`}
+                >
+                  {pos}
+                </button>
+              ))}
+            </div>
+
+            {/* Player list */}
+            <div className="space-y-1.5 max-h-[600px] overflow-y-auto">
+              {playersLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="w-5 h-5 text-brand-primary animate-spin mx-auto" />
+                </div>
+              ) : players.length === 0 ? (
+                <p className="text-sm text-brand-muted text-center py-8">
+                  No players found.
+                </p>
+              ) : (
+                players.map((player) => (
+                  <div
+                    key={player.id}
+                    className="flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group"
+                  >
+                    {/* Rank badge */}
+                    <div className="w-8 h-8 rounded-md bg-brand-surface border border-brand-border flex items-center justify-center text-xs font-bold text-brand-muted flex-shrink-0">
+                      {player.rank ?? '?'}
+                    </div>
+
+                    {/* Player info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-brand-text truncate">{player.playerName}</div>
+                      <div className="text-xs text-brand-muted">
+                        {player.position} · {player.team}
+                        {player.projectedPoints && ` · ${player.projectedPoints.toFixed(1)} pts`}
+                      </div>
+                    </div>
+
+                    {/* Draft button */}
+                    {(isMyTurn || isCommissioner) && draft.status === 'in_progress' && (
+                      <button
+                        onClick={() => makePick(player)}
+                        disabled={picking !== null}
+                        className="opacity-0 group-hover:opacity-100 btn-primary text-xs px-2.5 py-1.5 transition-opacity"
+                      >
+                        {picking === player.playerName ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <>Draft</>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Recent picks */}
+          <div className="card">
+            <h3 className="font-semibold text-brand-text mb-3">Recent Picks</h3>
+            <div className="space-y-1.5">
+              {draftBoard
+                .filter((p) => p.pick)
+                .slice(-5)
+                .reverse()
+                .map((p) => (
+                  <div key={p.overallPick} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-lg bg-brand-elevated/30">
+                    <span className="text-xs text-brand-muted w-8">#{p.overallPick}</span>
+                    <span className="font-medium text-brand-text flex-1 truncate">{p.pick!.playerName}</span>
+                    <span className="text-xs text-brand-muted">{p.pick!.position}</span>
+                    <span className="text-xs text-brand-muted truncate max-w-[80px]">{p.teamName}</span>
+                  </div>
+                ))}
+              {draftBoard.filter((p) => p.pick).length === 0 && (
+                <p className="text-sm text-brand-muted text-center py-4">No picks yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
