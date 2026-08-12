@@ -32,8 +32,8 @@ export async function POST(
     return NextResponse.json({ error: 'League not found' }, { status: 404 });
   }
 
-  // Only allow joining during recruiting or pre_draft
-  if (league.status !== 'recruiting' && league.status !== 'pre_draft') {
+  // Allow joining during setup, recruiting, or pre_draft (new leagues start as 'setup')
+  if (league.status !== 'setup' && league.status !== 'recruiting' && league.status !== 'pre_draft' && league.status !== 'predraft') {
     return NextResponse.json({ error: 'This league is no longer accepting new members' }, { status: 409 });
   }
 

@@ -274,22 +274,24 @@ export default function LeagueHomeClient({
         {/* Sidebar: Invite + Settings */}
         <div className="space-y-4">
           {/* Invite Code */}
-          {!league.is_public && (
-            <div className="card">
-              <h3 className="font-semibold text-brand-text mb-3">Invite Code</h3>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 text-center text-2xl font-bold text-brand-accent tracking-widest bg-brand-elevated rounded-lg py-2">
-                  {league.invite_code}
-                </code>
-                <button onClick={copyInvite} className="btn-ghost p-2.5">
-                  {copied ? <Check className="w-4 h-4 text-brand-success" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-              <p className="text-xs text-brand-muted mt-2">
-                Share this code with friends so they can join.
-              </p>
+          <div className="card">
+            <h3 className="font-semibold text-brand-text mb-3">
+              {league.is_public ? 'League Code' : 'Invite Code'}
+            </h3>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-center text-2xl font-bold text-brand-accent tracking-widest bg-brand-elevated rounded-lg py-2">
+                {league.invite_code}
+              </code>
+              <button onClick={copyInvite} className="btn-ghost p-2.5">
+                {copied ? <Check className="w-4 h-4 text-brand-success" /> : <Copy className="w-4 h-4" />}
+              </button>
             </div>
-          )}
+            <p className="text-xs text-brand-muted mt-2">
+              {league.is_public
+                ? 'Share this code so friends can join directly, or they can find this league in the public list.'
+                : 'Share this code with friends so they can join your private league.'}
+            </p>
+          </div>
 
           {/* League Settings Summary */}
           <div className="card">

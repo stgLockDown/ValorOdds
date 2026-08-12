@@ -229,9 +229,10 @@ export async function GET(req: NextRequest) {
   // Get members mapped by draft position
   const membersRes = await query<{
     id: string; user_id: string; team_name: string; draft_position: number | null;
-    display_name: string | null;
+    display_name: string | null; is_bot: boolean;
   }>(
-    `SELECT m.id::text, m.user_id::text, m.team_name, m.draft_position, u.display_name
+    `SELECT m.id::text, m.user_id::text, m.team_name, m.draft_position, u.display_name,
+            (u.password_hash = 'bot_no_login') AS is_bot
      FROM dd_league_members m
      JOIN web_users u ON u.id = m.user_id
      WHERE m.league_id = $1
@@ -329,6 +330,7 @@ export async function GET(req: NextRequest) {
       timerSeconds: draftRow.pick_timer_seconds,
       rosterPreset: draftRow.roster_preset,
       rosterConfig,
+      isMock: draftRow.is_mock ?? false,
       startedAt: draftRow.started_at,
       completedAt: draftRow.completed_at,
       isComplete,
@@ -352,6 +354,7 @@ export async function GET(req: NextRequest) {
       teamName: m.team_name,
       draftPosition: m.draft_position,
       displayName: m.display_name ?? m.team_name,
+      isBot: m.is_bot,
     })),
     draftBoard,
     teamRosters,

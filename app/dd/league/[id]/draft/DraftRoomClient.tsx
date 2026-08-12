@@ -28,7 +28,7 @@ interface DraftBoardEntry {
 
 interface Member {
   id: string; userId: string; teamName: string; draftPosition: number | null;
-  displayName: string;
+  displayName: string; isBot?: boolean;
 }
 
 interface DraftState {
@@ -37,7 +37,7 @@ interface DraftState {
     draftType: string; status: string; rounds: number; numTeams: number;
     currentRound: number; currentPick: number; timerSeconds: number | null;
     startedAt: string | null; completedAt: string | null;
-    isComplete: boolean; picksMade: number; totalPicks: number;
+    isComplete: boolean; picksMade: number; totalPicks: number; isMock?: boolean;
   };
   currentTurn: {
     overallPick: number; round: number; pickInRound: number; slot: number;
@@ -78,6 +78,7 @@ export default function DraftRoomClient({
   const [lastPollTime, setLastPollTime] = useState(0);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoPickAttemptedRef = useRef<Set<number>>(new Set()); // track overall picks we've tried to auto-pick
 
   const sportIcon = sport === 'NFL'
     ? <Shield className="w-5 h-5" />
@@ -200,6 +201,52 @@ export default function DraftRoomClient({
     }
   };
 
+  // ── Bot auto-pick: when it's a bot's turn (not the user), trigger auto-pick ──
+  const triggerBotAutoPick = useCallback(async () => {
+    if (!draftState?.currentTurn || draftState.draft.isComplete) return;
+    const onClockMember = draftState.members.find((m) => m.id === draftState.currentTurn!.memberId);
+    if (!onClockMember?.isBot) return; // only auto-pick for bots
+
+    const overallPick = draftState.currentTurn.overallPick;
+    // Avoid duplicate auto-pick attempts for the same pick slot
+    if (autoPickAttemptedRef.current.has(overallPick)) return;
+    autoPickAttemptedRef.current.add(overallPick);
+
+    try {
+      const res = await fetch(`/api/dd/drafts/${draftState.draft.id}/auto-pick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        // Immediately refresh draft state after a successful auto-pick
+        fetchDraftState();
+      } else {
+        // If it failed, remove from attempted set so we can retry on next poll
+        autoPickAttemptedRef.current.delete(overallPick);
+      }
+    } catch {
+      autoPickAttemptedRef.current.delete(overallPick);
+    }
+  }, [draftState, fetchDraftState]);
+
+  // Detect bot turns and trigger auto-pick with a short delay (feels more natural)
+  useEffect(() => {
+    if (!draftState?.currentTurn || draftState.draft.isComplete) return;
+    const currentTurnLocal = draftState.currentTurn;
+    const onClockMember = draftState.members.find((m) => m.id === currentTurnLocal.memberId);
+    if (!onClockMember?.isBot) return;
+
+    const overallPick = currentTurnLocal.overallPick;
+    if (autoPickAttemptedRef.current.has(overallPick)) return;
+
+    // Delay 1.5 seconds before auto-picking so the UI shows the bot "thinking"
+    const timer = setTimeout(() => {
+      triggerBotAutoPick();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [draftState?.currentTurn, draftState?.draft.isComplete, triggerBotAutoPick]);
+
   // Loading state
   if (loading) {
     return (
@@ -234,6 +281,8 @@ export default function DraftRoomClient({
   const { draft, currentTurn, members, draftBoard, teamRosters } = draftState;
   const isMyTurn = currentTurn?.memberId === currentMemberId;
   const myRoster = teamRosters[currentMemberId] || [];
+  const onClockMember = currentTurn ? members.find((m) => m.id === currentTurn.memberId) : null;
+  const isBotThinking = !isMyTurn && onClockMember?.isBot && !draft.isComplete;
 
   // Position filter options based on sport
   const positions = sport === 'NFL'
@@ -293,6 +342,11 @@ export default function DraftRoomClient({
                 <div className="text-sm text-brand-muted">On the clock</div>
                 <div className={`text-lg font-bold ${isMyTurn ? 'text-brand-primaryText' : 'text-brand-text'}`}>
                   {isMyTurn ? 'YOUR PICK' : currentTurn.displayName}
+                  {onClockMember?.isBot && !isMyTurn && (
+                    <span className="ml-2 text-xs font-normal text-brand-muted flex items-center gap-1 inline-flex">
+                      <Loader2 className="w-3 h-3 animate-spin" /> AI thinking...
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -345,7 +399,10 @@ export default function DraftRoomClient({
                     </th>
                     {members.map((m) => (
                       <th key={m.id} className="text-center py-2 px-1 text-brand-muted font-medium min-w-[80px]">
-                        <div className="truncate" title={m.teamName}>{m.teamName}</div>
+                        <div className="truncate flex items-center justify-center gap-1" title={m.teamName}>
+                          {m.isBot && <Zap className="w-3 h-3 text-brand-accent flex-shrink-0" />}
+                          <span className="truncate">{m.teamName}</span>
+                        </div>
                         <div className="text-xs text-brand-muted">#{m.draftPosition}</div>
                       </th>
                     ))}

@@ -206,22 +206,39 @@ export async function GET(req: Request) {
   const includePublic = searchParams.get('public') === 'true';
   const inviteCode = searchParams.get('inviteCode');
 
-  // Lookup by invite code
+  // Lookup by invite code (works for both public and private leagues)
   if (inviteCode) {
     const league = await queryOne<{
       id: string; name: string; sport: string; format: string;
       num_teams: number; status: string; season_year: number;
       is_public: boolean; invite_code: string;
+      member_count: string;
     }>(
-      `SELECT id::text, name, sport, format, num_teams, status, season_year,
-              is_public, invite_code
-       FROM dd_leagues WHERE invite_code = $1 AND is_public = false`,
+      `SELECT l.id::text, l.name, l.sport, l.format, l.num_teams, l.status,
+              l.season_year, l.is_public, l.invite_code,
+              (SELECT COUNT(*)::text FROM dd_league_members lm WHERE lm.league_id = l.id) AS member_count
+       FROM dd_leagues l
+       WHERE l.invite_code = $1
+         AND l.status IN ('setup','recruiting','pre_draft','predraft')`,
       [inviteCode.toUpperCase()]
     );
     if (!league) {
-      return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 });
+      return NextResponse.json({ error: 'Invalid invite code or league is no longer accepting members' }, { status: 404 });
     }
-    return NextResponse.json({ league });
+    return NextResponse.json({
+      league: {
+        id: league.id,
+        name: league.name,
+        sport: league.sport,
+        format: league.format,
+        num_teams: league.num_teams,
+        status: league.status,
+        season_year: league.season_year,
+        is_public: league.is_public,
+        invite_code: league.invite_code,
+        member_count: parseInt(league.member_count, 10),
+      },
+    });
   }
 
   if (leagueId) {

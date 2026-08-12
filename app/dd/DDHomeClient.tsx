@@ -23,21 +23,37 @@ interface LeaderboardEntry {
   displayName: string; level: number; levelTitle: string; totalXp: number;
 }
 
+interface PublicLeague {
+  id: string; name: string; sport: string; format: string;
+  num_teams: number; status: string; season_year: number;
+  member_count: number; invite_code: string;
+}
+
 export default function DDHomeClient({
   userId,
   leagues,
   profile,
   leaderboard,
+  publicLeagues,
 }: {
   userId: string;
   leagues: League[];
   profile: Profile | null;
   leaderboard: LeaderboardEntry[];
+  publicLeagues: PublicLeague[];
 }) {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
+  const [joiningPublicId, setJoiningPublicId] = useState<string | null>(null);
+  const [publicError, setPublicError] = useState('');
+  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
+  const [showMockModal, setShowMockModal] = useState(false);
+  const [mockSport, setMockSport] = useState<'NFL' | 'MLB'>('NFL');
+  const [mockNumBots, setMockNumBots] = useState(7);
+  const [mockStarting, setMockStarting] = useState(false);
+  const [mockError, setMockError] = useState('');
 
   const sportIcon = (sport: string) =>
     sport === 'NFL' ? <Shield className="w-5 h-5" /> : <Target className="w-5 h-5" />;
@@ -107,6 +123,58 @@ export default function DDHomeClient({
     }
   };
 
+  const handleJoinPublic = async (leagueId: string, inviteCode: string) => {
+    setJoiningPublicId(leagueId);
+    setPublicError('');
+    try {
+      const joinRes = await fetch(`/api/dd/leagues/${leagueId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inviteCode }),
+      });
+      const joinData = await joinRes.json();
+      if (!joinRes.ok) {
+        setPublicError(joinData.error || 'Failed to join league');
+        return;
+      }
+      // Mark as joined so it disappears from the list immediately
+      setJoinedIds((prev) => new Set(prev).add(leagueId));
+      // Reload to show the new league under "My Leagues"
+      setTimeout(() => window.location.reload(), 600);
+    } catch {
+      setPublicError('Network error');
+    } finally {
+      setJoiningPublicId(null);
+    }
+  };
+
+  const handleMockDraft = async () => {
+    setMockStarting(true);
+    setMockError('');
+    try {
+      // Create a mock league with AI bots, then start a draft
+      const createRes = await fetch('/api/dd/mock-league', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sport: mockSport,
+          numBots: mockNumBots,
+        }),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok) {
+        setMockError(createData.error || 'Failed to create mock league');
+        return;
+      }
+      // Redirect to the draft room — the mock-league endpoint auto-starts the draft
+      window.location.href = `/dd/league/${createData.leagueId}/draft`;
+    } catch {
+      setMockError('Network error');
+    } finally {
+      setMockStarting(false);
+    }
+  };
+
   const xpProgress = profile
     ? Math.min(
         100,
@@ -131,7 +199,13 @@ export default function DDHomeClient({
             Multi-sport fantasy leagues · NFL & MLB
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={() => setShowMockModal(true)}
+            className="btn-secondary"
+          >
+            <Sparkles className="w-4 h-4" /> Mock Draft
+          </button>
           <button
             onClick={() => setShowInviteModal(true)}
             className="btn-secondary"
@@ -211,6 +285,49 @@ export default function DDHomeClient({
                   </div>
                 </Link>
               ))}
+            </div>
+          )}
+
+          {/* Browse Public Leagues */}
+          {publicLeagues.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold text-brand-text flex items-center gap-2 mb-4">
+                <Users className="w-5 h-5 text-brand-accent" />
+                Browse Public Leagues
+                <span className="text-sm text-brand-muted font-normal">({publicLeagues.length})</span>
+              </h2>
+              {publicError && (
+                <p className="text-sm text-brand-danger mb-3">{publicError}</p>
+              )}
+              <div className="space-y-3">
+                {publicLeagues
+                  .filter((pl) => !joinedIds.has(pl.id))
+                  .map((pl) => (
+                    <div
+                      key={pl.id}
+                      className="card flex items-center justify-between gap-4"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg bg-brand-elevated flex items-center justify-center flex-shrink-0">
+                          {sportIcon(pl.sport)}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-semibold text-brand-text truncate">{pl.name}</h3>
+                          <p className="text-sm text-brand-muted truncate">
+                            {pl.sport} {pl.season_year} · {pl.format.replace(/_/g, ' ')} · {pl.member_count}/{pl.num_teams} teams
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleJoinPublic(pl.id, pl.invite_code)}
+                        disabled={joiningPublicId === pl.id}
+                        className="btn-primary flex-shrink-0 text-sm"
+                      >
+                        {joiningPublicId === pl.id ? 'Joining...' : 'Join'}
+                      </button>
+                    </div>
+                  ))}
+              </div>
             </div>
           )}
         </div>
@@ -374,6 +491,82 @@ export default function DDHomeClient({
                 className="btn-primary flex-1"
               >
                 {joining ? 'Joining...' : 'Join League'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mock Draft Modal */}
+      {showMockModal && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowMockModal(false)}
+        >
+          <div
+            className="bg-brand-surface border border-brand-border rounded-2xl p-6 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-brand-text mb-2 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-brand-accent" /> Start a Mock Draft
+            </h3>
+            <p className="text-sm text-brand-muted mb-4">
+              Create an instant practice league filled with AI bots so you can test
+              the full draft experience end-to-end. You'll be dropped straight into
+              the draft room with the bots auto-picking around you.
+            </p>
+
+            {/* Sport selector */}
+            <label className="block text-sm font-medium text-brand-text mb-1.5">Sport</label>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {(['NFL', 'MLB'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setMockSport(s)}
+                  className={`p-2.5 rounded-lg border text-sm font-medium transition-all ${
+                    mockSport === s
+                      ? 'border-brand-primary bg-brand-primary/10 text-brand-text'
+                      : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                  }`}
+                >
+                  {sportIcon(s)} {s}
+                </button>
+              ))}
+            </div>
+
+            {/* Bot count selector */}
+            <label className="block text-sm font-medium text-brand-text mb-1.5">
+              Number of AI Teams (you + bots): <span className="text-brand-accent">{mockNumBots + 1}</span> total
+            </label>
+            <input
+              type="range"
+              min={1}
+              max={11}
+              value={mockNumBots}
+              onChange={(e) => setMockNumBots(Number(e.target.value))}
+              className="w-full mb-1 accent-brand-primary"
+            />
+            <div className="flex justify-between text-xs text-brand-muted mb-4">
+              <span>1 bot</span>
+              <span>11 bots</span>
+            </div>
+
+            {mockError && (
+              <p className="text-sm text-brand-danger mb-3">{mockError}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowMockModal(false); setMockError(''); }}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMockDraft}
+                disabled={mockStarting}
+                className="btn-primary flex-1"
+              >
+                {mockStarting ? 'Setting up...' : 'Start Mock Draft'}
               </button>
             </div>
           </div>

@@ -65,6 +65,43 @@ export default async function DDHomePage() {
     topPlayers = [];
   }
 
+  // Fetch public leagues the user has NOT joined yet (for discovery)
+  let publicLeagues: {
+    id: string; name: string; sport: string; format: string;
+    num_teams: number; status: string; season_year: number;
+    member_count: number; invite_code: string;
+  }[] = [];
+  try {
+    const pubRes = await query<{
+      id: string; name: string; sport: string; format: string;
+      num_teams: number; status: string; season_year: number;
+      member_count: string; invite_code: string;
+    }>(
+      `SELECT l.id::text, l.name, l.sport, l.format, l.num_teams, l.status,
+              l.season_year, l.invite_code,
+              (SELECT COUNT(*)::text FROM dd_league_members lm WHERE lm.league_id = l.id) AS member_count
+       FROM dd_leagues l
+       WHERE l.is_public = TRUE
+         AND l.status IN ('setup','recruiting','pre_draft','predraft')
+         AND l.id NOT IN (SELECT league_id FROM dd_league_members WHERE user_id = $1)
+       ORDER BY l.created_at DESC LIMIT 20`,
+      [BigInt(session.user.id)]
+    );
+    publicLeagues = pubRes.rows.map((l) => ({
+      id: l.id,
+      name: l.name,
+      sport: l.sport,
+      format: l.format,
+      num_teams: l.num_teams,
+      status: l.status,
+      season_year: l.season_year,
+      invite_code: l.invite_code,
+      member_count: parseInt(l.member_count, 10),
+    }));
+  } catch {
+    publicLeagues = [];
+  }
+
   const serializedLeagues = leaguesRes.rows.map((l) => ({
     ...l,
     memberCount: parseInt(l.member_count, 10),
@@ -92,6 +129,7 @@ export default async function DDHomePage() {
           levelTitle: p.levelTitle,
           totalXp: p.totalXp,
         }))}
+        publicLeagues={publicLeagues}
       />
       <Footer />
     </>
