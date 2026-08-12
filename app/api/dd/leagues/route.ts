@@ -66,7 +66,7 @@ const CreateLeagueSchema = z.object({
   draftType: z.enum(['snake', 'auction', 'linear', '3rr_snake', 'custom']),
   keeperType: z.enum(['redraft', 'keeper', 'dynasty']),
   keeperRounds: z.number().int().min(0).max(20).optional(),
-  lineupSetting: z.enum(['daily', 'weekly']),
+  lineupSetting: z.enum(['daily', 'weekly']).default('daily'),
   isPublic: z.boolean().default(false),
   pickTimerSeconds: z.number().int().min(30).max(300).optional(),
   teamName: z.string().min(2).max(40).optional(),

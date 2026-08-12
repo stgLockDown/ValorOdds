@@ -49,6 +49,7 @@ export default function CreateLeagueClient() {
   const [keeperType, setKeeperType] = useState('redraft');
   const [isPublic, setIsPublic] = useState(true);
   const [teamName, setTeamName] = useState('');
+  const [lineupSetting, setLineupSetting] = useState<'daily' | 'weekly'>('daily');
 
   useEffect(() => {
     fetch('/api/dd/presets')
@@ -99,6 +100,7 @@ export default function CreateLeagueClient() {
           draftType,
           keeperType,
           isPublic,
+          lineupSetting,
           teamName: teamName.trim() || undefined,
         }),
       });
@@ -350,6 +352,37 @@ export default function CreateLeagueClient() {
                 ))}
               </div>
             </div>
+
+            <div>
+              <h3 className="text-base font-semibold text-brand-text mb-1">Lineup Setting</h3>
+              <p className="text-xs text-brand-muted mb-3">
+                Daily lets managers set lineups each day; Weekly locks lineups once per week.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => setLineupSetting('daily')}
+                  className={`p-3 rounded-lg border text-center transition-all ${
+                    lineupSetting === 'daily'
+                      ? 'border-brand-primary bg-brand-primary/10'
+                      : 'border-brand-border bg-brand-elevated hover:border-brand-primary/50'
+                  }`}
+                >
+                  <div className="font-medium text-brand-text text-sm">Daily</div>
+                  <div className="text-xs text-brand-muted">Set your lineup every day</div>
+                </button>
+                <button
+                  onClick={() => setLineupSetting('weekly')}
+                  className={`p-3 rounded-lg border text-center transition-all ${
+                    lineupSetting === 'weekly'
+                      ? 'border-brand-primary bg-brand-primary/10'
+                      : 'border-brand-border bg-brand-elevated hover:border-brand-primary/50'
+                  }`}
+                >
+                  <div className="font-medium text-brand-text text-sm">Weekly</div>
+                  <div className="text-xs text-brand-muted">Lock your lineup once per week</div>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -451,6 +484,7 @@ export default function CreateLeagueClient() {
               <ReviewRow label="Teams" value={String(numTeams)} />
               <ReviewRow label="Draft" value={presets?.draftTypes.find(d => d.value === draftType)?.label ?? draftType} />
               <ReviewRow label="Keeper" value={presets?.keeperTypes.find(k => k.value === keeperType)?.label ?? keeperType} />
+              <ReviewRow label="Lineup" value={lineupSetting === 'daily' ? 'Daily' : 'Weekly'} />
               <ReviewRow label="Visibility" value={isPublic ? 'Public' : 'Private (invite code)'} />
             </div>
             {error && (
