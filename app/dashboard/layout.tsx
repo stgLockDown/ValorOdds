@@ -11,12 +11,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Check if current page is the main dashboard (DashboardClient)
   const isMainDashboard = children && typeof children === 'object' && 'type' in children && (children.type as any)?.displayName === 'DashboardClient';
 
-  // If main dashboard, use simpler layout without sidebar
+  // If main dashboard, use a wide layout that fills the desktop viewport.
+  // The dashboard manages its own internal sidebar + content grid, so we
+  // avoid capping the width here — the sidebar + multi-column content need
+  // the full screen on large monitors.
   if (isMainDashboard) {
     return (
       <>
         <Navbar />
-        <div className="mx-auto max-w-7xl py-3 sm:py-4 px-3 sm:px-4 lg:px-6">
+        <div className="mx-auto max-w-[1600px] py-3 sm:py-5 px-3 sm:px-5 lg:px-8">
           {children}
         </div>
         <FloatingSupportButton isAdmin={user?.isAdmin ?? false} />

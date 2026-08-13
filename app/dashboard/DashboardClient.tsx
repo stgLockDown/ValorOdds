@@ -169,7 +169,7 @@ function BestBetsTab() {
         ))}
       </div>
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No picks available yet." /> : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5">
           {data.map((item: any) => (
             <div key={item.id} className="card">
               <div className="flex items-center justify-between mb-3">
@@ -354,7 +354,7 @@ function ArbitrageTab({ tier, isAdmin }: { tier: string; isAdmin: boolean }) {
 
       <SportFilter value={sport} onChange={setSport} />
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No arbitrage opportunities detected right now." /> : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-5">
           {data.map((arb: any) => {
             const profit = arb.guaranteed_profit != null ? parseFloat(arb.guaranteed_profit) : null;
             const hasStakes = arb.side1_stake != null && arb.side2_stake != null;
@@ -459,7 +459,7 @@ function SteamTab() {
         ))}
       </div>
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No steam moves detected in this window." /> : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
           {data.map((move: any) => (
             <div key={move.id} className="card border-l-4 border-l-orange-500">
               <div className="flex items-center justify-between">
@@ -544,7 +544,7 @@ function InjuriesTab() {
             : 'No injury reports in the last 72 hours.'
         } />
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
           {data.map((inj: any, i: number) => {
             const isLong = (inj.description?.length ?? 0) > 120;
             const isExpanded = expanded.has(i);
@@ -638,12 +638,12 @@ function PlayerStatsTab() {
         </button>
       </div>
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No player stats in the last 7 days." /> : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
           {data.map((p: any, i: number) => (
             <div key={i} className="card py-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-semibold">{p.player_name}</span>
                     <Badge text={p.sport} color="bg-brand-elevated text-brand-muted" />
                     <span className="text-xs text-brand-muted">{p.team}</span>
@@ -653,7 +653,7 @@ function PlayerStatsTab() {
                   {p.notable_reason && <p className="text-xs text-yellow-400 mt-1">⭐ {p.notable_reason}</p>}
                 </div>
                 {p.fantasy_score && (
-                  <div className="text-right">
+                  <div className="text-right ml-2 flex-shrink-0">
                     <p className="text-lg font-bold text-brand-primary">{parseFloat(p.fantasy_score).toFixed(1)}</p>
                     <p className="text-xs text-brand-muted">Fantasy</p>
                   </div>
@@ -706,12 +706,12 @@ function TrendsTab() {
         </p>
       )}
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No trend data available." /> : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
           {data.map((t: any, i: number) => (
             <div key={i} className="card py-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <Badge text={t.sport} color="bg-brand-elevated text-brand-muted" />
                     <Badge text={t.market_type} color="bg-brand-elevated text-brand-muted" />
                     <Badge
@@ -722,7 +722,7 @@ function TrendsTab() {
                   <p className="font-semibold text-sm">{t.team} vs {t.opponent}</p>
                   {t.final_score && <p className="text-xs text-brand-muted">Final: {t.final_score}</p>}
                 </div>
-                <div className="text-right">
+                <div className="text-right ml-2 flex-shrink-0">
                   <p className="text-xs text-brand-muted">{new Date(t.event_date).toLocaleDateString()}</p>
                 </div>
               </div>
@@ -750,7 +750,7 @@ function SportsbooksTab() {
     <div>
       <p className="text-sm text-brand-muted mb-6">Rankings based on line quality, CLV, hold percentage, and arbitrage opportunity frequency.</p>
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No sportsbook data available." /> : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
           {data.map((book: any, i: number) => (
             <div key={book.bookmaker_key} className="card">
               <div className="flex items-center justify-between">
@@ -991,7 +991,7 @@ function OverviewTab({ user }: { user: any }) {
       <div className="card bg-gradient-to-r from-brand-primary/20 to-purple-500/10 border-brand-primary/30">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold">Welcome back, {user.name || user.email?.split('@')[0]}! 👋</h2>
+            <h2 className="text-xl font-bold sm:text-2xl">Welcome back, {user.name || user.email?.split('@')[0]}! 👋</h2>
             <p className="text-brand-muted text-sm mt-1">
               <Badge text={user.tier?.toUpperCase() || 'FREE'} color={tierBadgeColor(user.tier)} />
               {user.isAdmin && <span className="ml-2"><Badge text="ADMIN" color="bg-red-500/20 text-red-400" /></span>}
@@ -1015,7 +1015,7 @@ function OverviewTab({ user }: { user: any }) {
       </Link>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         {[
           { label: 'Live Arb Spots', value: arbs.length, icon: DollarSign, color: 'text-green-400' },
           { label: 'Steam Moves (12h)', value: steam.length, icon: Flame, color: 'text-orange-400' },
@@ -1030,57 +1030,60 @@ function OverviewTab({ user }: { user: any }) {
         ))}
       </div>
 
-      {/* Latest Best Bet */}
-      {bestBet && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold flex items-center gap-2"><Star className="h-4 w-4 text-brand-primary" /> Latest AI Best Bets</h3>
-            <span className="text-xs text-brand-muted">{new Date(bestBet.generated_at).toLocaleString()}</span>
+      {/* Data sections — multi-column on desktop to fill wide screens */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        {/* Latest Best Bet — spans 2 cols on desktop for readability */}
+        {bestBet && (
+          <div className="card lg:col-span-2">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold flex items-center gap-2"><Star className="h-4 w-4 text-brand-primary" /> Latest AI Best Bets</h3>
+              <span className="text-xs text-brand-muted">{new Date(bestBet.generated_at).toLocaleString()}</span>
+            </div>
+            <div className="text-sm text-brand-muted whitespace-pre-wrap leading-relaxed line-clamp-6">
+              {bestBet.content}
+            </div>
           </div>
-          <div className="text-sm text-brand-muted whitespace-pre-wrap leading-relaxed line-clamp-6">
-            {bestBet.content}
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Latest Arb Opportunities */}
-      {arbs.length > 0 && (
-        <div className="card">
-          <h3 className="font-semibold flex items-center gap-2 mb-3"><DollarSign className="h-4 w-4 text-green-400" /> Live Arbitrage</h3>
-          <div className="space-y-2">
-            {arbs.map((arb: any) => (
-              <div key={arb.id} className="flex items-center justify-between p-2 rounded-lg bg-brand-elevated">
-                <div>
-                  <p className="text-sm font-semibold">{arb.away_team} @ {arb.home_team}</p>
-                  <p className="text-xs text-brand-muted">{arb.side1_bookmaker} vs {arb.side2_bookmaker}</p>
+        {/* Latest Arb Opportunities */}
+        {arbs.length > 0 && (
+          <div className="card">
+            <h3 className="font-semibold flex items-center gap-2 mb-3"><DollarSign className="h-4 w-4 text-green-400" /> Live Arbitrage</h3>
+            <div className="space-y-2">
+              {arbs.map((arb: any) => (
+                <div key={arb.id} className="flex items-center justify-between p-2 rounded-lg bg-brand-elevated">
+                  <div>
+                    <p className="text-sm font-semibold">{arb.away_team} @ {arb.home_team}</p>
+                    <p className="text-xs text-brand-muted">{arb.side1_bookmaker} vs {arb.side2_bookmaker}</p>
+                  </div>
+                  <Badge text={`+${parseFloat(arb.profit_percentage).toFixed(2)}%`} color="bg-green-500/20 text-green-400" />
                 </div>
-                <Badge text={`+${parseFloat(arb.profit_percentage).toFixed(2)}%`} color="bg-green-500/20 text-green-400" />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Latest Steam Moves */}
-      {steam.length > 0 && (
-        <div className="card">
-          <h3 className="font-semibold flex items-center gap-2 mb-3"><Flame className="h-4 w-4 text-orange-400" /> Recent Steam Moves</h3>
-          <div className="space-y-2">
-            {steam.map((move: any) => (
-              <div key={move.id} className="flex items-center justify-between p-2 rounded-lg bg-brand-elevated">
-                <div>
-                  <p className="text-sm font-semibold">{move.outcome_name}</p>
-                  <p className="text-xs text-brand-muted">{move.home_team} vs {move.away_team}</p>
+        {/* Latest Steam Moves — full width row below */}
+        {steam.length > 0 && (
+          <div className="card lg:col-span-3">
+            <h3 className="font-semibold flex items-center gap-2 mb-3"><Flame className="h-4 w-4 text-orange-400" /> Recent Steam Moves</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {steam.map((move: any) => (
+                <div key={move.id} className="flex items-center justify-between p-2 rounded-lg bg-brand-elevated">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{move.outcome_name}</p>
+                    <p className="text-xs text-brand-muted truncate">{move.home_team} vs {move.away_team}</p>
+                  </div>
+                  <div className="text-right ml-2 flex-shrink-0">
+                    <p className="text-sm font-mono text-orange-400">{move.before_avg_price} → {move.after_avg_price}</p>
+                    <p className="text-xs text-brand-muted">{move.books_moved} books</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-mono text-orange-400">{move.before_avg_price} → {move.after_avg_price}</p>
-                  <p className="text-xs text-brand-muted">{move.books_moved} books</p>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -1242,7 +1245,7 @@ function OpportunityCards({ isPremiumOrVip, onJump }: { isPremiumOrVip: boolean;
   if (loading) return <div className="card"><LoadingSpinner /></div>;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-5">
       {/* Top Arbitrage */}
       <button onClick={() => onJump('arbitrage')} className="card text-left hover:border-green-500/40 transition-colors border border-transparent">
         <h3 className="font-semibold flex items-center gap-2 mb-2 text-sm"><DollarSign className="h-4 w-4 text-green-400" /> Top Arbitrage</h3>
@@ -1303,13 +1306,13 @@ function OpportunityCards({ isPremiumOrVip, onJump }: { isPremiumOrVip: boolean;
 function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumOrVip: boolean; onJump: (t: Tab) => void }) {
   const canChat = isPremiumOrVip;
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Welcome */}
       <div className="card bg-gradient-to-r from-brand-primary/20 to-purple-500/10 border-brand-primary/30">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-xl font-bold">Welcome back, {user.name || user.email?.split('@')[0]}! 👋</h2>
-            <p className="text-brand-muted text-sm mt-1 flex items-center gap-2">
+            <h2 className="text-xl font-bold sm:text-2xl">Welcome back, {user.name || user.email?.split('@')[0]}! 👋</h2>
+            <p className="text-brand-muted text-sm mt-1 flex items-center gap-2 flex-wrap">
               <Badge text={user.tier?.toUpperCase() || 'FREE'} color={tierBadgeColor(user.tier)} />
               {user.isAdmin && <Badge text="ADMIN" color="bg-red-500/20 text-red-400" />}
               <span>Your command center — live games, top opportunities &amp; the AI analyst.</span>
@@ -1318,30 +1321,35 @@ function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumO
         </div>
       </div>
 
-      {/* Live scores above the chat */}
-      <LiveScoresStrip />
-
-      {/* Opportunity cards above the chat */}
-      <OpportunityCards isPremiumOrVip={isPremiumOrVip} onJump={onJump} />
-
-      {/* AI chat — the centerpiece */}
-      <div className="card p-0 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <h3 className="font-semibold flex items-center gap-2"><MessageSquare className="h-4 w-4 text-brand-primary" /> Ask the AI Analyst</h3>
-          <button onClick={() => onJump('chat')} className="text-xs text-brand-primary flex items-center gap-1 hover:underline">
-            Full screen <ChevronRight className="h-3 w-3" />
-          </button>
+      {/* Two-column desktop layout: live data on the left, AI chat on the right */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr,420px] gap-5">
+        {/* Left column — live scores + opportunity cards */}
+        <div className="space-y-5 min-w-0">
+          <LiveScoresStrip />
+          <OpportunityCards isPremiumOrVip={isPremiumOrVip} onJump={onJump} />
         </div>
-        {canChat ? (
-          <ChatClient embedded user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />
-        ) : (
-          <div className="p-6 text-center">
-            <MessageSquare className="h-10 w-10 mx-auto mb-3 text-brand-muted" />
-            <h4 className="font-semibold mb-1">AI chat is a Premium feature</h4>
-            <p className="text-sm text-brand-muted mb-4">Upgrade to ask the AI about lines, matchups, injuries and arbitrage in real time.</p>
-            <a href="/pricing" className="inline-block px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-semibold">Upgrade</a>
+
+        {/* Right column — AI chat (sticky on desktop so it stays visible while scrolling) */}
+        <div className="min-w-0">
+          <div className="card p-0 overflow-hidden lg:sticky lg:top-[5.5rem] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <h3 className="font-semibold flex items-center gap-2"><MessageSquare className="h-4 w-4 text-brand-primary" /> Ask the AI Analyst</h3>
+              <button onClick={() => onJump('chat')} className="text-xs text-brand-primary flex items-center gap-1 hover:underline">
+                Full screen <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
+            {canChat ? (
+              <ChatClient embedded user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />
+            ) : (
+              <div className="p-6 text-center">
+                <MessageSquare className="h-10 w-10 mx-auto mb-3 text-brand-muted" />
+                <h4 className="font-semibold mb-1">AI chat is a Premium feature</h4>
+                <p className="text-sm text-brand-muted mb-4">Upgrade to ask the AI about lines, matchups, injuries and arbitrage in real time.</p>
+                <a href="/pricing" className="inline-block px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-semibold">Upgrade</a>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -1375,39 +1383,59 @@ export default function DashboardClient({ user }: { user: any }) {
     }
   }
 
+  // Shared tab-button renderer — used by both the mobile horizontal bar and
+  // the desktop vertical sidebar so styling stays in sync.
+  function TabButton({ id, label, icon: Icon, premium }: { id: Tab; label: string; icon: any; premium?: boolean }) {
+    const locked = id === 'arbitrage' ? !canSeeArbitrage : premium && !isPremiumOrVip;
+    const active = activeTab === id;
+    return (
+      <button
+        onClick={() => setActiveTab(id)}
+        className={`flex items-center gap-2.5 rounded-lg font-medium whitespace-nowrap transition-colors ${
+          active
+            ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
+            : 'text-brand-muted hover:text-white hover:bg-brand-elevated'
+        } ${locked ? 'opacity-60' : ''} px-3 py-2 text-sm lg:w-full lg:px-3.5 lg:py-2.5 lg:text-[13px]`}
+      >
+        <Icon className="h-4 w-4 flex-shrink-0" />
+        <span className="flex-1 text-left">{label}</span>
+        {locked && <span className="text-xs">🔒</span>}
+      </button>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-brand-bg">
-      <div className="mx-auto px-3 sm:px-4 py-4">
-        {/* Tab Nav — horizontally scrollable on mobile, wraps on desktop */}
-        <div className="mb-4 -mx-3 sm:mx-0 px-3 sm:px-0">
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-2 sm:pb-0 sm:flex-wrap">
-            {TABS.map(({ id, label, icon: Icon, premium }) => {
-              // Arbitrage is available to Basic+ (capped); other premium tabs
-              // (steam, etc.) stay Premium/VIP-only.
-              const locked = id === 'arbitrage'
-                ? !canSeeArbitrage
-                : premium && !isPremiumOrVip;
-              return (
-                <button
-                  key={id}
-                  onClick={() => setActiveTab(id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex-shrink-0 ${
-                    activeTab === id
-                      ? 'bg-brand-primary text-white'
-                      : 'text-brand-muted hover:text-white hover:bg-brand-elevated'
-                  } ${locked ? 'opacity-60' : ''}`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                  {locked && <span className="text-xs">🔒</span>}
-                </button>
-              );
-            })}
+      <div className="lg:grid lg:grid-cols-[230px,1fr] lg:gap-8">
+        {/* Desktop sidebar nav — sticky, vertical, full-width buttons */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-[5.5rem] space-y-1">
+            <div className="px-3.5 pb-3 mb-2 border-b border-brand-border">
+              <p className="text-xs text-brand-muted uppercase tracking-wider font-semibold">Navigation</p>
+            </div>
+            {TABS.map(({ id, label, icon, premium }) => (
+              <TabButton key={id} id={id} label={label} icon={icon} premium={premium} />
+            ))}
+            <div className="pt-3 mt-3 border-t border-brand-border px-3.5">
+              <div className="flex items-center gap-2 text-xs">
+                <Badge text={user.tier?.toUpperCase() || 'FREE'} color={tierBadgeColor(user.tier)} />
+                {user.isAdmin && <Badge text="ADMIN" color="bg-red-500/20 text-red-400" />}
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* Mobile horizontal tab bar — scrollable, hidden on desktop */}
+        <div className="lg:hidden mb-4 -mx-3 px-3 sm:mx-0 sm:px-0">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-2">
+            {TABS.map(({ id, label, icon, premium }) => (
+              <TabButton key={id} id={id} label={label} icon={icon} premium={premium} />
+            ))}
           </div>
         </div>
 
-        {/* Tab Content */}
-        <div>
+        {/* Tab Content — fills remaining desktop width */}
+        <div className="min-w-0">
           {renderTab()}
         </div>
       </div>
