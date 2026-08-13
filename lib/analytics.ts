@@ -19,7 +19,8 @@ export type UsageEventType =
   | 'api_checkout_completed'
   | 'api_key_regenerated'
   | 'api_key_revealed'
-  | 'api_overage_toggled';
+  | 'api_overage_toggled'
+  | 'admin_stripe_sync_run';
 
 export async function logEvent(opts: {
   userId?: string | null;

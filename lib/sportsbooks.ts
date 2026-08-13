@@ -146,3 +146,101 @@ export function isSameBook(
   const b = normalizeBookName(book2);
   return !!a && a === b;
 }
+
+/**
+ * Canonical, human-readable display name for every `bookmaker_key` written
+ * by the bot into `odds_snapshots`. Some historical rows have a raw/internal
+ * value in `bookmaker_name` (e.g. "fanduel_an", "draftkings_an", lowercase
+ * "betmgm", "paf", "caesars" for williamhill_us) instead of a clean label
+ * (QA audit: "raw sportsbook key shown instead of formatted name").
+ *
+ * `bookmaker_key` is the stable, normalized identifier, so we key off that
+ * first and only fall back to a cleaned-up `bookmaker_name` when the key
+ * isn't in this table.
+ */
+const BOOKMAKER_DISPLAY_NAMES: Record<string, string> = {
+  '1xbit': '1xBit',
+  '22bet_direct': '22Bet',
+  '888sport_it': '888sport',
+  atg: 'ATG',
+  atg_se: 'ATG',
+  bet365: 'bet365',
+  betcity_nl: 'BetCity',
+  betmgm: 'BetMGM',
+  betmgm_mi: 'BetMGM',
+  betonlineag: 'BetOnline',
+  betrivers: 'BetRivers',
+  betwinner: 'BetWinner',
+  bingoal: 'Bingoal',
+  bovada: 'Bovada',
+  bovada_an: 'Bovada',
+  comeon: 'ComeOn',
+  coolbet: 'Coolbet',
+  draftkings: 'DraftKings',
+  fanduel: 'FanDuel',
+  kambiunibet: 'Kambi/Unibet',
+  ladbrokes_au: 'Ladbrokes',
+  leonbet: 'Leon.bet',
+  linebet: 'Linebet',
+  matchbook: 'Matchbook',
+  megapari: 'MegaPari',
+  melbet: 'Melbet',
+  neds_au: 'Neds',
+  paf: 'PAF',
+  polymarket: 'Polymarket',
+  svenska_spel: 'Svenska Spel',
+  twentytwobet: '22Bet',
+  unibet_be: 'Unibet',
+  unibet_ca: 'Unibet',
+  unibet_de: 'Unibet',
+  unibet_dk: 'Unibet',
+  unibet_nl: 'Unibet',
+  unibet_ro: 'Unibet',
+  unibet_se: 'Unibet',
+  unibet_uk: 'Unibet',
+  unibet_us: 'Unibet',
+  williamhill_us: 'Caesars',
+};
+
+/**
+ * Best-effort cleanup for a raw `bookmaker_name`/`bookmaker_key` string that
+ * isn't in the lookup table above — turns snake_case/internal suffixes into
+ * something presentable instead of rendering it verbatim.
+ */
+function titleCaseFallback(raw: string): string {
+  return raw
+    .replace(/_(an|us|ny|mi|v\d+)$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => (w.length <= 3 && w === w.toLowerCase() ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+/**
+ * Public formatter: given a bookmaker key and/or the (possibly raw/internal)
+ * name column, return the clean, human-readable sportsbook name to show
+ * users. Always prefer this over rendering `bookmaker_key`/`bookmaker_name`
+ * directly in any UI.
+ */
+export function formatBookmakerName(
+  bookmakerKey: string | null | undefined,
+  bookmakerName?: string | null | undefined,
+): string {
+  const key = (bookmakerKey || '').toLowerCase().trim();
+  if (key && BOOKMAKER_DISPLAY_NAMES[key]) return BOOKMAKER_DISPLAY_NAMES[key];
+
+  const name = (bookmakerName || '').trim();
+  if (name) {
+    // If the "name" is really just the raw key (all lowercase, snake_case,
+    // or has an internal suffix like _an/_us), clean it up instead of
+    // showing it verbatim.
+    const looksRaw = /^[a-z0-9_]+$/.test(name) && (name === name.toLowerCase());
+    if (looksRaw) return titleCaseFallback(name);
+    return name;
+  }
+
+  if (key) return titleCaseFallback(key);
+  return 'Unknown';
+}

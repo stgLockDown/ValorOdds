@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Check, Users, Loader2, Trophy, RefreshCw } from 'lucide-react';
 import { sportLabel, sportEmoji, type PollDTO, type Poll } from '@/lib/polls-types';
+import { formatTeamName } from '@/lib/espn-scores';
 
 type PollCard = Poll & { voting?: boolean; error?: string };
 
@@ -184,6 +185,19 @@ function PollCardView({
     timeZoneName: 'short',
   });
 
+  // Once a vote is cast, the buttons lock into a read-only results view.
+  // A visitor who wants to switch their vote must explicitly tap
+  // "Change vote" first — this prevents accidental/unlimited vote-switching
+  // while still letting people correct a misclick.
+  const [changingVote, setChangingVote] = useState(false);
+  const canClickButtons = !hasVoted || changingVote;
+
+  const handleButtonClick = (team: 'home' | 'away') => {
+    if (poll.voting) return;
+    onVote(poll.id, team);
+    setChangingVote(false);
+  };
+
   return (
     <div
       className={`card-interactive flex flex-col ${
@@ -201,13 +215,14 @@ function PollCardView({
       {/* Vote buttons / results */}
       <div className="flex-1 flex flex-col gap-2">
         <VoteButton
-          label={poll.homeTeam}
+          label={formatTeamName(poll.homeTeam)}
           votes={poll.homeVotes}
           percentage={homePct}
           selected={poll.userVote === 'home'}
           hasVoted={hasVoted}
+          locked={hasVoted && !canClickButtons}
           voting={poll.voting ?? false}
-          onClick={() => !poll.voting && onVote(poll.id, 'home')}
+          onClick={() => canClickButtons && handleButtonClick('home')}
           accent="home"
         />
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-brand-muted px-1">
@@ -216,13 +231,14 @@ function PollCardView({
           <div className="flex-1 h-px bg-brand-border" />
         </div>
         <VoteButton
-          label={poll.awayTeam}
+          label={formatTeamName(poll.awayTeam)}
           votes={poll.awayVotes}
           percentage={awayPct}
           selected={poll.userVote === 'away'}
           hasVoted={hasVoted}
+          locked={hasVoted && !canClickButtons}
           voting={poll.voting ?? false}
-          onClick={() => !poll.voting && onVote(poll.id, 'away')}
+          onClick={() => canClickButtons && handleButtonClick('away')}
           accent="away"
         />
       </div>
@@ -230,9 +246,20 @@ function PollCardView({
       {/* Footer */}
       <div className="mt-3 pt-3 border-t border-brand-border flex items-center justify-between text-[11px] text-brand-muted">
         {hasVoted ? (
-          <span className="flex items-center gap-1 text-brand-success">
-            <Check className="h-3 w-3" />
-            {poll.userVote === 'home' ? poll.homeTeam : poll.awayTeam}
+          <span className="flex items-center gap-2">
+            <span className="flex items-center gap-1 text-brand-success">
+              <Check className="h-3 w-3" />
+              You voted: {poll.userVote === 'home' ? formatTeamName(poll.homeTeam) : formatTeamName(poll.awayTeam)}
+            </span>
+            {!changingVote && (
+              <button
+                type="button"
+                onClick={() => setChangingVote(true)}
+                className="underline decoration-dotted hover:text-brand-text"
+              >
+                Change vote
+              </button>
+            )}
           </span>
         ) : (
           <span>Tap to vote</span>
@@ -253,6 +280,7 @@ function VoteButton({
   percentage,
   selected,
   hasVoted,
+  locked,
   voting,
   onClick,
   accent,
@@ -262,6 +290,7 @@ function VoteButton({
   percentage: number;
   selected: boolean;
   hasVoted: boolean;
+  locked: boolean;
   voting: boolean;
   onClick: () => void;
   accent: 'home' | 'away';
@@ -282,13 +311,16 @@ function VoteButton({
     );
   }
 
-  // After voting: show as a results bar
+  // After voting: show as a results bar (locked/read-only unless the user
+  // has tapped "Change vote", which unlocks it for a one-time switch)
   const isWinning = percentage >= 50;
   return (
     <button
       onClick={onClick}
-      disabled={voting}
-      className={`group relative overflow-hidden rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-wait ${
+      disabled={voting || locked}
+      className={`group relative overflow-hidden rounded-lg border px-4 py-3 text-left text-sm transition-all ${
+        locked ? 'cursor-default' : 'disabled:cursor-wait'
+      } ${
         selected
           ? 'border-brand-primary bg-brand-primary/15'
           : 'border-brand-border bg-brand-elevated hover:border-brand-primary/50'

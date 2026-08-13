@@ -18,6 +18,7 @@ import {
   getWeatherAlerts,
   getLiveNewsFeed,
 } from '@/lib/public-data';
+import { formatTeamName } from '@/lib/espn-scores';
 import LiveStatsBar from './LiveStatsBar';
 import {
   TrendingUp,
@@ -249,7 +250,7 @@ export default async function MarketIntelligencePage() {
                         <span className="text-xs text-brand-muted">{sm.marketType}</span>
                       </div>
                       <div className="mt-1 text-sm font-medium truncate">
-                        {sm.homeTeam} vs {sm.awayTeam}
+                        {formatTeamName(sm.homeTeam)} vs {formatTeamName(sm.awayTeam)}
                       </div>
                       <div className="text-xs text-brand-muted mt-0.5">
                         {sm.outcomeName} · {timeAgo(sm.detectedMinutesAgo)}

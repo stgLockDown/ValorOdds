@@ -284,7 +284,7 @@ curl "${GATEWAY_BASE}/v1/proxy/baseball/v1/games?league=mlb&season=2025" \\
       "standalone_monthly_price_cents": null,
       "standalone_monthly_pings": null
     }
-    // ... 27 more products
+    // ... 25 more products (26 total sport/league products across the catalog)
   ],
   "ping_tiers": [
     { "code": "t10k",  "name": "10,000 pings/mo",       "monthly_pings": 10000,    "monthly_price_cents": 1200 },
@@ -355,15 +355,37 @@ curl "${GATEWAY_BASE}/v1/proxy/baseball/v1/games?league=mlb&season=2025" \\
               </div>
 
               <div className="mt-6 card p-5">
-                <p className="font-semibold text-brand-text mb-3">All 26 sport product codes</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+                <p className="font-semibold text-brand-text mb-1">All 26 API product codes</p>
+                <p className="text-xs text-brand-muted mb-4">
+                  Split into general sports (broad, ongoing coverage of a sport) and
+                  leagues/tournaments (a specific competition or event within a sport) so you know
+                  exactly what each code covers before you add it to your bundle.
+                </p>
+
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-muted mb-2">
+                  Sports (16)
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm mb-5">
                   {[
                     'baseball', 'basketball', 'soccer', 'hockey', 'football',
-                    'fifa', 'champions_league', 'tennis', 'golf', 'cricket',
-                    'cycling', 'combat', 'rugby', 'rugby_league', 'swimming',
-                    'tour_de_france', 'track', 'volleyball', 'wimbledon',
-                    'world_series', 'xgames', 'motorsports', 'olympics',
-                    'march_madness', 'superbowl', 'formula1',
+                    'tennis', 'golf', 'cricket', 'cycling', 'combat',
+                    'rugby', 'rugby_league', 'swimming', 'volleyball',
+                    'motorsports', 'formula1',
+                  ].map((code) => (
+                    <span key={code} className="rounded bg-brand-elevated px-2 py-1 font-mono text-xs text-brand-muted">
+                      {code}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-muted mb-2">
+                  Leagues / Tournaments (10)
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+                  {[
+                    'fifa', 'champions_league', 'tour_de_france', 'track',
+                    'wimbledon', 'world_series', 'xgames', 'olympics',
+                    'march_madness', 'superbowl',
                   ].map((code) => (
                     <span key={code} className="rounded bg-brand-elevated px-2 py-1 font-mono text-xs text-brand-muted">
                       {code}

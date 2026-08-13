@@ -12,6 +12,7 @@ import {
 } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 import Breadcrumbs from '@/components/Breadcrumbs';
+import { formatTeamName } from '@/lib/espn-scores';
 import {
   getUpcomingGamesBySport,
   getArbStatsBySport,
@@ -94,11 +95,11 @@ export default async function SportHubPage({ params }: Params) {
 
   const eventLd = games.slice(0, 10).map((g) =>
     sportsEventJsonLd({
-      name: `${g.awayTeam} at ${g.homeTeam}`,
+      name: `${formatTeamName(g.awayTeam)} at ${formatTeamName(g.homeTeam)}`,
       url: canonical(`/games/${sport.slug}/${encodeURIComponent(g.gameId)}`),
       startDate: g.commenceTime,
-      homeTeam: g.homeTeam,
-      awayTeam: g.awayTeam,
+      homeTeam: formatTeamName(g.homeTeam),
+      awayTeam: formatTeamName(g.awayTeam),
       sport: sport.fullName,
     }),
   );
@@ -176,10 +177,18 @@ export default async function SportHubPage({ params }: Params) {
           </div>
 
           {games.length === 0 ? (
-            <p className="mt-4 text-brand-muted">
-              No upcoming {sport.name} games are in the feed right now. Check back soon —
-              schedules and odds refresh continuously.
-            </p>
+            <div className="mt-4">
+              <p className="text-brand-muted">
+                No upcoming {sport.name} games right now — check back closer to the next{' '}
+                {sport.name} season, or browse other sports below.
+              </p>
+              <Link
+                href="/sports"
+                className="mt-3 inline-block text-sm text-brand-accent hover:underline"
+              >
+                Browse all sports →
+              </Link>
+            </div>
           ) : (
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">
               {games.map((g) => (
@@ -189,8 +198,8 @@ export default async function SportHubPage({ params }: Params) {
                 >
                   <div className="text-xs text-brand-muted">{formatGameTime(g.commenceTime)}</div>
                   <div className="mt-1 font-semibold">
-                    {g.awayTeam}{' '}
-                    <span className="text-brand-muted">@</span> {g.homeTeam}
+                    {formatTeamName(g.awayTeam)}{' '}
+                    <span className="text-brand-muted">@</span> {formatTeamName(g.homeTeam)}
                   </div>
                   <Link
                     href={`/games/${sport.slug}/${encodeURIComponent(g.gameId)}`}
@@ -250,7 +259,7 @@ export default async function SportHubPage({ params }: Params) {
                         className="border-t border-brand-border"
                       >
                         <td className="p-3">
-                          {g.awayTeam} @ {g.homeTeam}
+                          {formatTeamName(g.awayTeam)} @ {formatTeamName(g.homeTeam)}
                         </td>
                         <td className="p-3">{o.name}</td>
                         <td className="p-3 font-mono font-semibold text-brand-accent">

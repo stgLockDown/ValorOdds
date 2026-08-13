@@ -1,5 +1,4 @@
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
+import AuthedSidebarLayout from '@/components/AuthedSidebarLayout';
 import { auth } from '@/lib/auth';
 import LinkDiscordClient from './LinkDiscordClient';
 
@@ -8,9 +7,8 @@ export default async function LinkDiscordPage() {
   const user = session!.user;
 
   return (
-    <>
-      <Navbar />
-      <main className="container-px mx-auto max-w-2xl py-12 space-y-6">
+    <AuthedSidebarLayout user={user}>
+      <div className="max-w-2xl space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Link your Discord account</h1>
           <p className="text-brand-muted mt-1">
@@ -31,8 +29,7 @@ export default async function LinkDiscordPage() {
         ) : (
           <LinkDiscordClient />
         )}
-      </main>
-      <Footer />
-    </>
+      </div>
+    </AuthedSidebarLayout>
   );
 }

@@ -7,7 +7,13 @@ import {
   TrendingUp, Zap, ChevronDown, ChevronUp, Code2, Settings2,
   CheckCircle2, XCircle, AlertCircle, FlaskConical,
 } from 'lucide-react';
-import { formatCents } from '@/lib/api-monetization/pricing';
+import {
+  formatCents,
+  SPORT_PRODUCTS,
+  PING_TIERS,
+  ODDS_PRODUCT,
+  INTELLIGENCE_PRODUCTS,
+} from '@/lib/api-monetization/pricing';
 
 // ---------- Types ----------
 interface PlanCount { status: string; c: string; }
@@ -55,7 +61,13 @@ interface AdminPlan {
 // ---------- Helpers ----------
 function planTypeLabel(p: AdminPlan): string {
   if (p.plan_type === 'odds_standalone') return 'Odds API — Standalone';
-  if (p.all_access) return 'All-Access Bundle (26 sports)';
+  // Note: "26 sports" refers to the API catalog's sport-category products
+  // (baseball, basketball, cricket, golf, etc. — see SPORT_PRODUCTS in
+  // lib/api-monetization/pricing.ts), which is a broader taxonomy than the
+  // ~10 specific leagues currently featured on the public /sports hub. Both
+  // numbers are correct for their own scope, so we spell that out here to
+  // avoid the appearance of a mismatch.
+  if (p.all_access) return 'All-Access Bundle (26 API sport categories)';
   const n = p.products?.length ?? Number(p.product_count ?? 0);
   return `Custom Bundle (${n} product${n === 1 ? '' : 's'})${p.odds_addon ? ' + Odds' : ''}`;
 }
@@ -344,12 +356,83 @@ function PlanRow({ plan }: { plan: AdminPlan }) {
 }
 
 // ---------- Stripe setup section ----------
+function StripeSyncConfirmModal({
+  onConfirm,
+  onCancel,
+  running,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+  running: boolean;
+}) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  const totalProducts =
+    SPORT_PRODUCTS.length + 1 /* all-access bundle */ + 1 /* odds */ + INTELLIGENCE_PRODUCTS.length;
+  const totalPrices = SPORT_PRODUCTS.length + 1 + PING_TIERS.length + 1 + INTELLIGENCE_PRODUCTS.length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="card w-full max-w-lg p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-brand-primary/10 p-2.5">
+            <Settings2 className="h-5 w-5 text-brand-primary" />
+          </div>
+          <h3 className="font-semibold text-lg">Confirm Stripe product sync</h3>
+        </div>
+
+        <p className="text-sm text-brand-muted">
+          This will create or reconcile the following live Stripe catalog objects. Existing
+          products/prices are matched by a stable metadata marker, so this is idempotent and
+          will not create duplicates — but it will make live API calls to your connected Stripe
+          account.
+        </p>
+
+        <ul className="text-sm space-y-1.5 rounded-lg bg-black/20 p-3">
+          <li>• <strong>{SPORT_PRODUCTS.length}</strong> sport add-on products (${(500 / 100).toFixed(2)}/mo each) + the all-access bundle</li>
+          <li>• <strong>1</strong> Odds API product ({ODDS_PRODUCT.name}, standalone + add-on price)</li>
+          <li>• <strong>{INTELLIGENCE_PRODUCTS.length}</strong> intelligence products: {INTELLIGENCE_PRODUCTS.map((p) => p.name).join(', ')}</li>
+          <li>• <strong>{PING_TIERS.length}</strong> ping-volume tiers: {PING_TIERS.map((t) => t.name).join(', ')}</li>
+          <li className="pt-1 text-brand-muted">
+            Total: ~{totalProducts} products / ~{totalPrices} prices touched
+          </li>
+        </ul>
+
+        <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => setAcknowledged(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            I understand this will make live changes in Stripe and I want to proceed.
+          </span>
+        </label>
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button onClick={onCancel} disabled={running} className="btn-secondary">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!acknowledged || running}
+            className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {running ? 'Syncing…' : 'Confirm & run sync'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StripeSetupSection() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   async function runSetup() {
-    if (!confirm('Run Stripe product/price setup? This is idempotent — safe to run repeatedly.')) return;
     setRunning(true);
     setResult(null);
     try {
@@ -364,6 +447,7 @@ function StripeSetupSection() {
       setResult({ ok: false, msg: err instanceof Error ? err.message : 'Setup failed' });
     } finally {
       setRunning(false);
+      setShowConfirm(false);
     }
   }
 
@@ -383,7 +467,7 @@ function StripeSetupSection() {
           </div>
         </div>
         <button
-          onClick={runSetup}
+          onClick={() => setShowConfirm(true)}
           disabled={running}
           className="btn-primary flex items-center gap-2"
         >
@@ -395,6 +479,13 @@ function StripeSetupSection() {
         <div className={`mt-4 text-sm rounded-lg p-3 ${result.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
           {result.ok ? '✓ ' : '✗ '}{result.msg}
         </div>
+      )}
+      {showConfirm && (
+        <StripeSyncConfirmModal
+          running={running}
+          onConfirm={runSetup}
+          onCancel={() => setShowConfirm(false)}
+        />
       )}
     </div>
   );

@@ -63,6 +63,7 @@ const FILTERS = [
 
 export default function AdminSupportClient() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [ticketsTotal, setTicketsTotal] = useState(0);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('open');
@@ -71,10 +72,14 @@ export default function AdminSupportClient() {
   const fetchTickets = useCallback(async (f: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/support/tickets?status=${f}`);
+      // Request the max page size (200, the API's cap) so the table matches
+      // the stat card's total count for any realistic ticket volume, rather
+      // than silently truncating at the default limit of 50.
+      const res = await fetch(`/api/admin/support/tickets?status=${f}&limit=200`);
       if (res.ok) {
         const data = await res.json();
         setTickets(data.tickets || []);
+        setTicketsTotal(Number(data.total ?? (data.tickets || []).length));
       }
     } catch {
       // ignore
@@ -131,7 +136,7 @@ export default function AdminSupportClient() {
         {stats && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard icon={<Inbox className="h-5 w-5" />} label="Total" value={stats.total} color="text-brand-text" />
-            <StatCard icon={<AlertCircle className="h-5 w-5" />} label="Open / Escalated" value={stats.escalated} color="text-amber-300" />
+            <StatCard icon={<AlertCircle className="h-5 w-5" />} label="Open / Escalated" value={stats.open} color="text-amber-300" />
             <StatCard icon={<Bot className="h-5 w-5" />} label="AI Resolved" value={stats.aiResolved} color="text-indigo-300" />
             <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="Resolved" value={stats.resolved} color="text-emerald-300" />
             <StatCard icon={<Zap className="h-5 w-5" />} label="AI Status" value={stats.aiEnabled ? 'Active' : 'Off'} color={stats.aiEnabled ? 'text-emerald-300' : 'text-zinc-400'} />
@@ -153,6 +158,12 @@ export default function AdminSupportClient() {
 
         {/* Ticket list */}
         <div className="space-y-3">
+          {!loading && tickets.length > 0 && (
+            <p className="text-xs text-brand-muted">
+              Showing {tickets.length} of {ticketsTotal} ticket{ticketsTotal === 1 ? '' : 's'}
+              {filter !== 'all' ? ` (filtered by "${FILTERS.find((f) => f.value === filter)?.label ?? filter}")` : ''}
+            </p>
+          )}
           {loading ? (
             <div className="card p-8 text-center text-brand-muted">Loading tickets...</div>
           ) : tickets.length === 0 ? (

@@ -7,6 +7,7 @@ import { buildMetadata, faqJsonLd, breadcrumbJsonLd, canonical, SITE } from '@/l
 import { JsonLd } from '@/components/JsonLd';
 import CommunityPolls from '@/components/CommunityPolls';
 import { getTopOpportunities } from '@/lib/public-data';
+import { formatTeamName } from '@/lib/espn-scores';
 
 export const metadata: Metadata = buildMetadata({
   title: 'Valor Odds — AI-Powered Sports Arbitrage & Player Props',
@@ -172,12 +173,12 @@ export default async function HomePage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded bg-brand-surface border border-brand-border p-2">
-                      <div className="text-brand-muted">{opp.homeTeam}</div>
+                      <div className="text-brand-muted">{formatTeamName(opp.homeTeam)}</div>
                       <div className="font-bold text-brand-text">{opp.bestHomeOdds > 0 ? `+${opp.bestHomeOdds}` : opp.bestHomeOdds}</div>
                       <div className="text-brand-primary text-[10px] truncate">{opp.bestHomeBook}</div>
                     </div>
                     <div className="rounded bg-brand-surface border border-brand-border p-2">
-                      <div className="text-brand-muted">{opp.awayTeam}</div>
+                      <div className="text-brand-muted">{formatTeamName(opp.awayTeam)}</div>
                       <div className="font-bold text-brand-text">{opp.bestAwayOdds > 0 ? `+${opp.bestAwayOdds}` : opp.bestAwayOdds}</div>
                       <div className="text-brand-primary text-[10px] truncate">{opp.bestAwayBook}</div>
                     </div>
@@ -242,30 +243,20 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* VIP highlight */}
+      {/* VIP highlight — kept intentionally short here; the full breakdown of
+          VIP-only perks (dev meetings, mobile beta access, direct feature
+          input, etc.) lives on /pricing so we don't repeat the same list on
+          both pages. */}
       <section className="container-px mx-auto max-w-7xl py-12 sm:py-20">
         <div className="rounded-2xl bg-gradient-card border border-brand-primary/30 p-6 sm:p-10 text-center">
           <div className="badge-warning mx-auto w-fit mb-4">🌟 VIP EXCLUSIVE</div>
           <h2 className="text-2xl sm:text-4xl font-bold">Be part of the Valor Odds journey</h2>
           <p className="mt-3 text-brand-muted max-w-2xl mx-auto">
-            VIP members don't just use Valor Odds — they help build it.
+            VIP members don&apos;t just use Valor Odds — they help build it, with early access to
+            new features and direct input from our dev team.
           </p>
-          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4 text-left">
-            {[
-              { icon: '🎯', title: 'Direct bot input', d: 'Suggest features, vote on priorities, see ideas shipped.' },
-              { icon: '👥', title: 'Live dev meetings', d: 'Monthly video calls with the dev team.' },
-              { icon: '🚀', title: 'Shape the future', d: 'Help design the upcoming Valor Odds mobile app.' },
-              { icon: '📱', title: 'Mobile app beta', d: 'First access before public release. VIP-only.' },
-            ].map((b) => (
-              <div key={b.title} className="card">
-                <div className="text-2xl">{b.icon}</div>
-                <h3 className="mt-3 font-semibold">{b.title}</h3>
-                <p className="mt-1 text-sm text-brand-muted">{b.d}</p>
-              </div>
-            ))}
-          </div>
-          <Link href="/pricing" className="btn-primary mt-10 px-6 py-3">
-            Become a VIP <ArrowRight className="h-4 w-4" />
+          <Link href="/pricing#vip" className="btn-primary mt-8 px-6 py-3">
+            See VIP benefits <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
       </section>

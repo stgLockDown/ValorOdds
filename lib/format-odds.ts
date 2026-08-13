@@ -17,10 +17,22 @@ export type OddsFormat = 'american' | 'decimal' | 'fractional';
 const isFiniteNumber = (n: unknown): n is number =>
   typeof n === 'number' && Number.isFinite(n);
 
+/**
+ * Widest realistic bound for an American odds price. Some upstream feed
+ * rows (notably a prediction-market source) occasionally write placeholder
+ * values like +199900 / -200000 instead of a real spread price, and a raw
+ * "0" occasionally appears where a price failed to resolve. Neither is a
+ * valid American odds value, so we treat both as missing data rather than
+ * rendering them (QA audit: "Invalid odds values on Moneyline page").
+ */
+const MAX_VALID_AMERICAN_ODDS = 100000;
+
 function toAmericanInt(price: number | string | null | undefined): number | null {
   if (price === null || price === undefined || price === '') return null;
   const n = typeof price === 'string' ? parseFloat(price) : price;
   if (!isFiniteNumber(n)) return null;
+  if (n === 0) return null;
+  if (Math.abs(n) > MAX_VALID_AMERICAN_ODDS) return null;
   return Math.round(n);
 }
 

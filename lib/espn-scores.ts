@@ -51,15 +51,106 @@ const SPORT_PATHS: Record<string, string[]> = {
   ],
 };
 
+/**
+ * City/region abbreviations that different feed providers use
+ * interchangeably with the full city name for the same franchise
+ * (e.g. one feed writes "LA Angels", another writes "Los Angeles
+ * Angels" for the exact same game). Expanding these before stripping
+ * whitespace lets `normalizeTeam` treat both as identical, which is
+ * what powers de-duplication of games that otherwise look distinct
+ * only because of city-name formatting (QA audit: "Duplicate game
+ * listing").
+ */
+const CITY_ABBREVIATIONS: [RegExp, string][] = [
+  [/\bla\b/g, 'los angeles'],
+  [/\bny\b/g, 'new york'],
+  [/\bsf\b/g, 'san francisco'],
+  [/\bkc\b/g, 'kansas city'],
+  [/\btb\b/g, 'tampa bay'],
+  [/\bstl\b/g, 'st louis'],
+  [/\btex\b/g, 'texas'],
+  [/\bariz\b/g, 'arizona'],
+  [/\bwash\b/g, 'washington'],
+  [/\bsd\b/g, 'san diego'],
+];
+
 /** Normalize a team name for fuzzy matching across data sources. */
+/**
+ * Canonical MLB full team names, keyed by every raw variant seen coming out
+ * of the odds feed (full name, city-abbreviated, and a couple of stray
+ * formatting inconsistencies like "St.Louis Cardinals" without a space).
+ * Used purely for *display* — normalizeTeam() above remains the matching
+ * key used for de-duplication. Fixes the audit finding that some rows show
+ * full names ("Arizona Diamondbacks") while others show abbreviations
+ * ("ARI Diamondbacks", "LA Angels", "KC Royals", "TEX Rangers").
+ */
+const MLB_TEAM_DISPLAY_NAMES: Record<string, string> = {
+  'ari diamondbacks': 'Arizona Diamondbacks',
+  'arizona diamondbacks': 'Arizona Diamondbacks',
+  'athletics': 'Athletics',
+  'atlanta braves': 'Atlanta Braves',
+  'bal orioles': 'Baltimore Orioles',
+  'baltimore orioles': 'Baltimore Orioles',
+  'boston red sox': 'Boston Red Sox',
+  'chicago cubs': 'Chicago Cubs',
+  'chicago white sox': 'Chicago White Sox',
+  'cincinnati reds': 'Cincinnati Reds',
+  'cleveland guardians': 'Cleveland Guardians',
+  'colorado rockies': 'Colorado Rockies',
+  'detroit tigers': 'Detroit Tigers',
+  'houston astros': 'Houston Astros',
+  'kansas city royals': 'Kansas City Royals',
+  'kc royals': 'Kansas City Royals',
+  'la angels': 'Los Angeles Angels',
+  'los angeles angels': 'Los Angeles Angels',
+  'la dodgers': 'Los Angeles Dodgers',
+  'los angeles dodgers': 'Los Angeles Dodgers',
+  'mia marlins': 'Miami Marlins',
+  'miami marlins': 'Miami Marlins',
+  'mil brewers': 'Milwaukee Brewers',
+  'milwaukee brewers': 'Milwaukee Brewers',
+  'minnesota twins': 'Minnesota Twins',
+  'new york mets': 'New York Mets',
+  'new york yankees': 'New York Yankees',
+  'philadelphia phillies': 'Philadelphia Phillies',
+  'pittsburgh pirates': 'Pittsburgh Pirates',
+  'san diego padres': 'San Diego Padres',
+  'san francisco giants': 'San Francisco Giants',
+  'seattle mariners': 'Seattle Mariners',
+  'st. louis cardinals': 'St. Louis Cardinals',
+  'st.louis cardinals': 'St. Louis Cardinals',
+  'tampa bay rays': 'Tampa Bay Rays',
+  'texas rangers': 'Texas Rangers',
+  'tex rangers': 'Texas Rangers',
+  'toronto blue jays': 'Toronto Blue Jays',
+  'washington nationals': 'Washington Nationals',
+};
+
+/**
+ * Formats a raw team name for display, expanding known MLB city
+ * abbreviations to their full names. Falls back to the original string
+ * (trimmed) for teams/sports not in the lookup table, so this is safe to
+ * apply universally without breaking non-MLB team names.
+ */
+export function formatTeamName(name: string | null | undefined): string {
+  const raw = String(name || '').trim();
+  if (!raw) return raw;
+  const key = raw.toLowerCase().replace(/\s+/g, ' ').trim();
+  return MLB_TEAM_DISPLAY_NAMES[key] || raw;
+}
+
 export function normalizeTeam(name: string | null | undefined): string {
-  return String(name || '')
+  let n = String(name || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\b(fc|sc|cf|afc|football club)\b/g, '')
-    .replace(/[^a-z0-9]+/g, '')
+    .replace(/[^a-z0-9\s]+/g, ' ')
     .trim();
+  for (const [pattern, full] of CITY_ABBREVIATIONS) {
+    n = n.replace(pattern, full);
+  }
+  return n.replace(/[^a-z0-9]+/g, '').trim();
 }
 
 function dateKeyUTC(iso: string | null | undefined): string {

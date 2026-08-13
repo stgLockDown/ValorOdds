@@ -15,7 +15,8 @@
 import { query } from '@/lib/db';
 import { unstable_cache } from 'next/cache';
 import { sportFilterClause } from '@/lib/sport-filter';
-import { isSameBook } from '@/lib/sportsbooks';
+import { isSameBook, formatBookmakerName } from '@/lib/sportsbooks';
+import { normalizeTeam } from '@/lib/espn-scores';
 
 /**
  * Sport filter logic lives in `@/lib/sport-filter` so authenticated
@@ -55,23 +56,53 @@ export const getUpcomingGamesBySport = unstable_cache(
     try {
       const filter = sportFilterClause(sportCode, 1);
       if (!filter) return [];
+      // Some sports are double-fed by two upstream providers that mint
+      // different `game_id`s for the exact same real-world matchup (QA
+      // audit: "Duplicate game listing" — the same MLB game appeared twice
+      // in the upcoming list). We can't de-duplicate by `game_id` alone, so
+      // we pull book-coverage counts per game and collapse by normalized
+      // matchup signature (teams + kickoff time) below, keeping whichever
+      // game_id has the richer bookmaker coverage. Over-fetch a generous
+      // multiple of `limit` so de-duping doesn't leave us short.
       const r = await query(
-        `SELECT DISTINCT game_id, sport, home_team, away_team, commence_time
+        `SELECT game_id, sport, home_team, away_team, commence_time,
+                COUNT(DISTINCT bookmaker_key)::int AS n_books
          FROM odds_snapshots
          WHERE ${filter.clause}
            AND commence_time > NOW()
            AND commence_time < NOW() + INTERVAL '7 days'
+         GROUP BY game_id, sport, home_team, away_team, commence_time
          ORDER BY commence_time ASC
          LIMIT $${filter.params.length + 1}`,
-        [...filter.params, limit],
+        [...filter.params, Math.max(limit * 4, 100)],
       );
-      return r.rows.map((row: any) => ({
-        gameId: row.game_id,
-        sport: row.sport,
-        homeTeam: row.home_team,
-        awayTeam: row.away_team,
-        commenceTime: new Date(row.commence_time).toISOString(),
-      }));
+
+      const bySignature = new Map<string, any>();
+      for (const row of r.rows as any[]) {
+        const sig = [
+          normalizeTeam(row.home_team),
+          normalizeTeam(row.away_team),
+          new Date(row.commence_time).toISOString(),
+        ].join('|');
+        const existing = bySignature.get(sig);
+        if (!existing || row.n_books > existing.n_books) {
+          bySignature.set(sig, row);
+        }
+      }
+
+      return Array.from(bySignature.values())
+        .sort(
+          (a, b) =>
+            new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime(),
+        )
+        .slice(0, limit)
+        .map((row: any) => ({
+          gameId: row.game_id,
+          sport: row.sport,
+          homeTeam: row.home_team,
+          awayTeam: row.away_team,
+          commenceTime: new Date(row.commence_time).toISOString(),
+        }));
     } catch {
       return [];
     }
@@ -104,6 +135,8 @@ export const getBestOddsBySportMarket = unstable_cache(
            AND market_type = $${marketParamIdx}
            AND commence_time > NOW()
            AND commence_time < NOW() + INTERVAL '7 days'
+           AND outcome_price != 0
+           AND ABS(outcome_price) <= ${MAX_VALID_AMERICAN_ODDS}
          ORDER BY game_id, outcome_name, outcome_price DESC, snapshot_time DESC
          LIMIT $${limitParamIdx}`,
         [...filter.params, marketType, limit * 4],
@@ -126,10 +159,30 @@ export const getBestOddsBySportMarket = unstable_cache(
           name: row.outcome_name,
           price: Number(row.outcome_price),
           point: row.outcome_point != null ? Number(row.outcome_point) : null,
-          bookmaker: row.bookmaker_name || row.bookmaker_key,
+          bookmaker: formatBookmakerName(row.bookmaker_key, row.bookmaker_name),
         });
       }
-      return Object.values(byGame).slice(0, limit);
+
+      // Some sports are double-fed by two upstream providers that mint
+      // different game_ids for the same real-world matchup, which without
+      // this collapse would render as two duplicate rows on the odds/market
+      // pages (QA audit: "Duplicate game listing"). Collapse by normalized
+      // matchup signature, keeping whichever game_id surfaced more outcome
+      // rows (i.e. richer bookmaker coverage).
+      const bySignature = new Map<string, BestOdds>();
+      for (const game of Object.values(byGame)) {
+        const sig = [
+          normalizeTeam(game.homeTeam),
+          normalizeTeam(game.awayTeam),
+          game.commenceTime,
+        ].join('|');
+        const existing = bySignature.get(sig);
+        if (!existing || game.outcomes.length > existing.outcomes.length) {
+          bySignature.set(sig, game);
+        }
+      }
+
+      return Array.from(bySignature.values()).slice(0, limit);
     } catch {
       return [];
     }
@@ -191,6 +244,8 @@ export const getGameById = unstable_cache(
          WHERE ${filter.clause}
            AND game_id = $${gameParamIdx}
            AND market_type = 'h2h'
+           AND outcome_price != 0
+           AND ABS(outcome_price) <= ${MAX_VALID_AMERICAN_ODDS}
          ORDER BY outcome_name, outcome_price DESC, snapshot_time DESC
          LIMIT 12`,
         [...filter.params, gameId],
@@ -206,7 +261,7 @@ export const getGameById = unstable_cache(
         bestMoneyline: (r.rows as any[]).map((row) => ({
           name: row.outcome_name,
           price: Number(row.outcome_price),
-          bookmaker: row.bookmaker_name || row.bookmaker_key,
+          bookmaker: formatBookmakerName(row.bookmaker_key, row.bookmaker_name),
         })),
       };
     } catch {
@@ -325,10 +380,36 @@ export function impliedProb(american: number): number {
   return -american / (-american + 100);
 }
 
-/** Pretty-print American odds with explicit sign. */
+/**
+ * Widest realistic bound for an American odds price. Real sportsbook prices
+ * essentially never exceed this range; values outside it are placeholder/
+ * bogus feed data (e.g. a prediction-market source writing "+199900" or
+ * "-200000" instead of a real spread price) rather than a genuine quote
+ * (QA audit: "Invalid odds values on Moneyline page").
+ */
+export const MAX_VALID_AMERICAN_ODDS = 100000;
+
+/** True when a raw price value looks like a plausible American odds price. */
+export function isValidAmericanOdds(price: number | null | undefined): boolean {
+  if (price == null || !Number.isFinite(price)) return false;
+  // A real American moneyline/spread price is never exactly 0 (there is no
+  // such thing as "even money at zero" in this notation — that would be
+  // +100/-100), and never wildly outside a realistic range.
+  if (price === 0) return false;
+  if (Math.abs(price) > MAX_VALID_AMERICAN_ODDS) return false;
+  return true;
+}
+
+/**
+ * Pretty-print American odds with explicit sign. Returns "Odds unavailable"
+ * for missing, zero, or out-of-range values instead of a raw "0" or an
+ * implausible price like "+199900" (QA audit: "Invalid odds values on
+ * Moneyline page" — obviously-wrong numbers destroy user trust and could
+ * mislead someone doing arbitrage math).
+ */
 export function fmtAmerican(price: number | null | undefined): string {
-  if (price == null || !Number.isFinite(price)) return '—';
-  return price > 0 ? `+${Math.round(price)}` : `${Math.round(price)}`;
+  if (!isValidAmericanOdds(price)) return 'Odds unavailable';
+  return price! > 0 ? `+${Math.round(price!)}` : `${Math.round(price!)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +465,19 @@ export const getLiveMarketStats = unstable_cache(
           query(
             `SELECT COUNT(*)::int AS c FROM injuries WHERE fetched_at > NOW() - INTERVAL '24 hours'`,
           ),
-          query(`SELECT COUNT(*)::int AS c FROM bookmakers WHERE last_seen > NOW() - INTERVAL '7 days'`),
+          // NOTE: previously counted from the `bookmakers` table filtered by
+          // `last_seen > NOW() - INTERVAL '7 days'`, but that table is a
+          // slow-moving reference list that stopped being updated, so the
+          // freshness filter always matched 0 rows (QA audit: "'0
+          // sportsbooks' stat contradicts the table below it"). Count
+          // distinct bookmakers actually reporting odds recently instead,
+          // which matches the sportsbook rankings table shown on the same
+          // page.
+          query(
+            `SELECT COUNT(DISTINCT bookmaker_key)::int AS c
+             FROM odds_snapshots
+             WHERE snapshot_time > NOW() - INTERVAL '7 days'`,
+          ),
           query(
             `SELECT COUNT(DISTINCT game_id)::int AS c
              FROM odds_snapshots
@@ -598,7 +691,7 @@ export const getSportsbookRankings = unstable_cache(
     try {
       const r = await query(
         `SELECT DISTINCT ON (bookmaker_key)
-           bookmaker_name, rank_position, lines_tracked, arb_appearances,
+           bookmaker_key, bookmaker_name, rank_position, lines_tracked, arb_appearances,
            avg_hold_percent, line_freshness_score, best_market_count, week_starting
          FROM sportsbook_reviews
          ORDER BY bookmaker_key, created_at DESC
@@ -606,10 +699,10 @@ export const getSportsbookRankings = unstable_cache(
         [limit],
       );
       return (r.rows as any[])
-        .filter((row) => row.bookmaker_name)
+        .filter((row) => row.bookmaker_name || row.bookmaker_key)
         .sort((a, b) => (a.rank_position || 999) - (b.rank_position || 999))
         .map((row) => ({
-          bookmakerName: row.bookmaker_name,
+          bookmakerName: formatBookmakerName(row.bookmaker_key, row.bookmaker_name),
           rankPosition: row.rank_position || 0,
           linesTracked: row.lines_tracked || 0,
           arbAppearances: row.arb_appearances || 0,

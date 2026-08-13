@@ -16,6 +16,7 @@ import {
   getGamesByTeam,
   teamSlug,
 } from '@/lib/public-data';
+import { formatTeamName } from '@/lib/espn-scores';
 
 /**
  * Per-team hub page: /sports/[sport]/teams/[team]
@@ -97,11 +98,11 @@ export default async function TeamHubPage({ params }: Params) {
     .slice(0, 10)
     .map((g) =>
       sportsEventJsonLd({
-        name: `${g.awayTeam} at ${g.homeTeam}`,
+        name: `${formatTeamName(g.awayTeam)} at ${formatTeamName(g.homeTeam)}`,
         url: canonical(`/games/${sport.slug}/${encodeURIComponent(g.gameId)}`),
         startDate: g.commenceTime,
-        homeTeam: g.homeTeam,
-        awayTeam: g.awayTeam,
+        homeTeam: formatTeamName(g.homeTeam),
+        awayTeam: formatTeamName(g.awayTeam),
         sport: sport.fullName,
       }),
     );
@@ -150,7 +151,7 @@ export default async function TeamHubPage({ params }: Params) {
                 >
                   <div className="text-xs text-brand-muted">{formatGameTime(g.commenceTime)}</div>
                   <div className="mt-1 font-semibold">
-                    {g.awayTeam} <span className="text-brand-muted">@</span> {g.homeTeam}
+                    {formatTeamName(g.awayTeam)} <span className="text-brand-muted">@</span> {formatTeamName(g.homeTeam)}
                   </div>
                   <Link
                     href={`/games/${sport.slug}/${encodeURIComponent(g.gameId)}`}

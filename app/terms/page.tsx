@@ -9,13 +9,19 @@ export const metadata: Metadata = buildMetadata({
   path: '/terms',
 });
 
+// Static effective date for this document revision. Update this constant
+// only when the actual terms content below changes — do NOT derive it from
+// the current render time, which would misleadingly show "today" on every
+// page load regardless of when the terms last changed.
+const LAST_UPDATED = 'August 12, 2026';
+
 export default function TermsPage() {
   return (
     <>
       <Navbar />
       <main className="container-px mx-auto max-w-3xl py-16 prose-chat">
         <h1 className="text-3xl font-bold mb-4">Terms of Service</h1>
-        <p className="text-brand-muted">Last updated: {new Date().toLocaleDateString()}</p>
+        <p className="text-brand-muted">Last updated: {LAST_UPDATED}</p>
         <p className="mt-6">
           Welcome to Valor Odds. By creating an account or using our services, you agree to these terms.
           Valor Odds provides data and analysis for informational purposes only. We are not a sportsbook,

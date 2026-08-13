@@ -105,6 +105,7 @@ function BestBetsTab() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [type, setType] = useState('all');
+  const [sport, setSport] = useState('');
   const [markedLoaded, setMarkedLoaded] = useState(false);
 
   // Load markdown parser
@@ -137,20 +138,28 @@ function BestBetsTab() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/dashboard/best-bets?type=${type}&limit=10`)
+    fetch(`/api/dashboard/best-bets?type=${type}&sport=${sport}&limit=10`)
       .then(r => r.json()).then(d => setData(d.data || []))
       .finally(() => setLoading(false));
-  }, [type]);
+  }, [type, sport]);
 
   const types = [
     { id: 'all', label: 'All' },
     { id: 'bestBets', label: 'Best Bets' },
     { id: 'dailyPicks', label: 'Daily Picks' },
-    { id: 'depthAnalysis', label: 'Deep Analysis' },
+    { id: 'depthAnalysis', label: 'Depth Chart Analysis' },
   ];
+
+  // Map the raw `analysis_type` DB value to the same human-readable label
+  // used on the filter buttons above. Previously the card badge rendered
+  // `item.analysis_type` verbatim (e.g. literal "depthAnalysis"), which
+  // looked like a leaked internal field name (QA audit: "Raw internal data
+  // leaking into the AI Best Bets panel").
+  const typeLabel = (id: string): string => types.find(t => t.id === id)?.label || id;
 
   return (
     <div>
+      <SportFilter value={sport} onChange={setSport} />
       <div className="flex flex-wrap gap-2 mb-6">
         {types.map(t => (
           <button key={t.id} onClick={() => setType(t.id)}
@@ -164,7 +173,12 @@ function BestBetsTab() {
           {data.map((item: any) => (
             <div key={item.id} className="card">
               <div className="flex items-center justify-between mb-3">
-                <Badge text={item.analysis_type} color="bg-brand-primary/20 text-brand-primary" />
+                <div className="flex items-center gap-2">
+                  <Badge text={typeLabel(item.analysis_type)} color="bg-brand-primary/20 text-brand-primary" />
+                  {item.sports_data?.sport && (
+                    <Badge text={item.sports_data.sport} color="bg-brand-elevated text-brand-muted" />
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   {item.confidence && <Badge text={`${item.confidence}% conf`} color="bg-green-500/20 text-green-400" />}
                   <span className="text-xs text-brand-muted">{new Date(item.generated_at).toLocaleString()}</span>
@@ -484,6 +498,7 @@ function InjuriesTab() {
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState('');
   const [status, setStatus] = useState('');
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     setLoading(true);
@@ -530,22 +545,45 @@ function InjuriesTab() {
         } />
       ) : (
         <div className="space-y-2">
-          {data.map((inj: any, i: number) => (
-            <div key={i} className="card py-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold">{inj.player_name}</span>
-                    <span className="text-xs text-brand-muted">{inj.team}</span>
-                    <Badge text={inj.sport} color="bg-brand-elevated text-brand-muted" />
-                    {inj.position && <span className="text-xs text-brand-muted">{inj.position}</span>}
+          {data.map((inj: any, i: number) => {
+            const isLong = (inj.description?.length ?? 0) > 120;
+            const isExpanded = expanded.has(i);
+            const shownDescription = isLong && !isExpanded
+              ? `${inj.description.slice(0, 120)}…`
+              : inj.description;
+            return (
+              <div key={i} className="card py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="font-semibold">{inj.player_name}</span>
+                      <span className="text-xs text-brand-muted">{inj.team}</span>
+                      <Badge text={inj.sport} color="bg-brand-elevated text-brand-muted" />
+                      {inj.position && <span className="text-xs text-brand-muted">{inj.position}</span>}
+                    </div>
+                    <p className="text-sm text-brand-muted whitespace-pre-wrap break-words">
+                      {inj.injury_type}{shownDescription ? ` — ${shownDescription}` : ''}
+                    </p>
+                    {isLong && (
+                      <button
+                        onClick={() =>
+                          setExpanded((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(i)) next.delete(i); else next.add(i);
+                            return next;
+                          })
+                        }
+                        className="text-xs text-brand-primary hover:underline mt-1"
+                      >
+                        {isExpanded ? 'Show less' : 'Read more'}
+                      </button>
+                    )}
                   </div>
-                  <p className="text-sm text-brand-muted">{inj.injury_type}{inj.description ? ` — ${inj.description.slice(0, 120)}` : ''}</p>
+                  <Badge text={inj.status} color={statusColor(inj.status)} />
                 </div>
-                <Badge text={inj.status} color={statusColor(inj.status)} />
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -633,17 +671,40 @@ function TrendsTab() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState('');
+  const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     setLoading(true);
     fetch(`/api/dashboard/trends?sport=${sport}&limit=30`)
-      .then(r => r.json()).then(d => setData(d.data || []))
+      .then(r => r.json())
+      .then(d => {
+        setData(d.data || []);
+        setFetchedAt(new Date());
+      })
       .finally(() => setLoading(false));
   }, [sport]);
+
+  // "Newest data point" timestamp — lets users judge freshness even when the
+  // trend rows themselves (games already played) are naturally older than
+  // other live-updating tabs.
+  const newestDataAt = data.length
+    ? data.reduce((max: Date, t: any) => {
+        const d = new Date(t.created_at || t.event_date);
+        return d > max ? d : max;
+      }, new Date(0))
+    : null;
 
   return (
     <div>
       <SportFilter value={sport} onChange={setSport} />
+      {!loading && fetchedAt && (
+        <p className="text-xs text-brand-muted mb-3">
+          Loaded as of {fetchedAt.toLocaleTimeString()}
+          {newestDataAt && newestDataAt.getTime() > 0 && (
+            <> · Newest result recorded {newestDataAt.toLocaleString()}</>
+          )}
+        </p>
+      )}
       {loading ? <LoadingSpinner /> : data.length === 0 ? <EmptyState message="No trend data available." /> : (
         <div className="space-y-2">
           {data.map((t: any, i: number) => (
@@ -770,9 +831,9 @@ function PreferencesTab({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Followed Sports */}
+      {/* Followed sports */}
       <div className="card">
-        <h3 className="font-semibold mb-3">🏆 Followed Sports</h3>
+        <h3 className="font-semibold mb-3">🏆 Followed sports</h3>
         <div className="flex flex-wrap gap-2 mb-3">
           {SPORTS.filter(s => s !== 'All').map(s => (
             <button key={s}
@@ -786,9 +847,9 @@ function PreferencesTab({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* Followed Teams */}
+      {/* Followed teams */}
       <div className="card">
-        <h3 className="font-semibold mb-3">🏠 Followed Teams</h3>
+        <h3 className="font-semibold mb-3">🏠 Followed teams</h3>
         <div className="flex flex-wrap gap-2 mb-3">
           {(prefs.teams || []).map((t: string) => (
             <span key={t} className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-brand-primary/20 text-brand-primary text-xs font-semibold">
@@ -810,9 +871,9 @@ function PreferencesTab({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* Followed Players */}
+      {/* Followed players */}
       <div className="card">
-        <h3 className="font-semibold mb-3">⭐ Followed Players</h3>
+        <h3 className="font-semibold mb-3">⭐ Followed players</h3>
         <div className="flex flex-wrap gap-2 mb-3">
           {(prefs.players || []).map((p: string) => (
             <span key={p} className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-brand-primary/20 text-brand-primary text-xs font-semibold">
@@ -836,7 +897,7 @@ function PreferencesTab({ userId }: { userId: string }) {
 
       {/* Sportsbooks */}
       <div className="card">
-        <h3 className="font-semibold mb-3">📚 Followed Sportsbooks</h3>
+        <h3 className="font-semibold mb-3">📚 Followed sportsbooks</h3>
         <div className="flex flex-wrap gap-2">
           {SPORTSBOOK_OPTIONS.map(s => (
             <button key={s}
@@ -852,7 +913,7 @@ function PreferencesTab({ userId }: { userId: string }) {
 
       {/* Notifications */}
       <div className="card">
-        <h3 className="font-semibold mb-4">🔔 Alert Preferences</h3>
+        <h3 className="font-semibold mb-4">🔔 Alert preferences</h3>
         <div className="space-y-3">
           {[
             { key: 'notify_arb', label: 'Arbitrage opportunities', desc: 'Get notified of guaranteed profit bets' },
@@ -879,9 +940,9 @@ function PreferencesTab({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* Odds Format */}
+      {/* Odds format */}
       <div className="card">
-        <h3 className="font-semibold mb-3">💰 Odds Format</h3>
+        <h3 className="font-semibold mb-3">💰 Odds format</h3>
         <div className="flex gap-2">
           {['american', 'decimal', 'fractional'].map(f => (
             <button key={f} onClick={() => {

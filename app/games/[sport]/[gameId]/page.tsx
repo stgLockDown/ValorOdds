@@ -13,6 +13,7 @@ import {
 } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 import { getGameById, fmtAmerican, impliedProb, teamSlug } from '@/lib/public-data';
+import { formatTeamName } from '@/lib/espn-scores';
 
 /**
  * Per-game landing page: /games/[sport]/[gameId]
@@ -48,20 +49,22 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       noindex: true,
     });
   }
-  const title = `${game.awayTeam} vs ${game.homeTeam} Odds & Prediction`;
-  const desc = `Live ${sport.name} odds for ${game.awayTeam} at ${game.homeTeam}: best moneyline prices across every major sportsbook, implied probabilities, and Valor Odds AI analysis.`;
+  const awayName = formatTeamName(game.awayTeam);
+  const homeName = formatTeamName(game.homeTeam);
+  const title = `${awayName} vs ${homeName} Odds & Prediction`;
+  const desc = `Live ${sport.name} odds for ${awayName} at ${homeName}: best moneyline prices across every major sportsbook, implied probabilities, and Valor Odds AI analysis.`;
   return buildMetadata({
     title,
     description: desc,
     path: `/games/${sport.slug}/${encodeURIComponent(gameId)}`,
     keywords: [
-      `${game.awayTeam} vs ${game.homeTeam}`,
-      `${game.awayTeam} ${game.homeTeam} odds`,
+      `${awayName} vs ${homeName}`,
+      `${awayName} ${homeName} odds`,
       `${sport.name.toLowerCase()} odds`,
-      `${game.homeTeam} odds`,
-      `${game.awayTeam} odds`,
+      `${homeName} odds`,
+      `${awayName} odds`,
     ],
-    image: `/api/og?title=${encodeURIComponent(`${game.awayTeam} @ ${game.homeTeam}`)}&subtitle=${encodeURIComponent('Live odds across every sportsbook')}&kicker=${encodeURIComponent(sport.name)}`,
+    image: `/api/og?title=${encodeURIComponent(`${awayName} @ ${homeName}`)}&subtitle=${encodeURIComponent('Live odds across every sportsbook')}&kicker=${encodeURIComponent(sport.name)}`,
   });
 }
 
@@ -87,15 +90,17 @@ export default async function GamePage({ params }: Params) {
   const game = await getGameById(sport.code, gameId);
   if (!game) notFound();
 
-  const matchup = `${game.awayTeam} vs ${game.homeTeam}`;
+  const awayName = formatTeamName(game.awayTeam);
+  const homeName = formatTeamName(game.homeTeam);
+  const matchup = `${awayName} vs ${homeName}`;
   const url = canonical(`/games/${sport.slug}/${encodeURIComponent(gameId)}`);
 
   const eventLd = sportsEventJsonLd({
-    name: `${game.awayTeam} at ${game.homeTeam}`,
+    name: `${awayName} at ${homeName}`,
     url,
     startDate: game.commenceTime,
-    homeTeam: game.homeTeam,
-    awayTeam: game.awayTeam,
+    homeTeam: homeName,
+    awayTeam: awayName,
     sport: sport.fullName,
   });
 
@@ -119,12 +124,13 @@ export default async function GamePage({ params }: Params) {
             {sport.fullName} · {formatGameTime(game.commenceTime)}
           </div>
           <h1 className="mt-2 text-3xl sm:text-4xl font-extrabold leading-tight">
-            {game.awayTeam} vs {game.homeTeam} odds
+            {awayName} vs {homeName} odds
           </h1>
           <p className="mt-4 text-brand-muted text-lg">
-            The best available moneyline prices for {game.awayTeam} at {game.homeTeam}, compared
-            in real time across every major sportsbook. Valor Odds tracks every line from open to
-            close so you can confirm you are beating the market.
+            The best available moneyline prices for {awayName} at{' '}
+            {homeName}, compared in real time across every major sportsbook.
+            Valor Odds tracks every line from open to close so you can confirm you are beating the
+            market.
           </p>
         </header>
 
@@ -189,26 +195,26 @@ export default async function GamePage({ params }: Params) {
               href={`/sports/${sport.slug}/teams/${teamSlug(game.awayTeam)}`}
               className="text-brand-accent hover:underline"
             >
-              {game.awayTeam} schedule &amp; odds →
+              {awayName} schedule &amp; odds →
             </Link>
             <Link
               href={`/sports/${sport.slug}/teams/${teamSlug(game.homeTeam)}`}
               className="text-brand-accent hover:underline"
             >
-              {game.homeTeam} schedule &amp; odds →
+              {homeName} schedule &amp; odds →
             </Link>
           </div>
         </section>
 
         <section className="mt-16 prose-chat max-w-3xl">
           <h2 className="text-2xl font-bold">
-            {game.awayTeam} vs {game.homeTeam}: how to find the edge
+            {awayName} vs {homeName}: how to find the edge
           </h2>
           <p className="mt-3 text-brand-muted">
             Valor Odds is a betting intelligence platform, not a sportsbook. For this {sport.name}{' '}
             matchup we compare every book&apos;s price side by side, surface arbitrage and +EV
             opportunities the moment they appear, and layer AI player-prop analysis on top. Shopping
-            for the best number on {game.awayTeam} or {game.homeTeam} before you bet is the single
+            for the best number on {awayName} or {homeName} before you bet is the single
             most reliable way to grow your long-term return.
           </p>
         </section>

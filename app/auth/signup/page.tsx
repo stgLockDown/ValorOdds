@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import SignUpForm from './SignUpForm';
 import { buildMetadata } from '@/lib/seo';
+import { auth } from '@/lib/auth';
 
 export const metadata: Metadata = buildMetadata({
   title: 'Create your free account',
@@ -13,7 +15,14 @@ export const metadata: Metadata = buildMetadata({
   keywords: ['valor odds signup', 'free arbitrage betting account', 'sports betting tool signup'],
 });
 
-export default function SignUpPage({ searchParams }: { searchParams: { next?: string } }) {
+export default async function SignUpPage({ searchParams }: { searchParams: { next?: string } }) {
+  // Already-authenticated users have no reason to see the signup form again
+  // — send them straight to wherever they were headed (or the dashboard).
+  const session = await auth();
+  if (session?.user) {
+    redirect(searchParams.next ?? '/dashboard');
+  }
+
   return (
     <>
       <Navbar />

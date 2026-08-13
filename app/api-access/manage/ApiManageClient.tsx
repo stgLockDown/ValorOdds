@@ -56,7 +56,7 @@ function fmtCents(cents: number): string {
 
 function planLabel(p: Plan): string {
   if (p.plan_type === 'odds_standalone') return 'Odds API — Standalone';
-  if (p.all_access) return 'All-Access Bundle (26 sports)';
+  if (p.all_access) return 'All-Access Bundle (26 API sport categories)';
   const n = p.products?.length ?? 0;
   return `Custom Bundle (${n} sport${n === 1 ? '' : 's'})${p.odds_addon ? ' + Odds API' : ''}`;
 }

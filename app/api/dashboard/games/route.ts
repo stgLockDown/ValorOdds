@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { buildEspnScoreIndex } from '@/lib/espn-scores';
+import { buildEspnScoreIndex, normalizeTeam } from '@/lib/espn-scores';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,9 +50,34 @@ export async function GET(req: Request) {
      FROM custom_api_events
      ${where}
      ORDER BY event_id, fetched_at DESC
-     LIMIT 100`,
+     LIMIT 200`,
     params,
   );
+
+  // Two upstream feed providers occasionally mint different `event_id`s for
+  // the exact same real-world matchup (same teams, same kickoff time), which
+  // rendered as duplicate rows in the games list (QA audit: "Duplicate game
+  // listing"). Collapse by normalized matchup signature, keeping whichever
+  // event_id has broader sportsbook coverage (falling back to the most
+  // recently fetched row on a tie).
+  const bySignature = new Map<string, any>();
+  for (const row of result.rows as any[]) {
+    const sig = [
+      normalizeTeam(row.home_team),
+      normalizeTeam(row.away_team),
+      row.commence_time ? new Date(row.commence_time).toISOString() : '',
+    ].join('|');
+    const existing = bySignature.get(sig);
+    if (
+      !existing ||
+      (row.num_sportsbooks || 0) > (existing.num_sportsbooks || 0) ||
+      ((row.num_sportsbooks || 0) === (existing.num_sportsbooks || 0) &&
+        new Date(row.fetched_at).getTime() > new Date(existing.fetched_at).getTime())
+    ) {
+      bySignature.set(sig, row);
+    }
+  }
+  result.rows = Array.from(bySignature.values()).slice(0, 100);
 
   // Pull recent scoring events for any games marked live in raw_data
   const liveGameIds = result.rows

@@ -1,5 +1,4 @@
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
+import AuthedSidebarLayout from '@/components/AuthedSidebarLayout';
 import { auth } from '@/lib/auth';
 import { queryOne } from '@/lib/db';
 import { getActiveSubscriptionForUser } from '@/lib/subscriptions';
@@ -29,9 +28,8 @@ export default async function AccountPage({ searchParams }: { searchParams: { ch
   const billingAvailable = isStripeConfigured();
 
   return (
-    <>
-      <Navbar />
-      <main className="container-px mx-auto max-w-3xl py-12 space-y-6">
+    <AuthedSidebarLayout user={user}>
+      <div className="max-w-3xl space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Account</h1>
           <p className="text-brand-muted mt-1">Your profile, subscription, and linked Discord.</p>
@@ -101,7 +99,12 @@ export default async function AccountPage({ searchParams }: { searchParams: { ch
                   <ManageBillingButton />
                 ) : (
                   <span className="text-xs text-brand-muted">
-                    Billing portal is temporarily unavailable. Contact support to make changes.
+                    We couldn&apos;t load your billing details right now. Please try again in a
+                    few minutes, or{' '}
+                    <Link href="/dashboard/support" className="text-brand-primary hover:underline">
+                      contact support
+                    </Link>{' '}
+                    if the problem continues.
                   </span>
                 )}
                 <Link href="/pricing" className="btn-secondary">Change plan</Link>
@@ -133,8 +136,7 @@ export default async function AccountPage({ searchParams }: { searchParams: { ch
           </div>
           <span className="text-brand-primary group-hover:translate-x-1 transition-transform">→</span>
         </Link>
-      </main>
-      <Footer />
-    </>
+      </div>
+    </AuthedSidebarLayout>
   );
 }

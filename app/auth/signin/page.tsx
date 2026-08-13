@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import SignInForm from './SignInForm';
 import { buildMetadata } from '@/lib/seo';
+import { auth } from '@/lib/auth';
 
 export const metadata: Metadata = buildMetadata({
   title: 'Sign in',
@@ -12,7 +14,14 @@ export const metadata: Metadata = buildMetadata({
   path: '/auth/signin',
 });
 
-export default function SignInPage({ searchParams }: { searchParams: { callbackUrl?: string; error?: string } }) {
+export default async function SignInPage({ searchParams }: { searchParams: { callbackUrl?: string; error?: string } }) {
+  // Already-authenticated users have no reason to see the signin form again
+  // — send them straight to wherever they were headed (or the dashboard).
+  const session = await auth();
+  if (session?.user) {
+    redirect(searchParams.callbackUrl ?? '/dashboard');
+  }
+
   return (
     <>
       <Navbar />

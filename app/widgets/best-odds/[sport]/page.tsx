@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { SPORTS, SITE, canonical } from '@/lib/seo';
 import { getBestOddsBySportMarket, fmtAmerican } from '@/lib/public-data';
+import { formatTeamName } from '@/lib/espn-scores';
 
 /**
  * Embeddable "best odds" widget.
@@ -171,7 +172,7 @@ export default async function WidgetBestOdds({
                 (a, b) => (b.price > a.price ? b : a),
                 r.outcomes[0],
               );
-              const matchup = `${r.awayTeam} @ ${r.homeTeam}`;
+              const matchup = `${formatTeamName(r.awayTeam)} @ ${formatTeamName(r.homeTeam)}`;
               return (
                 <tr
                   key={r.gameId ?? i}

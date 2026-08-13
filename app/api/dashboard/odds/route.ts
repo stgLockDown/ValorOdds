@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { sportFilterClause } from '@/lib/sport-filter';
+import { formatBookmakerName } from '@/lib/sportsbooks';
+import { normalizeTeam } from '@/lib/espn-scores';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,6 +44,8 @@ export async function GET(req: Request) {
      WHERE market_type = $1
        ${sportClause}
        AND commence_time > NOW()
+       AND outcome_price != 0
+       AND ABS(outcome_price) <= 100000
      ORDER BY game_id, bookmaker_key, outcome_name, snapshot_time DESC
      LIMIT $${limitParamIdx}`,
     params
@@ -63,7 +67,10 @@ export async function GET(req: Request) {
     if (!games[row.game_id].books[row.bookmaker_key]) {
       games[row.game_id].books[row.bookmaker_key] = {
         key: row.bookmaker_key,
-        name: row.bookmaker_name,
+        // Raw bookmaker_name occasionally holds an internal identifier
+        // (e.g. "fanduel_an") instead of a clean label — always format it
+        // (QA audit: "Raw sportsbook key shown instead of formatted name").
+        name: formatBookmakerName(row.bookmaker_key, row.bookmaker_name),
         outcomes: [],
       };
     }
@@ -74,5 +81,25 @@ export async function GET(req: Request) {
     });
   }
 
-  return NextResponse.json({ data: Object.values(games) });
+  // Two upstream feed providers occasionally mint different game_ids for the
+  // same real-world matchup, which without this collapse would render as
+  // duplicate game cards on the dashboard (QA audit: "Duplicate game
+  // listing"). Collapse by normalized matchup signature, keeping whichever
+  // game_id has more bookmaker coverage.
+  const bySignature = new Map<string, any>();
+  for (const game of Object.values(games) as any[]) {
+    const sig = [
+      normalizeTeam(game.home_team),
+      normalizeTeam(game.away_team),
+      game.commence_time ? new Date(game.commence_time).toISOString() : '',
+    ].join('|');
+    const existing = bySignature.get(sig);
+    const bookCount = Object.keys(game.books).length;
+    const existingBookCount = existing ? Object.keys(existing.books).length : -1;
+    if (!existing || bookCount > existingBookCount) {
+      bySignature.set(sig, game);
+    }
+  }
+
+  return NextResponse.json({ data: Array.from(bySignature.values()) });
 }

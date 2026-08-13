@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const sport = SPORTS.find((s) => s.slug === params.sport);
   if (!sport) return { title: 'Not Found' };
   const title = `${sport.name} Arbitrage Betting — Live Sure Bets`;
-  const desc = `Find live ${sport.fullName} arbitrage opportunities in real time across every major sportsbook. Valor Odds scans continuously so you can lock in risk-free profit on ${sport.name} markets.`;
+  const desc = `Find live ${sport.fullName} arbitrage opportunities in real time across every major sportsbook. Valor Odds scans continuously so you can lock in a profit across every outcome on ${sport.name} markets.`;
   return buildMetadata({
     title,
     description: desc,
@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       `${sport.name.toLowerCase()} arbitrage`,
       `${sport.name.toLowerCase()} sure bets`,
       `${sport.name.toLowerCase()} arb betting`,
-      `${sport.name.toLowerCase()} risk free betting`,
+      `${sport.name.toLowerCase()} arbitrage calculator`,
       `${sport.name.toLowerCase()} middling`,
     ],
     image: `/api/og?title=${encodeURIComponent(`${sport.name} Arbitrage`)}&subtitle=${encodeURIComponent('Live sure bets across every sportsbook')}&kicker=${encodeURIComponent(sport.name)}`,
@@ -83,8 +83,9 @@ export default async function SportArbitragePage({ params }: Params) {
           </h1>
           <p className="mt-4 text-brand-muted text-lg">
             Valor Odds surfaces live {sport.name} arbitrage opportunities in real time —
-            continuously scanning every major sportsbook so you can lock in risk-free profit on{' '}
-            {sport.name} markets.
+            continuously scanning every major sportsbook so you can bet on all outcomes across
+            different sportsbooks and lock in an edge. Line movement, bet limits, and timing can
+            reduce or eliminate that edge, so no outcome is guaranteed.
           </p>
 
           {stats.last24h > 0 ? (

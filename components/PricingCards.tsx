@@ -102,18 +102,27 @@ export default function PricingCards({
 }) {
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [resolvedAuth, setResolvedAuth] = useState<boolean>(isAuthenticatedProp ?? false);
+  const [currentTier, setCurrentTier] = useState<Tier['id'] | null>(null);
 
   useEffect(() => {
     if (typeof isAuthenticatedProp === 'boolean') {
       setResolvedAuth(isAuthenticatedProp);
-      return;
+      if (!isAuthenticatedProp) return;
     }
     let cancelled = false;
     // NextAuth session endpoint returns 200 for guests (no console 401).
+    // It also carries the user's current subscription tier, which we use to
+    // make the CTA plan-aware (e.g. don't prompt an active VIP subscriber to
+    // "Join VIP" again).
     fetch('/api/auth/session', { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!cancelled) setResolvedAuth(Boolean(data?.user));
+        if (cancelled) return;
+        setResolvedAuth(Boolean(data?.user));
+        const tier = data?.user?.tier as Tier['id'] | undefined;
+        if (tier && ['free', 'basic', 'premium', 'vip'].includes(tier)) {
+          setCurrentTier(tier);
+        }
       })
       .catch(() => {
         if (!cancelled) setResolvedAuth(false);
@@ -141,10 +150,11 @@ export default function PricingCards({
       {TIERS.map((tier) => (
         <div
           key={tier.id}
+          id={tier.id}
           className={
             tier.featured
-              ? 'card-interactive border-brand-primary/50 ring-1 ring-brand-primary/30 relative'
-              : 'card-interactive relative'
+              ? 'card-interactive border-brand-primary/50 ring-1 ring-brand-primary/30 relative scroll-mt-24'
+              : 'card-interactive relative scroll-mt-24'
           }
         >
           {tier.ribbon && (
@@ -179,6 +189,14 @@ export default function PricingCards({
             {tier.id === 'free' ? (
               <a href={isAuthenticated ? '/dashboard' : '/auth/signup'} className="btn-secondary w-full">
                 {isAuthenticated ? 'Go to dashboard' : tier.ctaLabel}
+              </a>
+            ) : isAuthenticated && currentTier === tier.id ? (
+              <button className="btn-secondary w-full flex items-center justify-center gap-2" disabled>
+                <Check className="h-4 w-4" /> Current plan
+              </button>
+            ) : isAuthenticated && currentTier && currentTier !== 'free' ? (
+              <a href="/account" className="btn-secondary w-full">
+                Manage plan
               </a>
             ) : (
               <button

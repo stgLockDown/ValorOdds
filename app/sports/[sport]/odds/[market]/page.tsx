@@ -12,6 +12,7 @@ import {
 } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 import { getBestOddsBySportMarket, fmtAmerican } from '@/lib/public-data';
+import { formatTeamName } from '@/lib/espn-scores';
 
 /**
  * Programmatic market page: /sports/[sport]/odds/[market]
@@ -56,7 +57,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const market = MARKETS.find((m) => m.slug === params.market);
   if (!sport || !market) return { title: 'Not Found' };
   const title = `${sport.name} ${market.name} Odds — Live Prices`;
-  const desc = `Compare live ${sport.name} ${market.name.toLowerCase()} odds across every major sportsbook. Find the best price, spot arbitrage opportunities, and track line movement with Valor Odds.`;
+  const marketLower = market.name.toLowerCase();
+  const desc = marketLower.includes('live')
+    ? `Compare ${sport.name} ${marketLower} odds across every major sportsbook. Find the best price, spot arbitrage opportunities, and track line movement with Valor Odds.`
+    : `Compare live ${sport.name} ${marketLower} odds across every major sportsbook. Find the best price, spot arbitrage opportunities, and track line movement with Valor Odds.`;
   return buildMetadata({
     title,
     description: desc,
@@ -69,6 +73,34 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     ],
     image: `/api/og?title=${encodeURIComponent(`${sport.name} ${market.name}`)}&subtitle=${encodeURIComponent('Live odds across every sportsbook')}&kicker=${encodeURIComponent('Valor Odds')}`,
   });
+}
+
+/**
+ * Builds the "Compare live {sport} {market} prices" intro line without
+ * duplicating a word already present in the market name itself (e.g. the
+ * "Live Betting" market already contains the word "live", so naively
+ * prepending "Compare live" again produced "Compare live MLB live betting
+ * prices"). Falls back to the plain template for every other market.
+ */
+function compareIntro(sportName: string, marketName: string): string {
+  const lower = marketName.toLowerCase();
+  if (lower.includes('live')) {
+    return `Compare ${sportName} ${lower} prices`;
+  }
+  return `Compare live ${sportName} ${lower} prices`;
+}
+
+/**
+ * Builds the "How {market} betting works in {sport}" section heading
+ * without duplicating "betting" when the market name already contains it
+ * (e.g. "Live Betting" \u2192 "How live betting betting works in MLB").
+ */
+function howItWorksHeading(sportName: string, marketName: string): string {
+  const lower = marketName.toLowerCase();
+  if (lower.includes('betting')) {
+    return `How ${lower} works in ${sportName}`;
+  }
+  return `How ${lower} betting works in ${sportName}`;
 }
 
 function formatGameTime(iso: string): string {
@@ -129,9 +161,9 @@ export default async function MarketOddsPage({ params }: Params) {
             {sport.name} {market.name.toLowerCase()} odds
           </h1>
           <p className="mt-4 text-brand-muted text-lg">
-            Compare live {sport.name} {market.name.toLowerCase()} prices across every major
-            sportsbook. Valor Odds surfaces the best number per outcome in real time so you can
-            shop your line before placing the bet.
+            {compareIntro(sport.name, market.name)} across every major sportsbook. Valor Odds
+            surfaces the best number per outcome in real time so you can shop your line before
+            placing the bet.
           </p>
         </header>
 
@@ -195,7 +227,7 @@ export default async function MarketOddsPage({ params }: Params) {
                         className="border-t border-brand-border"
                       >
                         <td className="p-3">
-                          {g.awayTeam} <span className="text-brand-muted">@</span> {g.homeTeam}
+                          {formatTeamName(g.awayTeam)} <span className="text-brand-muted">@</span> {formatTeamName(g.homeTeam)}
                         </td>
                         <td className="p-3 text-brand-muted">{formatGameTime(g.commenceTime)}</td>
                         <td className="p-3">{o.name}</td>
@@ -220,7 +252,7 @@ export default async function MarketOddsPage({ params }: Params) {
         {/* SEO copy */}
         <section className="mt-16 prose-chat max-w-3xl">
           <h2 className="text-2xl font-bold">
-            How {market.name.toLowerCase()} betting works in {sport.name}
+            {howItWorksHeading(sport.name, market.name)}
           </h2>
           <p className="mt-3 text-brand-muted">
             {market.description} In {sport.name}, {market.name.toLowerCase()} markets are priced

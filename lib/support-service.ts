@@ -444,7 +444,7 @@ export async function getTicketStats(): Promise<{
   }>(
     `SELECT
        COUNT(*)::text AS total,
-       COUNT(*) FILTER (WHERE status = 'open')::text AS open,
+       COUNT(*) FILTER (WHERE status = 'open' OR escalated = TRUE)::text AS open,
        COUNT(*) FILTER (WHERE status = 'ai_resolved')::text AS ai_resolved,
        COUNT(*) FILTER (WHERE status = 'resolved')::text AS resolved,
        COUNT(*) FILTER (WHERE escalated = TRUE)::text AS escalated

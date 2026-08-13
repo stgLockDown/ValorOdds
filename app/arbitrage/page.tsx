@@ -14,7 +14,7 @@ import { JsonLd } from '@/components/JsonLd';
 export const metadata: Metadata = buildMetadata({
   title: 'Live Sports Arbitrage — Real-Time Sure Bets',
   description:
-    'Find live sports arbitrage opportunities in real time across MLB, NFL, NBA, NHL, soccer, UFC, and more. Valor Odds scans every major sportsbook so you can lock in risk-free profit.',
+    'Find live sports arbitrage opportunities in real time across MLB, NFL, NBA, NHL, soccer, UFC, and more. Valor Odds scans every major sportsbook so you can lock in a profit across every outcome.',
   path: '/arbitrage',
   keywords: [
     'sports arbitrage',
@@ -22,7 +22,7 @@ export const metadata: Metadata = buildMetadata({
     'sure bets',
     'arb betting',
     'live arbitrage opportunities',
-    'risk free sports betting',
+    'sports betting arbitrage calculator',
   ],
 });
 
