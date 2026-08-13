@@ -15,8 +15,9 @@ export const SITE = {
   legalName: 'Valor Odds',
   url: 'https://valorodds.com',
   description:
-    'Real-time arbitrage opportunities and AI-powered player props analysis across MLB, NFL, NBA, NHL, soccer, MMA, and more. Professional sports analytics delivered to Discord and the web.',
-  shortDescription: 'Professional sports analytics powered by AI.',
+    'Real-time sports arbitrage opportunities, AI-powered player props analysis, steam-move alerts, live injury reports, and live scores across MLB, NFL, NBA, NHL, NCAA, soccer, UFC, and more. Professional sports analytics on the web and Discord, with a developer API and a free betting education hub.',
+  shortDescription:
+    'Real-time arbitrage, AI player props, steam moves, injury alerts, live scores, and a betting education hub.',
   locale: 'en_US',
   twitter: '@valorodds',
   keywords: [
@@ -34,27 +35,43 @@ export const SITE = {
     'closing line value',
     'sharp betting tools',
     'sports betting analytics',
+    'kelly criterion betting',
     // AI
     'ai sports betting',
     'ai betting analysis',
     'ai player props',
+    'ai sports analyst',
     // Product categories
     'player props',
     'player prop research',
     'live odds',
     'best sportsbook odds',
     'odds comparison',
+    'steam moves',
+    'sharp money moves',
+    'injury reports',
+    'live sports scores',
+    'sports betting alerts',
     // Sports
     'mlb betting',
     'nfl betting',
     'nba betting',
     'nhl betting',
+    'ncaa betting',
     'soccer betting',
     'ufc betting',
     'tennis betting',
+    // Education
+    'sports betting glossary',
+    'sports betting guide',
+    'how to bet on sports',
+    // Developer / API
+    'sports data api',
+    'sports odds api',
     // Use case
     'discord betting bot',
     'betting discord server',
+    'fantasy sports draft',
   ],
   sameAs: [
     'https://twitter.com/valorodds',

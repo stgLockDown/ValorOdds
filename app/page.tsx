@@ -12,7 +12,7 @@ import { formatTeamName } from '@/lib/espn-scores';
 export const metadata: Metadata = buildMetadata({
   title: 'Valor Odds — AI-Powered Sports Arbitrage & Player Props',
   description:
-    'Real-time sports arbitrage opportunities and AI-powered player props analysis across MLB, NFL, NBA, NHL, soccer, UFC, and more. Start finding edges in seconds.',
+    'Real-time sports arbitrage opportunities, AI-powered player props analysis, steam-move alerts, live injury reports, and live scores across MLB, NFL, NBA, NHL, NCAA, soccer, UFC, and more. Free betting education hub and developer API. Start finding edges in seconds.',
   path: '/',
   keywords: [
     'sports arbitrage',
@@ -22,18 +22,24 @@ export const metadata: Metadata = buildMetadata({
     'player props',
     'best odds comparison',
     'live odds',
+    'steam moves',
+    'sharp money alerts',
+    'injury reports',
+    'live sports scores',
     'sharp sports bettor tools',
+    'sports betting glossary',
+    'sports data api',
   ],
 });
 
 const HOME_FAQS = [
   {
     q: 'What is sports arbitrage betting?',
-    a: 'Sports arbitrage betting (also called sure betting) is placing bets on all possible outcomes of a sporting event across different sportsbooks to guarantee a profit regardless of the result. Valor Odds surfaces arbitrage opportunities in real time.',
+    a: 'Sports arbitrage betting (also called sure betting) is placing bets on all possible outcomes of a sporting event across different sportsbooks to guarantee a profit regardless of the result. Valor Odds surfaces arbitrage opportunities in real time and tells you exactly how much to stake on each side for your bankroll.',
   },
   {
     q: 'Is Valor Odds free to use?',
-    a: 'Yes. Valor Odds offers a free tier with live arbitrage and core tools. Premium and VIP plans unlock advanced filters, AI player props analysis, alert automation, and priority support.',
+    a: 'Yes. Valor Odds offers a free tier with live arbitrage and core tools. Premium and VIP plans unlock advanced filters, AI player props analysis, steam-move alerts, AI chat, and priority support.',
   },
   {
     q: 'Which sports does Valor Odds cover?',
@@ -44,8 +50,28 @@ const HOME_FAQS = [
     a: "Arbitrage betting is legal in jurisdictions where sports betting itself is legal. Sportsbooks may limit or ban accounts used for arbitrage, so bettors should review each book's terms of service.",
   },
   {
+    q: 'What are steam moves and why do they matter?',
+    a: 'Steam moves occur when multiple sportsbooks shift a line simultaneously, signaling sharp (professional) money hitting one side. Valor Odds tracks these coordinated line movements across books in real time so you can follow sharp action before the market fully adjusts.',
+  },
+  {
+    q: 'Does Valor Odds have an AI sports analyst?',
+    a: 'Yes. Premium and VIP users get access to an AI analyst that answers questions about lines, matchups, injuries, and arbitrage in real time. It is available inside the dashboard and can be embedded in your workflow.',
+  },
+  {
+    q: 'Does Valor Odds offer live scores and injury reports?',
+    a: 'Yes. The dashboard includes a live scores strip that auto-refreshes every minute, plus a 72-hour injury report feed across NBA, NHL, and MLB so you can factor player availability into every bet.',
+  },
+  {
+    q: 'Is there a betting education resource?',
+    a: 'Yes. Our free Learn hub includes in-depth guides on arbitrage betting, positive EV, closing line value, the Kelly Criterion, how sportsbooks set odds, sport-specific betting guides, and a full sports betting glossary.',
+  },
+  {
+    q: 'Does Valor Odds have a developer API?',
+    a: 'Yes. We offer a developer API platform with access to real-time sports data and odds across 26 sports through a single gateway, with ping-quota plans and pay-per-overage billing. See the API Access and Documentation pages for details.',
+  },
+  {
     q: 'How does Valor Odds compare to Odds Jam, OddsPortal, or RebelBetting?',
-    a: 'Valor Odds combines arbitrage detection with AI-driven player-prop edge analysis and native Discord + web delivery. Most competitors focus on one product category; we cover arbitrage, +EV, props, and injury-aware line movement in one subscription.',
+    a: 'Valor Odds combines arbitrage detection with AI-driven player-prop edge analysis, steam-move tracking, live injury reports, a betting education hub, and native Discord + web delivery. Most competitors focus on one product category; we cover arbitrage, +EV, props, sharp-money alerts, and injury-aware line movement in one subscription.',
   },
 ];
 
@@ -73,7 +99,7 @@ export default async function HomePage() {
             <span className="gradient-text">Powered by AI</span>
           </h1>
           <p className="mt-6 text-base sm:text-lg text-brand-muted max-w-2xl">
-            Real-time arbitrage opportunities and AI-powered player props across 25+ sports.
+            Real-time arbitrage, AI player props, steam-move alerts, live injury reports, and scores across 25+ sports.
             Join thousands of data-driven users making smarter decisions.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
