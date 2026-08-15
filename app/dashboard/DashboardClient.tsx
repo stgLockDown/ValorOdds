@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import ChatClient from './chat/ChatClient';
+import PinGameButton from '@/components/PinGameButton';
+import BoxScore from '@/components/BoxScore';
 import { formatOddsByPref, oddsColorClass } from '@/lib/format-odds';
 import { useOddsFormat, setOddsFormatCache } from '@/lib/use-odds-format';
 import { canUseArbitrage } from '@/lib/entitlements';
@@ -786,6 +788,127 @@ function SportsbooksTab() {
   );
 }
 
+function PushNotificationsCard() {
+  const [supported, setSupported] = useState(true);
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [enabled, setEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [pinned, setPinned] = useState<any[]>([]);
+
+  const refreshPinned = useCallback(() => {
+    fetch('/api/games/pinned')
+      .then(r => (r.ok ? r.json() : { data: [] }))
+      .then(j => setPinned(Array.isArray(j?.data) ? j.data : []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { isPushSupported, getNotificationPermission } = await import('@/lib/push-client');
+      setSupported(isPushSupported());
+      setPermission(getNotificationPermission());
+      if (isPushSupported() && 'serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready.catch(() => null);
+        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        setEnabled(Boolean(sub));
+      }
+      refreshPinned();
+    })();
+  }, [refreshPinned]);
+
+  async function togglePush() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { ensurePushSubscription, removePushSubscription, getNotificationPermission } = await import('@/lib/push-client');
+      if (enabled) {
+        await removePushSubscription();
+        setEnabled(false);
+      } else {
+        const sub = await ensurePushSubscription();
+        setEnabled(Boolean(sub));
+      }
+      setPermission(getNotificationPermission());
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unpin(gameId: string) {
+    await fetch(`/api/games/${encodeURIComponent(gameId)}/pin`, { method: 'DELETE' });
+    refreshPinned();
+  }
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold mb-1">📲 Push notifications &amp; pinned scores</h3>
+      <p className="text-xs text-brand-muted mb-4">
+        Pin any game to your phone&apos;s pull-down shade to keep a live box score on screen, with a
+        big-plays feed on top. Works on Android and on installed PWAs.
+      </p>
+
+      {!supported ? (
+        <p className="text-sm text-brand-muted">
+          Push notifications aren&apos;t supported in this browser. On iPhone, install Valor Odds to your
+          Home Screen to enable them.
+        </p>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm font-medium">Browser push notifications</p>
+              <p className="text-xs text-brand-muted">
+                {permission === 'denied'
+                  ? 'Blocked — enable notifications in your browser settings.'
+                  : enabled
+                    ? 'Enabled on this device'
+                    : 'Enable to pin live scores'}
+              </p>
+            </div>
+            <button
+              onClick={togglePush}
+              disabled={busy || permission === 'denied'}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                enabled ? 'bg-brand-primary' : 'bg-brand-elevated'
+              } disabled:opacity-50`}>
+              <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                enabled ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium mb-2">Pinned games</p>
+            {pinned.length === 0 ? (
+              <p className="text-xs text-brand-muted">
+                No pinned games yet. Use the pin icon on any live or upcoming score to add one.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {pinned.map((g) => (
+                  <li key={g.game_id} className="flex items-center justify-between rounded-lg bg-brand-elevated px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {g.away_abbrev || g.away_team} @ {g.home_abbrev || g.home_team}
+                      </p>
+                      <p className="text-xs text-brand-muted">{g.sport}</p>
+                    </div>
+                    <button
+                      onClick={() => unpin(g.game_id)}
+                      className="ml-3 rounded-md px-2 py-1 text-xs text-brand-muted hover:text-white hover:bg-brand-bg">
+                      Unpin
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PreferencesTab({ userId }: { userId: string }) {
   const [prefs, setPrefs] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -940,6 +1063,9 @@ function PreferencesTab({ userId }: { userId: string }) {
         </div>
       </div>
 
+      {/* Push notifications & pinned games */}
+      <PushNotificationsCard />
+
       {/* Odds format */}
       <div className="card">
         <h3 className="font-semibold mb-3">💰 Odds format</h3>
@@ -1090,7 +1216,7 @@ function OverviewTab({ user }: { user: any }) {
 
 // ---------- Command Center (default landing) ----------
 
-function LiveScoresStrip() {
+function LiveScoresStrip({ onViewGame }: { onViewGame: (g: any) => void }) {
   const [games, setGames] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -1216,6 +1342,35 @@ function LiveScoresStrip() {
               {!g.is_live && !g.is_final && when && (
                 <p className="text-xs text-brand-muted mt-2">{when.toLocaleDateString([], { month: 'short', day: 'numeric' })}</p>
               )}
+              <div className="mt-2 flex items-center justify-between border-t border-brand-border/50 pt-2">
+                <button
+                  onClick={() =>
+                    onViewGame({
+                      gameId: g.game_id,
+                      sport: g.sport,
+                      homeTeam: g.home_team,
+                      awayTeam: g.away_team,
+                      espnEventId: g.espn_event_id,
+                    })
+                  }
+                  className="text-[10px] font-semibold uppercase tracking-wide text-brand-primaryText hover:text-white"
+                >
+                  Box score
+                </button>
+                <PinGameButton
+                  compact
+                  game={{
+                    gameId: g.game_id,
+                    sport: g.sport,
+                    homeTeam: g.home_team,
+                    awayTeam: g.away_team,
+                    homeAbbrev: g.home_team_abbrev,
+                    awayAbbrev: g.away_team_abbrev,
+                    espnEventId: g.espn_event_id,
+                    gameDate: g.game_date,
+                  }}
+                />
+              </div>
             </div>
           );
         })}
@@ -1303,7 +1458,7 @@ function OpportunityCards({ isPremiumOrVip, onJump }: { isPremiumOrVip: boolean;
   );
 }
 
-function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumOrVip: boolean; onJump: (t: Tab) => void }) {
+function CommandCenter({ user, isPremiumOrVip, onJump, onViewGame }: { user: any; isPremiumOrVip: boolean; onJump: (t: Tab) => void; onViewGame: (g: any) => void }) {
   const canChat = isPremiumOrVip;
   return (
     <div className="space-y-5">
@@ -1325,7 +1480,7 @@ function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumO
       <div className="grid grid-cols-1 lg:grid-cols-[1fr,420px] gap-5">
         {/* Left column — live scores + opportunity cards */}
         <div className="space-y-5 min-w-0">
-          <LiveScoresStrip />
+          <LiveScoresStrip onViewGame={onViewGame} />
           <OpportunityCards isPremiumOrVip={isPremiumOrVip} onJump={onJump} />
         </div>
 
@@ -1359,6 +1514,30 @@ function CommandCenter({ user, isPremiumOrVip, onJump }: { user: any; isPremiumO
 
 export default function DashboardClient({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState<Tab>('command-center');
+  // The game whose box score is open in the detail modal (if any).
+  const [viewGame, setViewGame] = useState<any | null>(null);
+
+  // Open the box-score modal when arriving via a notification link (?game=).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const gameId = new URLSearchParams(window.location.search).get('game');
+    if (!gameId) return;
+    fetch(`/api/games/pinned`)
+      .then(r => (r.ok ? r.json() : { data: [] }))
+      .then(j => {
+        const g = (Array.isArray(j?.data) ? j.data : []).find((x: any) => x.game_id === gameId);
+        if (g) {
+          setViewGame({
+            gameId: g.game_id,
+            sport: g.sport,
+            homeTeam: g.home_team,
+            awayTeam: g.away_team,
+            espnEventId: g.espn_event_id,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const isPremiumOrVip = user.tier === 'premium' || user.tier === 'vip' || user.isAdmin;
   // Basic and up may see the arbitrage finder (Basic is capped to 1 domestic +
@@ -1367,7 +1546,7 @@ export default function DashboardClient({ user }: { user: any }) {
 
   function renderTab() {
     switch (activeTab) {
-      case 'command-center': return <CommandCenter user={user} isPremiumOrVip={isPremiumOrVip} onJump={setActiveTab} />;
+      case 'command-center': return <CommandCenter user={user} isPremiumOrVip={isPremiumOrVip} onJump={setActiveTab} onViewGame={setViewGame} />;
       case 'overview':     return <OverviewTab user={user} />;
       case 'best-bets':    return <BestBetsTab />;
       case 'odds':         return <OddsTab />;
@@ -1439,6 +1618,41 @@ export default function DashboardClient({ user }: { user: any }) {
           {renderTab()}
         </div>
       </div>
+
+      {/* Box-score modal — opened from a pinned game or a notification link. */}
+      {viewGame && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setViewGame(null)}
+        >
+          <div
+            className="relative my-8 w-full max-w-3xl rounded-xl border border-brand-border bg-brand-bg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-xl border-b border-brand-border bg-brand-surface px-4 py-3">
+              <h2 className="text-sm font-semibold">
+                {viewGame.awayTeam} @ {viewGame.homeTeam}
+              </h2>
+              <button
+                onClick={() => setViewGame(null)}
+                className="rounded-md px-2 py-1 text-brand-muted hover:bg-brand-elevated hover:text-white"
+                aria-label="Close box score"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4">
+              <BoxScore
+                gameId={viewGame.gameId}
+                sport={viewGame.sport}
+                homeTeam={viewGame.homeTeam}
+                awayTeam={viewGame.awayTeam}
+                espnEventId={viewGame.espnEventId}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

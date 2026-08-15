@@ -47,7 +47,9 @@ const CSP_DIRECTIVES = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data: blob: https://cdn.discordapp.com https://images.unsplash.com https://www.google-analytics.com",
-  "connect-src 'self' https://*.stripe.com https://www.google-analytics.com https://region1.google-analytics.com",
+  // Push services (Google FCM, Mozilla autopush, Apple, Windows WNS) are the
+  // endpoints browsers POST to for Web Push; the SW also fetches our own API.
+  "connect-src 'self' https://*.stripe.com https://www.google-analytics.com https://region1.google-analytics.com https://fcm.googleapis.com https://*.push.apple.com https://*.notify.windows.com https://*.push.services.mozilla.com",
   "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
   // NOTE: `upgrade-insecure-requests` is intentionally omitted while the CSP
   // is delivered Report-Only — browsers ignore it in report-only mode and log
@@ -131,6 +133,18 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Cache-Control', value: 'public, max-age=120, s-maxage=120, stale-while-revalidate=300' },
           { key: 'Access-Control-Allow-Origin', value: '*' },
+        ],
+      },
+
+      // Service worker — must never be cached (the browser re-validates it on
+      // every navigation) and needs an explicit scope header so it can control
+      // the whole origin from /sw.js.
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
         ],
       },
 

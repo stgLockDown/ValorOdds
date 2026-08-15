@@ -5,6 +5,7 @@ import { SITE, orgJsonLd, websiteJsonLd, softwareAppJsonLd } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 import { WebVitals } from '@/components/WebVitals';
 import { ConsentManager } from '@/components/ConsentManager';
+import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
 
 /**
  * Self-hosted Inter via next/font. Eliminates the external roundtrip to
@@ -125,6 +126,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <ConsentManager />
         <WebVitals />
+        <ServiceWorkerRegistrar />
         {children}
       </body>
     </html>

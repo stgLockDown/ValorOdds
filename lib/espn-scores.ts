@@ -11,6 +11,8 @@
  */
 
 export type EspnScore = {
+  /** ESPN event id — used to fetch the box score / play-by-play summary. */
+  eventId: string | null;
   homeTeam: string;
   awayTeam: string;
   homeAbbrev: string | null;
@@ -29,7 +31,7 @@ export type EspnScore = {
   dateKey: string; // YYYY-MM-DD (UTC) of the event
 };
 
-const SPORT_PATHS: Record<string, string[]> = {
+export const SPORT_PATHS: Record<string, string[]> = {
   NBA: ['basketball/nba'],
   WNBA: ['basketball/wnba'],
   NCAAB: ['basketball/mens-college-basketball'],
@@ -204,6 +206,7 @@ function parseEvent(event: any): EspnScore | null {
   };
 
   return {
+    eventId: event?.id != null ? String(event.id) : null,
     homeTeam: home?.team?.displayName || home?.team?.name || 'Home',
     awayTeam: away?.team?.displayName || away?.team?.name || 'Away',
     homeAbbrev: home?.team?.abbreviation || home?.team?.shortDisplayName || null,

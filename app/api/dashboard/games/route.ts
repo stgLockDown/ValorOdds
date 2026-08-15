@@ -148,6 +148,8 @@ export async function GET(req: Request) {
 
     return {
       game_id: r.event_id,
+      // ESPN event id lets the client fetch the full box score + big plays.
+      espn_event_id: espn?.eventId ?? null,
       sport: (r.sport || '').toUpperCase(),
       home_team: r.home_team,
       home_team_abbrev: espn?.homeAbbrev ?? rd?.home_team_abbrev ?? null,

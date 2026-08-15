@@ -85,6 +85,15 @@ export const env = {
   stripeProductPremium: () => optional('STRIPE_PRODUCT_PREMIUM', 'prod_UPYSeWPotixwU2'),
   stripeProductVip: () => optional('STRIPE_PRODUCT_VIP', 'prod_UPYWwtSNL1LAqR'),
 
+  // Web Push (VAPID) — powers the notification system. The public key is also
+  // exposed to the browser via /api/notifications/vapid-key; the private key
+  // must stay server-only. Generate a pair with: npx web-push generate-vapid-keys
+  vapidPublicKey: () => optional('NEXT_PUBLIC_VAPID_PUBLIC_KEY', ''),
+  vapidPrivateKey: () => optional('VAPID_PRIVATE_KEY', ''),
+  // Contact URI embedded in the VAPID JWT (mailto: or https:). Push services
+  // use it to reach the operator if the sender misbehaves.
+  vapidSubject: () => optional('VAPID_SUBJECT', 'mailto:noreply@valorodds.com'),
+
   // Email
   resendApiKey: () => readOptionalWithWarning('RESEND_API_KEY', ''),
   resendFromEmail: () => optional('RESEND_FROM_EMAIL', 'Valor Odds <noreply@valorodds.com>'),
