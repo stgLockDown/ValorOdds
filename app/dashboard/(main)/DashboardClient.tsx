@@ -7,7 +7,7 @@ import {
   Shield, Users, Trophy, Target, Flame, DollarSign, KeyRound
 } from 'lucide-react';
 import Link from 'next/link';
-import ChatClient from './chat/ChatClient';
+import ChatClient from '../(sub)/chat/ChatClient';
 import PinGameButton from '@/components/PinGameButton';
 import BoxScore from '@/components/BoxScore';
 import { formatOddsByPref, oddsColorClass } from '@/lib/format-odds';

@@ -218,6 +218,147 @@ export async function triageTicket(
 
 // ---------- Database helpers ----------
 
+/**
+ * Conversation system prompt for the autonomous support agent.
+ *
+ * Unlike the one-shot triage prompt, this drives an ongoing conversation.
+ * The AI receives the full message history and must keep helping the user
+ * across multiple turns — answering follow-ups, clarifying, troubleshooting —
+ * until it genuinely cannot resolve the issue, at which point it escalates.
+ *
+ * The AI returns JSON with:
+ *   - reply:        the message to show the user
+ *   - escalate:     true when the AI has exhausted what it can do and a human
+ *                   must take over (billing actions, account changes it can't
+ *                   perform, persistent unresolved bugs, user explicitly asks
+ *                   for a human, etc.)
+ *   - resolved:     true when the user's issue is fully answered and the AI
+ *                   believes no further help is needed (ticket can auto-close)
+ */
+const CONVERSATION_SYSTEM_PROMPT = `You are the Valor Odds support assistant, carrying on an active conversation with a user who opened a support ticket.
+You have already sent an initial triage response. Now the user has replied. Your job is to KEEP THE CONVERSATION GOING and actually help them — do not stop after one message.
+
+Goals (in order):
+1. Directly answer the user's latest question or address their latest concern.
+2. Ask clarifying questions when you need more detail (steps to reproduce, screenshots, account email, etc.).
+3. Provide concrete, actionable steps the user can follow right now.
+4. Reference what was already discussed so the conversation feels continuous.
+
+Knowledge you can lean on about Valor Odds:
+- It is a sports betting analytics platform: live odds, best bets, arbitrage finder, steam moves, injury reports, player stats, and an AI analyst chat.
+- Tiers: free, basic, premium, vip. Arbitrage & steam moves & AI analyst chat are premium/vip features. Billing is managed at /account. Discord linking is at /account/link-discord. API access at /api-access/manage.
+- DiamondDraft is a fantasy draft game inside the platform.
+
+Escalation rules — set "escalate": true ONLY when:
+- The user explicitly asks for a human / "real person" / "agent".
+- The issue requires a server-side account change you cannot perform (refund, plan change, manual data fix, delete account).
+- You have asked for clarifying info twice and still cannot make progress.
+- It is a confirmed bug you cannot work around.
+
+Otherwise keep "escalate": false and continue helping.
+
+Resolution — set "resolved": true ONLY when the user has explicitly confirmed the issue is fixed or you have fully answered a one-shot question with no outstanding need. When resolved, end your reply warmly and let them know they can reopen the ticket anytime.
+
+Style:
+- Friendly, concise but complete. 2-6 sentences usually.
+- No markdown headings. Plain text with light formatting only.
+- Never invent features, prices, or policies you aren't sure about — say you'll have a team member confirm if unsure.
+
+Respond with valid JSON only, no markdown fences:
+{
+  "reply": "<your response to the user>",
+  "escalate": <true|false>,
+  "resolved": <true|false>
+}`;
+
+export interface ConversationReply {
+  reply: string;
+  escalate: boolean;
+  resolved: boolean;
+  provider: string;
+}
+
+function parseConversationJSON(raw: string): {
+  reply: string;
+  escalate: boolean;
+  resolved: boolean;
+} | null {
+  try {
+    let cleaned = raw.trim();
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+    }
+    const parsed = JSON.parse(cleaned);
+    if (!parsed.reply || typeof parsed.reply !== 'string') return null;
+    return {
+      reply: parsed.reply,
+      escalate: Boolean(parsed.escalate),
+      resolved: Boolean(parsed.resolved),
+    };
+  } catch {
+    // If JSON parse fails but there's substantial text, treat it as a plain reply
+    if (raw.trim().length > 20) {
+      return { reply: raw.trim(), escalate: false, resolved: false };
+    }
+    return null;
+  }
+}
+
+/**
+ * Generate a contextual AI reply in an ongoing support conversation.
+ *
+ * @param ticket    The ticket row (subject, category, tier context).
+ * @param history   Full ordered message history (role + content), newest last.
+ *                  The final entry is the user's just-sent reply.
+ * @returns         The AI reply + escalate/resolved flags, or null if no AI
+ *                  providers are configured.
+ */
+export async function conversationReply(
+  ticket: { subject: string; category: string },
+  history: Array<{ role: string; content: string }>
+): Promise<ConversationReply | null> {
+  const providers = buildProviders();
+  if (providers.length === 0) {
+    return null; // fallback mode — no AI keys, let a human handle it
+  }
+
+  // Build the message list for the LLM: system prompt + a compact context
+  // header + the running conversation (only user/ai/admin turns).
+  const conversation = history
+    .filter((m) => ['user', 'ai', 'admin'].includes(m.role))
+    .map((m) => ({
+      // Map our roles to standard chat roles. 'admin' becomes 'assistant' so
+      // the model treats prior human replies as authoritative context.
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content,
+    }));
+
+  const contextHeader = `Ticket subject: ${ticket.subject}\nTicket category: ${ticket.category}\n\nThis is an ongoing support conversation. Continue helping the user. Reply to their MOST RECENT message.`;
+
+  const messages = [
+    { role: 'system', content: CONVERSATION_SYSTEM_PROMPT },
+    { role: 'user', content: contextHeader },
+    ...conversation,
+  ];
+
+  for (const p of providers) {
+    const raw = await callProvider(p, messages);
+    if (!raw) continue;
+    const parsed = parseConversationJSON(raw);
+    if (!parsed) continue;
+
+    return {
+      reply: parsed.reply,
+      escalate: parsed.escalate,
+      resolved: parsed.resolved,
+      provider: p.name,
+    };
+  }
+
+  // All providers failed
+  return null;
+}
+
 export interface CreateTicketInput {
   userId: string;
   subject: string;
@@ -356,6 +497,28 @@ export async function addMessage(
       [ticketId]
     );
   }
+}
+
+/**
+ * Has a human (admin) already participated in this ticket's conversation?
+ * If so, the AI should NOT auto-reply — a human has taken over.
+ */
+export async function hasAdminReplied(ticketId: string): Promise<boolean> {
+  const result = await query<{ c: string }>(
+    `SELECT COUNT(*)::text AS c FROM web_support_messages
+     WHERE ticket_id = $1 AND role = 'admin'`,
+    [ticketId]
+  );
+  return parseInt(result.rows[0]?.c ?? '0', 10) > 0;
+}
+
+/**
+ * Did the user explicitly ask for a human / real person / agent?
+ * Used to short-circuit AI replies and escalate directly.
+ */
+export function userAskedForHuman(message: string): boolean {
+  const m = message.toLowerCase();
+  return /\b(human|real person|real agent|live agent|live person|talk to a person|talk to someone|human support|human help|agent please|speak to (?:a|an) (?:human|agent|person))\b/.test(m);
 }
 
 // ---------- Admin helpers ----------

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { LifeBuoy, Send, Ticket, MessageSquare, Bot, User, CheckCircle2, AlertCircle, ChevronLeft, RefreshCw, Type, Tag, FileText, Sparkles } from 'lucide-react';
 
 interface Ticket {
@@ -358,6 +358,8 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [aiTyping, setAiTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -378,24 +380,50 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
     fetchDetail();
   }, [fetchDetail]);
 
+  // Auto-scroll to the latest message whenever messages change.
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, aiTyping]);
+
   const handleReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reply.trim()) return;
     setSending(true);
+    setAiTyping(true);
+    // Optimistically show the user's message immediately.
+    const optimistic: Message = {
+      id: `tmp-${Date.now()}`,
+      role: 'user',
+      content: reply,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    const sentReply = reply;
+    setReply('');
     try {
       const res = await fetch(`/api/support/tickets/${ticketId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: reply }),
+        body: JSON.stringify({ message: sentReply }),
       });
       if (res.ok) {
-        setReply('');
-        fetchDetail();
+        const data = await res.json();
+        // The route returns the full updated message list (incl. the AI reply),
+        // so we can render it immediately without a second fetch.
+        if (data.messages) {
+          setMessages(data.messages);
+        }
+        if (data.escalated && ticket) {
+          setTicket({ ...ticket, status: 'open', escalated: true });
+        }
       }
     } catch {
-      // ignore
+      // ignore — the optimistic message remains; user can retry
     } finally {
       setSending(false);
+      setAiTyping(false);
     }
   };
 
@@ -440,6 +468,25 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
               </div>
             </div>
           ))}
+          {aiTyping && (
+            <div className="flex gap-3 flex-row-reverse">
+              <div className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-indigo-500/20">
+                <Bot className="h-4 w-4 text-indigo-300" />
+              </div>
+              <div className="rounded-xl p-3.5 bg-indigo-500/10 border border-indigo-500/20">
+                <div className="text-xs font-semibold mb-1 text-brand-muted flex items-center gap-2">
+                  AI Assistant
+                  <span className="font-normal text-brand-muted/70">typing…</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 

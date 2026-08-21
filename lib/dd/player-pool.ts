@@ -1,18 +1,26 @@
 /**
  * DiamondDraft — Player Pool Engine
  *
- * Generates sport-aware player pools for drafts from the existing
- * player_season_stats table. Computes rankings, ADP estimates, tiers,
- * and projected fantasy points based on the league's scoring config.
+ * Generates sport-aware player pools for drafts.
  *
- * The player pool is stored in dd_player_pool and used by the draft room
- * to show available players, rankings, and projections.
+ * PRIMARY SOURCE: ESPN public rosters (via `lib/dd/espn-pool.ts`). Every NFL
+ * and MLB team roster is fetched, filtered to fantasy-relevant positions, and
+ * ranked with a calibrated prior + curated stars overlay so elite players sort
+ * to the top. This replaced the old `player_season_stats` source, which was
+ * truncated (94 rows), preseason-only (1-2 games_played), and had 63/94 rows
+ * with empty positions — causing missing + mis-ranked players in the draft.
+ *
+ * FALLBACK: if ESPN is unreachable, we fall back to the DB-based stats source
+ * so the draft still works (just less accurate).
+ *
+ * The player pool is stored in dd_player_pool and used by the draft room.
  */
 
 import { query, queryOne, tx } from '@/lib/db';
 import type { Sport, ScoringConfig } from './presets';
 import { getScoringPreset, getRosterPreset } from './presets';
 import { scoreStatLine } from './scoring';
+import { fetchEspnPool } from './espn-pool';
 
 // ──────────────────────────────────────────────
 // Types
@@ -218,70 +226,98 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
   seasonYear: number;
   count: number;
   topPlayers: PlayerPoolEntry[];
+  source: 'espn' | 'db-fallback';
 }> {
   const { sport, seasonYear, scoringPreset } = opts;
   const limit = opts.limit ?? (sport === 'NFL' ? 400 : 500);
   const scoringConfig = getScoringPreset(sport, scoringPreset);
 
-  // Fetch season stats from the DB
-  const stats = await query<SeasonStatRow>(
-    `SELECT player_name, team_name, position, games_played,
-            avg_points::text, avg_yards::text, avg_touchdowns::text,
-            avg_hits::text, avg_home_runs::text, avg_rbis::text,
-            avg_saves::text, avg_strikeouts::text,
-            avg_fantasy_score::text, total_fantasy_score::text
-     FROM player_season_stats
-     WHERE sport = $1
-     ORDER BY COALESCE(avg_fantasy_score, 0) DESC
-     LIMIT $2`,
-    [sport, limit * 2] // fetch more than needed, filter after scoring
-  );
+  let entries: PlayerPoolEntry[] = [];
+  let source: 'espn' | 'db-fallback' = 'espn';
 
-  if (stats.rows.length === 0) {
-    return { sport, seasonYear, count: 0, topPlayers: [] };
+  // ── PRIMARY: ESPN roster-based pool ──────────────────────────────────────
+  try {
+    const espn = await fetchEspnPool(sport, seasonYear, scoringConfig, limit);
+    if (espn.count > 0) {
+      entries = espn.players.map((p) => ({
+        seasonYear,
+        sport,
+        playerName: p.playerName,
+        team: p.team,
+        position: p.position,
+        eligiblePos: p.eligiblePos,
+        adp: null,
+        rank: 0,
+        tier: 1,
+        projection: p.projection,
+        projectedPoints: p.projectedPoints,
+        zScores: null,
+        isRookie: p.isRookie,
+        injuryStatus: p.injuryStatus,
+      }));
+      source = 'espn';
+    }
+  } catch (err) {
+    console.error('[player-pool] ESPN fetch failed, falling back to DB stats:', err);
   }
 
-  // Build player entries with projections and fantasy points
-  const entries: PlayerPoolEntry[] = stats.rows.map((row) => {
-    const position = mapPosition(sport, row.position);
-    const projection = buildProjection(sport, row);
-    const scored = scoreStatLine(sport, projection, scoringConfig);
+  // ── FALLBACK: DB season-stats pool (only if ESPN produced nothing) ───────
+  if (entries.length === 0) {
+    source = 'db-fallback';
+    const stats = await query<SeasonStatRow>(
+      `SELECT player_name, team_name, position, games_played,
+              avg_points::text, avg_yards::text, avg_touchdowns::text,
+              avg_hits::text, avg_home_runs::text, avg_rbis::text,
+              avg_saves::text, avg_strikeouts::text,
+              avg_fantasy_score::text, total_fantasy_score::text
+       FROM player_season_stats
+       WHERE sport = $1
+       ORDER BY COALESCE(avg_fantasy_score, 0) DESC
+       LIMIT $2`,
+      [sport, limit * 2]
+    );
 
-    // Determine eligible positions
-    let eligiblePos: string[] = [];
-    if (position) {
-      eligiblePos = [position];
-      // FLEX eligibility for NFL skill players
-      if (sport === 'NFL' && ['RB', 'WR', 'TE'].includes(position)) {
-        eligiblePos.push('FLEX');
-      }
-      // Super Flex eligibility for QB
-      if (sport === 'NFL' && position === 'QB') {
-        eligiblePos.push('SFLEX');
-      }
-      // UTIL eligibility for MLB batters
-      if (sport === 'MLB' && ['C', '1B', '2B', '3B', 'SS', 'OF', 'DH'].includes(position)) {
-        eligiblePos.push('UTIL');
-      }
-    }
+    entries = stats.rows.map((row) => {
+      const position = mapPosition(sport, row.position);
+      const projection = buildProjection(sport, row);
+      const scored = scoreStatLine(sport, projection, scoringConfig);
 
-    return {
-      seasonYear,
-      sport,
-      playerName: row.player_name,
-      team: row.team_name,
-      position,
-      eligiblePos,
-      adp: null, // computed below
-      rank: 0,   // computed below
-      tier: 1,   // computed below
-      projection,
-      projectedPoints: scored.fantasyPoints,
-      zScores: null,
-      isRookie: false, // would need draft data to determine
-      injuryStatus: null,
-    };
-  });
+      let eligiblePos: string[] = [];
+      if (position) {
+        eligiblePos = [position];
+        if (sport === 'NFL' && ['RB', 'WR', 'TE'].includes(position)) {
+          eligiblePos.push('FLEX');
+        }
+        if (sport === 'NFL' && position === 'QB') {
+          eligiblePos.push('SFLEX');
+        }
+        if (sport === 'MLB' && ['C', '1B', '2B', '3B', 'SS', 'OF', 'DH'].includes(position)) {
+          eligiblePos.push('UTIL');
+        }
+      }
+
+      return {
+        seasonYear,
+        sport,
+        playerName: row.player_name,
+        team: row.team_name,
+        position,
+        eligiblePos,
+        adp: null,
+        rank: 0,
+        tier: 1,
+        projection,
+        projectedPoints: scored.fantasyPoints,
+        zScores: null,
+        isRookie: false,
+        injuryStatus: null,
+      };
+    });
+  }
+
+  if (entries.length === 0) {
+    return { sport, seasonYear, count: 0, topPlayers: [], source };
+  }
 
   // Sort by projected points (descending) and assign ranks
   entries.sort((a, b) => b.projectedPoints - a.projectedPoints);
@@ -346,6 +382,7 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
     seasonYear,
     count: finalEntries.length,
     topPlayers: finalEntries.slice(0, 20),
+    source,
   };
 }
 
