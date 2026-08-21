@@ -205,13 +205,38 @@ export default function AdminNotificationsClient() {
       });
       const data = await r.json();
       if (r.ok) {
-        if (data.reason) {
-          addLog('info', `Dispatcher: ${data.reason}.`);
-        } else {
-          addLog('success', `Dispatcher delivered to ${data.dispatched} user(s) across ${data.events?.length ?? 0} event(s).`);
+        const eventCount = data.events?.length ?? 0;
+        if (data.dispatched > 0) {
+          addLog('success', `Dispatcher delivered to ${data.dispatched} user(s) across ${eventCount} event(s).`);
           (data.events ?? []).forEach((ev: any) =>
             addLog('info', `  • ${ev.event}: ${ev.scoreLine ?? ''} (${ev.status ?? ''}) → ${ev.users} user(s)`),
           );
+        } else if (data.reason) {
+          addLog('info', `Dispatcher: ${data.reason}.`);
+        }
+        // Show per-pin diagnostics so the admin can see exactly why each pinned
+        // game did or did not produce a push.
+        const pins = data.pins ?? [];
+        if (pins.length > 0) {
+          addLog('info', `Pinned games (${pins.length}):`);
+          const outcomeLabel: Record<string, string> = {
+            pushed: 'PUSHED',
+            pre_game: 'pre-game (no push yet)',
+            no_espn_match: 'no ESPN match',
+            no_summary: 'ESPN summary unavailable',
+            no_subscriptions: 'no push subscriptions for this user',
+          };
+          for (const pin of pins) {
+            const label = outcomeLabel[pin.outcome] ?? pin.outcome;
+            const matchInfo = pin.espnEventId ? `espn:${pin.espnEventId}` : 'espn:—';
+            const detail = pin.detail ? ` · ${pin.detail}` : '';
+            const kind: LogEntry['kind'] =
+              pin.outcome === 'pushed' ? 'success' : pin.outcome === 'pre_game' ? 'info' : 'error';
+            addLog(
+              kind,
+              `  • [${pin.sport.toUpperCase()}] ${pin.awayTeam} @ ${pin.homeTeam} → ${label} (${matchInfo}${detail})`,
+            );
+          }
         }
       } else {
         addLog('error', `Dispatch failed: ${data?.error ?? r.status}`);

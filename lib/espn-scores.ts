@@ -72,8 +72,37 @@ const CITY_ABBREVIATIONS: [RegExp, string][] = [
   [/\bstl\b/g, 'st louis'],
   [/\btex\b/g, 'texas'],
   [/\bariz\b/g, 'arizona'],
+  [/\bari\b/g, 'arizona'],
   [/\bwash\b/g, 'washington'],
   [/\bsd\b/g, 'san diego'],
+  // Additional MLB city abbreviations used by the odds feed but missing
+  // from the original list. Without these, "PIT Pirates" normalizes to
+  // "pitpirates" while ESPN's "Pittsburgh Pirates" normalizes to
+  // "pittsburghpirates" — they never match, so ESPN score enrichment
+  // (and the notification dispatcher's ESPN event-id resolution) silently
+  // skips these games.
+  [/\bpit\b/g, 'pittsburgh'],
+  [/\bbal\b/g, 'baltimore'],
+  [/\bmia\b/g, 'miami'],
+  [/\bmil\b/g, 'milwaukee'],
+  [/\bchi\b/g, 'chicago'],
+  [/\bcle\b/g, 'cleveland'],
+  [/\bcol\b/g, 'colorado'],
+  [/\bdet\b/g, 'detroit'],
+  [/\bhou\b/g, 'houston'],
+  [/\bmin\b/g, 'minnesota'],
+  [/\bphi\b/g, 'philadelphia'],
+  [/\bsea\b/g, 'seattle'],
+  [/\btor\b/g, 'toronto'],
+  [/\batl\b/g, 'atlanta'],
+  [/\bbos\b/g, 'boston'],
+  [/\bcin\b/g, 'cincinnati'],
+  [/\bhst\b/g, 'houston'],
+  [/\bnym\b/g, 'new york'],    // NY Mets
+  [/\bnyy\b/g, 'new york'],    // NY Yankees
+  [/\bchc\b/g, 'chicago'],     // Chi Cubs
+  [/\bcws\b/g, 'chicago'],     // Chi White Sox
+  [/\bla a\b/g, 'los angeles'],  // LA Angels (edge case)
 ];
 
 /** Normalize a team name for fuzzy matching across data sources. */
