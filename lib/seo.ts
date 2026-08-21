@@ -15,9 +15,9 @@ export const SITE = {
   legalName: 'Valor Odds',
   url: 'https://valorodds.com',
   description:
-    'Real-time sports arbitrage opportunities, AI-powered player props analysis, steam-move alerts, live injury reports, and live scores across MLB, NFL, NBA, NHL, NCAA, soccer, UFC, and more. Professional sports analytics on the web and Discord, with a developer API and a free betting education hub.',
+    'Real-time sports arbitrage opportunities, AI-powered player props analysis, steam-move alerts, live injury reports, and live scores across MLB, NFL, NBA, NHL, NCAA, soccer, UFC, and more. Plus DiamondDraft — free multi-sport fantasy leagues with live drafts, roto scoring, and gamification. Professional sports analytics on the web and Discord, with a developer API and a free betting education hub.',
   shortDescription:
-    'Real-time arbitrage, AI player props, steam moves, injury alerts, live scores, and a betting education hub.',
+    'Real-time arbitrage, AI player props, steam moves, injury alerts, live scores, DiamondDraft fantasy leagues, and a betting education hub.',
   locale: 'en_US',
   twitter: '@valorodds',
   keywords: [
@@ -71,7 +71,17 @@ export const SITE = {
     // Use case
     'discord betting bot',
     'betting discord server',
+    // Fantasy / DiamondDraft
+    'fantasy sports',
     'fantasy sports draft',
+    'fantasy baseball',
+    'fantasy football',
+    'fantasy basketball',
+    'fantasy league',
+    'roto fantasy',
+    'live fantasy draft',
+    'diamonddraft',
+    'diamond draft',
   ],
   sameAs: [
     'https://twitter.com/valorodds',
@@ -249,6 +259,36 @@ export function softwareAppJsonLd() {
       ratingValue: '4.8',
       reviewCount: '250',
     },
+  };
+}
+
+/**
+ * Structured data for the DiamondDraft fantasy-sports platform.
+ * Separate from softwareAppJsonLd() because DiamondDraft is a distinct
+ * product surface with its own URL, feature set, and target queries
+ * (fantasy draft, roto scoring, gamification).
+ */
+export function diamondDraftJsonLd() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: 'DiamondDraft',
+    url: `${SITE.url}/dd`,
+    applicationCategory: 'Game',
+    applicationSubCategory: 'Fantasy Sports',
+    operatingSystem: 'Web, iOS, Android',
+    description:
+      'Free multi-sport fantasy leagues with live snake drafts, roto scoring, XP and badges, gamification, and commissioner tools. Create or join fantasy baseball, football, and basketball leagues.',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    featureList: [
+      'Live snake drafts',
+      'Roto (rotisserie) scoring',
+      'XP, levels, and badges',
+      'Commissioner controls',
+      'Multi-sport: MLB, NFL, NBA',
+      'Invite-code league joining',
+    ],
+    publisher: { '@id': `${SITE.url}/#organization` },
   };
 }
 

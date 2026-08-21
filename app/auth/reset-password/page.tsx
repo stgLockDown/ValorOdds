@@ -1,6 +1,11 @@
+import type { Metadata } from 'next';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import ResetClient from './ResetClient';
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export default function ResetPage({ searchParams }: { searchParams: { token?: string } }) {
   const token = searchParams.token ?? '';

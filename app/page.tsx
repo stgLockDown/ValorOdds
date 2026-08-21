@@ -12,7 +12,7 @@ import { formatTeamName } from '@/lib/espn-scores';
 export const metadata: Metadata = buildMetadata({
   title: 'Valor Odds — AI-Powered Sports Arbitrage & Player Props',
   description:
-    'Real-time sports arbitrage opportunities, AI-powered player props analysis, steam-move alerts, live injury reports, and live scores across MLB, NFL, NBA, NHL, NCAA, soccer, UFC, and more. Free betting education hub and developer API. Start finding edges in seconds.',
+    'Real-time sports arbitrage opportunities, AI-powered player props analysis, steam-move alerts, live injury reports, and live scores across MLB, NFL, NBA, NHL, NCAA, soccer, UFC, and more. Plus DiamondDraft free fantasy leagues and a betting education hub. Developer API available. Start finding edges in seconds.',
   path: '/',
   keywords: [
     'sports arbitrage',
@@ -28,6 +28,9 @@ export const metadata: Metadata = buildMetadata({
     'live sports scores',
     'sharp sports bettor tools',
     'sports betting glossary',
+    'fantasy sports',
+    'fantasy sports draft',
+    'diamonddraft',
     'sports data api',
   ],
 });
@@ -170,6 +173,54 @@ export default async function HomePage() {
               </div>
             );
           })}
+        </div>
+      </section>
+
+      {/* DiamondDraft — free fantasy sports leagues */}
+      <section id="diamonddraft" className="container-px mx-auto max-w-7xl py-10 sm:py-16">
+        <div className="rounded-2xl border border-brand-primary/30 bg-gradient-to-br from-brand-elevated to-brand-surface p-8 sm:p-12">
+          <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
+            <div>
+              <span className="badge-primary">New · Free to play</span>
+              <h2 className="mt-4 text-2xl sm:text-4xl font-bold">
+                DiamondDraft — Fantasy leagues, reimagined
+              </h2>
+              <p className="mt-3 text-brand-muted">
+                Create or join free multi-sport fantasy leagues with live snake drafts, roto
+                scoring, XP and badges, and gamification. Fantasy baseball, football, and
+                basketball with real-time draft rooms and commissioner tools.
+              </p>
+              <ul className="mt-6 space-y-2 text-sm text-brand-muted">
+                <li className="flex gap-2 items-start">
+                  <Check className="h-4 w-4 text-brand-success mt-0.5 shrink-0" />
+                  Live snake drafts with real-time pick tracking
+                </li>
+                <li className="flex gap-2 items-start">
+                  <Check className="h-4 w-4 text-brand-success mt-0.5 shrink-0" />
+                  Roto (rotisserie) scoring with standings
+                </li>
+                <li className="flex gap-2 items-start">
+                  <Check className="h-4 w-4 text-brand-success mt-0.5 shrink-0" />
+                  XP, levels, and badges for league engagement
+                </li>
+                <li className="flex gap-2 items-start">
+                  <Check className="h-4 w-4 text-brand-success mt-0.5 shrink-0" />
+                  Invite-code league joining — play with friends
+                </li>
+              </ul>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/dd" className="btn-primary px-6 py-3">
+                  Explore DiamondDraft
+                </Link>
+                <Link href="/dd/create-league" className="btn-secondary px-6 py-3">
+                  Create a league
+                </Link>
+              </div>
+            </div>
+            <div className="flex items-center justify-center">
+              <Trophy className="h-32 w-32 text-brand-primary/40" />
+            </div>
+          </div>
         </div>
       </section>
 

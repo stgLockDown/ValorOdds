@@ -1,7 +1,12 @@
+import type { Metadata } from 'next';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { consumeEmailVerification } from '@/lib/tokens';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export default async function VerifyPage({ searchParams }: { searchParams: { token?: string } }) {
   const token = searchParams.token ?? '';

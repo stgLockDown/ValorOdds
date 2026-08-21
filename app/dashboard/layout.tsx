@@ -1,3 +1,17 @@
+import type { Metadata } from 'next';
+
+/**
+ * Root layout for `/dashboard/*`.
+ *
+ * The dashboard is authenticated-only and must never appear in search
+ * results. `noindex, nofollow` is set here as the authoritative signal to
+ * search engines, complementing the robots.txt disallow rule. This covers
+ * every page under /dashboard/ including the route-group sub-pages.
+ */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
+
 /**
  * Root layout for `/dashboard/*`.
  *

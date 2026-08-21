@@ -1,8 +1,13 @@
+import type { Metadata } from 'next';
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Navbar from '@/components/MarketingNavbar';
 import Footer from '@/components/Footer';
 import ApiManageClient from './ApiManageClient';
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 export const dynamic = 'force-dynamic';
 

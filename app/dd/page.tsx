@@ -1,15 +1,36 @@
+import type { Metadata } from 'next';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { getGamificationProfile, getLeaderboard } from '@/lib/dd/gamification';
 import { LEVEL_TITLES, xpForLevel } from '@/lib/dd/gamification';
+import { buildMetadata, diamondDraftJsonLd, breadcrumbJsonLd, SITE } from '@/lib/seo';
+import { JsonLd } from '@/components/JsonLd';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import DDHomeClient from './DDHomeClient';
 
-export const metadata = {
-  title: 'DiamondDraft — Fantasy Leagues',
-  description: 'Multi-sport fantasy leagues with live drafts, roto scoring, and gamification.',
-};
+export const metadata: Metadata = buildMetadata({
+  title: 'DiamondDraft — Free Fantasy Sports Leagues',
+  description:
+    'Create or join free multi-sport fantasy leagues with live snake drafts, roto scoring, XP and badges, and gamification. Fantasy baseball, football, and basketball with commissioner tools and real-time draft rooms.',
+  path: '/dd',
+  keywords: [
+    'fantasy sports',
+    'fantasy sports draft',
+    'fantasy baseball',
+    'fantasy football',
+    'fantasy basketball',
+    'fantasy league',
+    'roto fantasy',
+    'live fantasy draft',
+    'snake draft',
+    'diamonddraft',
+    'diamond draft',
+    'fantasy commissioner',
+  ],
+  image: `${SITE.url}/api/og?title=${encodeURIComponent('DiamondDraft')}&subtitle=${encodeURIComponent('Free Fantasy Sports Leagues')}`,
+  imageAlt: 'DiamondDraft — free fantasy sports leagues with live drafts',
+});
 
 export default async function DDHomePage() {
   const session = await auth();
@@ -17,6 +38,11 @@ export default async function DDHomePage() {
   if (!session?.user?.id) {
     return (
       <>
+        <JsonLd data={diamondDraftJsonLd()} />
+        <JsonLd data={breadcrumbJsonLd([
+          { name: 'Home', url: SITE.url },
+          { name: 'DiamondDraft', url: `${SITE.url}/dd` },
+        ])} />
         <Navbar />
         <div className="mx-auto max-w-4xl px-4 py-20 text-center">
           <h1 className="text-4xl font-bold text-brand-text mb-4">DiamondDraft</h1>
@@ -121,6 +147,11 @@ export default async function DDHomePage() {
 
   return (
     <>
+      <JsonLd data={diamondDraftJsonLd()} />
+      <JsonLd data={breadcrumbJsonLd([
+        { name: 'Home', url: SITE.url },
+        { name: 'DiamondDraft', url: `${SITE.url}/dd` },
+      ])} />
       <Navbar />
       <DDHomeClient
         userId={session.user.id}
