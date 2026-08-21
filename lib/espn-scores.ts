@@ -227,7 +227,10 @@ function parseEvent(event: any): EspnScore | null {
 }
 
 async function fetchScoreboard(path: string, dates: string): Promise<EspnScore[]> {
-  const base = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard`;
+  // Use the site.web.api.espn.com mirror — the site.api.espn.com host is
+  // behind an Akamai CDN that intermittently returns 403 to server-side
+  // requests. The web mirror is the same public API and has no such block.
+  const base = `https://site.web.api.espn.com/apis/site/v2/sports/${path}/scoreboard`;
   try {
     let res = await fetch(`${base}?dates=${dates}`, {
       // Always fetch fresh scores; the route is force-dynamic anyway.

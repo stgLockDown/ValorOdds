@@ -43,16 +43,24 @@ export async function GET(req: Request) {
 
   const where = `WHERE ${conds.join(' AND ')}`;
 
-  const result = await query(
-    `SELECT DISTINCT ON (event_id)
-            event_id, sport, home_team, away_team,
-            commence_time, num_sportsbooks, odds_summary, raw_data, fetched_at
-     FROM custom_api_events
-     ${where}
-     ORDER BY event_id, fetched_at DESC
-     LIMIT 200`,
-    params,
-  );
+  // Wrapped in try/catch so a transient DB error (pool exhaustion, cold
+  // start, connection timeout) returns an empty games list instead of a 500.
+  let result: { rows: any[] } = { rows: [] };
+  try {
+    result = await query(
+      `SELECT DISTINCT ON (event_id)
+              event_id, sport, home_team, away_team,
+              commence_time, num_sportsbooks, odds_summary, raw_data, fetched_at
+       FROM custom_api_events
+       ${where}
+       ORDER BY event_id, fetched_at DESC
+       LIMIT 200`,
+      params,
+    );
+  } catch (err) {
+    console.error('[api/dashboard/games] Failed to fetch custom_api_events:', err);
+    return NextResponse.json({ data: [] });
+  }
 
   // Two upstream feed providers occasionally mint different `event_id`s for
   // the exact same real-world matchup (same teams, same kickoff time), which
@@ -93,18 +101,22 @@ export async function GET(req: Request) {
 
   const liveScores: Record<string, any[]> = {};
   if (liveGameIds.length > 0) {
-    const scores = await query(
-      `SELECT game_id, scoring_team, points_scored, score_type, description, recorded_at
-       FROM live_scores
-       WHERE game_id = ANY($1)
-         AND recorded_at > NOW() - INTERVAL '4 hours'
-       ORDER BY recorded_at DESC
-       LIMIT 100`,
-      [liveGameIds],
-    );
-    for (const s of scores.rows) {
-      if (!liveScores[s.game_id]) liveScores[s.game_id] = [];
-      liveScores[s.game_id].push(s);
+    try {
+      const scores = await query(
+        `SELECT game_id, scoring_team, points_scored, score_type, description, recorded_at
+         FROM live_scores
+         WHERE game_id = ANY($1)
+           AND recorded_at > NOW() - INTERVAL '4 hours'
+         ORDER BY recorded_at DESC
+         LIMIT 100`,
+        [liveGameIds],
+      );
+      for (const s of scores.rows) {
+        if (!liveScores[s.game_id]) liveScores[s.game_id] = [];
+        liveScores[s.game_id].push(s);
+      }
+    } catch (err) {
+      console.error('[api/dashboard/games] Failed to fetch live_scores:', err);
     }
   }
 
@@ -126,8 +138,9 @@ export async function GET(req: Request) {
   };
   try {
     espnIndex = await buildEspnScoreIndex(sportsInResult);
-  } catch {
-    // keep the no-op fallback index
+  } catch (err) {
+    // ESPN enrichment is best-effort — keep the no-op fallback index.
+    console.error('[api/dashboard/games] ESPN score enrichment failed:', err);
   }
 
   const data = result.rows.map((r: any) => {

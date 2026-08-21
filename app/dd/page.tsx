@@ -32,22 +32,34 @@ export default async function DDHomePage() {
     );
   }
 
-  // Fetch user's leagues across both sports
-  const leaguesRes = await query<{
+  // Fetch user's leagues across both sports.
+  // Wrapped in try/catch so a transient DB error (pool exhaustion, cold
+  // start, connection timeout) degrades gracefully to an empty league list
+  // instead of crashing the whole page with a 500.
+  let leaguesRes: { rows: Array<{
     id: string; name: string; sport: string; format: string; num_teams: number;
     status: string; season_year: number; team_name: string; is_commissioner: boolean;
     draft_position: number | null; member_count: string; invite_code: string;
-  }>(
-    `SELECT l.id::text, l.name, l.sport, l.format, l.num_teams, l.status,
-            l.season_year, m.team_name, m.is_commissioner, m.draft_position,
-            (SELECT COUNT(*)::text FROM dd_league_members lm WHERE lm.league_id = l.id) AS member_count,
-            l.invite_code
-     FROM dd_leagues l
-     JOIN dd_league_members m ON m.league_id = l.id
-     WHERE m.user_id = $1
-     ORDER BY l.created_at DESC`,
-    [BigInt(session.user.id)]
-  );
+  }> } = { rows: [] };
+  try {
+    leaguesRes = await query<{
+      id: string; name: string; sport: string; format: string; num_teams: number;
+      status: string; season_year: number; team_name: string; is_commissioner: boolean;
+      draft_position: number | null; member_count: string; invite_code: string;
+    }>(
+      `SELECT l.id::text, l.name, l.sport, l.format, l.num_teams, l.status,
+              l.season_year, m.team_name, m.is_commissioner, m.draft_position,
+              (SELECT COUNT(*)::text FROM dd_league_members lm WHERE lm.league_id = l.id) AS member_count,
+              l.invite_code
+       FROM dd_leagues l
+       JOIN dd_league_members m ON m.league_id = l.id
+       WHERE m.user_id = $1
+       ORDER BY l.created_at DESC`,
+      [BigInt(session.user.id)]
+    );
+  } catch (err) {
+    console.error('[dd/page] Failed to fetch user leagues:', err);
+  }
 
   // Fetch gamification profile
   let profile: Awaited<ReturnType<typeof getGamificationProfile>> | null = null;
