@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TrendingUp, Zap, Activity, AlertTriangle, BarChart2,
   Star, Settings, MessageSquare, RefreshCw, ChevronRight, ChevronLeft,
-  Shield, Users, Trophy, Target, Flame, DollarSign, KeyRound
+  Shield, Users, Trophy, Target, Flame, DollarSign, KeyRound, Headphones
 } from 'lucide-react';
 import Link from 'next/link';
 import ChatClient from '../(sub)/chat/ChatClient';
@@ -1595,6 +1595,20 @@ export default function DashboardClient({ user }: { user: any }) {
             {TABS.map(({ id, label, icon, premium }) => (
               <TabButton key={id} id={id} label={label} icon={icon} premium={premium} />
             ))}
+            {user.isAdmin && (
+              <div className="pt-3 mt-3 border-t border-brand-border">
+                <p className="px-3.5 pb-2 text-xs text-amber-300/80 uppercase tracking-wider font-semibold">Admin Tools</p>
+                <Link href="/admin" className="flex items-center gap-3 rounded-lg px-3.5 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors">
+                  <Shield className="h-4 w-4" /> Admin Panel
+                </Link>
+                <Link href="/admin/support" className="flex items-center gap-3 rounded-lg px-3.5 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors">
+                  <Headphones className="h-4 w-4" /> Support Tickets
+                </Link>
+                <Link href="/admin/api-access" className="flex items-center gap-3 rounded-lg px-3.5 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors">
+                  <KeyRound className="h-4 w-4" /> API Monetization
+                </Link>
+              </div>
+            )}
             <div className="pt-3 mt-3 border-t border-brand-border px-3.5">
               <div className="flex items-center gap-2 text-xs">
                 <Badge text={user.tier?.toUpperCase() || 'FREE'} color={tierBadgeColor(user.tier)} />
@@ -1610,6 +1624,19 @@ export default function DashboardClient({ user }: { user: any }) {
             {TABS.map(({ id, label, icon, premium }) => (
               <TabButton key={id} id={id} label={label} icon={icon} premium={premium} />
             ))}
+            {user.isAdmin && (
+              <>
+                <Link href="/admin" className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 transition-colors whitespace-nowrap">
+                  <Shield className="h-4 w-4" /> Admin
+                </Link>
+                <Link href="/admin/support" className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 transition-colors whitespace-nowrap">
+                  <Headphones className="h-4 w-4" /> Support
+                </Link>
+                <Link href="/admin/api-access" className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 transition-colors whitespace-nowrap">
+                  <KeyRound className="h-4 w-4" /> API
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
