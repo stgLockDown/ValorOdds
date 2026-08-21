@@ -1476,35 +1476,32 @@ function CommandCenter({ user, isPremiumOrVip, onJump, onViewGame }: { user: any
         </div>
       </div>
 
-      {/* Two-column desktop layout: live data on the left, AI chat on the right */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr,420px] gap-5">
-        {/* Left column — live scores + opportunity cards */}
-        <div className="space-y-5 min-w-0">
-          <LiveScoresStrip onViewGame={onViewGame} />
-          <OpportunityCards isPremiumOrVip={isPremiumOrVip} onJump={onJump} />
-        </div>
+      {/* Stacked layout: live data (full width) on top, AI chat (full width) below */}
 
-        {/* Right column — AI chat (sticky on desktop so it stays visible while scrolling) */}
-        <div className="min-w-0">
-          <div className="card p-0 overflow-hidden lg:sticky lg:top-[5.5rem] flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <h3 className="font-semibold flex items-center gap-2"><MessageSquare className="h-4 w-4 text-brand-primary" /> Ask the AI Analyst</h3>
-              <button onClick={() => onJump('chat')} className="text-xs text-brand-primary flex items-center gap-1 hover:underline">
-                Full screen <ChevronRight className="h-3 w-3" />
-              </button>
-            </div>
-            {canChat ? (
-              <ChatClient embedded user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />
-            ) : (
-              <div className="p-6 text-center">
-                <MessageSquare className="h-10 w-10 mx-auto mb-3 text-brand-muted" />
-                <h4 className="font-semibold mb-1">AI chat is a Premium feature</h4>
-                <p className="text-sm text-brand-muted mb-4">Upgrade to ask the AI about lines, matchups, injuries and arbitrage in real time.</p>
-                <a href="/pricing" className="inline-block px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-semibold">Upgrade</a>
-              </div>
-            )}
-          </div>
+      {/* Live scores + opportunity cards — full page width */}
+      <div className="space-y-5">
+        <LiveScoresStrip onViewGame={onViewGame} />
+        <OpportunityCards isPremiumOrVip={isPremiumOrVip} onJump={onJump} />
+      </div>
+
+      {/* Ask the AI Analyst — full page width, below the live data */}
+      <div className="card p-0 overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <h3 className="font-semibold flex items-center gap-2"><MessageSquare className="h-4 w-4 text-brand-primary" /> Ask the AI Analyst</h3>
+          <button onClick={() => onJump('chat')} className="text-xs text-brand-primary flex items-center gap-1 hover:underline">
+            Full screen <ChevronRight className="h-3 w-3" />
+          </button>
         </div>
+        {canChat ? (
+          <ChatClient embedded user={{ id: user.id, email: user.email, tier: user.tier || 'free', discordId: user.discordId || null }} />
+        ) : (
+          <div className="p-6 text-center">
+            <MessageSquare className="h-10 w-10 mx-auto mb-3 text-brand-muted" />
+            <h4 className="font-semibold mb-1">AI chat is a Premium feature</h4>
+            <p className="text-sm text-brand-muted mb-4">Upgrade to ask the AI about lines, matchups, injuries and arbitrage in real time.</p>
+            <a href="/pricing" className="inline-block px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-semibold">Upgrade</a>
+          </div>
+        )}
       </div>
     </div>
   );

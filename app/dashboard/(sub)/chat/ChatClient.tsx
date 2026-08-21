@@ -381,9 +381,11 @@ export default function ChatClient({
 
   // When embedded in the Command Center, we render full-height and let the
   // parent card control the outer chrome. When standalone (chat tab) we use
-  // the viewport height minus navbar.
+  // the viewport height minus navbar. Full-width embedded gets a generous
+  // height now that it sits below the live-data panels rather than in a
+  // cramped 420px side column.
   const containerHeight = embedded
-    ? 'h-[60vh] min-h-[380px] max-h-[800px] sm:h-[70vh] sm:min-h-[420px]'
+    ? 'h-[70vh] min-h-[460px] max-h-[900px] sm:h-[78vh] sm:min-h-[520px]'
     : 'h-[calc(100vh-4rem)]';
 
   return (
