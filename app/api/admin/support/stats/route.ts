@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { getTicketStats, isSupportAIReady } from '@/lib/support-service';
+import {
+  getTicketStats,
+  isSupportAIReady,
+  checkSupportAIHealth,
+} from '@/lib/support-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,5 +17,11 @@ export async function GET() {
   }
 
   const stats = await getTicketStats();
-  return NextResponse.json({ ...stats, aiEnabled: isSupportAIReady() });
+  const aiHealth = await checkSupportAIHealth();
+
+  return NextResponse.json({
+    ...stats,
+    aiEnabled: isSupportAIReady(),
+    aiHealth,
+  });
 }

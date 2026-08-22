@@ -30,6 +30,20 @@ interface Message {
   created_at: string;
 }
 
+interface AIHealthProvider {
+  name: string;
+  model: string;
+  ok: boolean;
+  error: string | null;
+  httpStatus: number | null;
+}
+
+interface AIHealth {
+  ready: boolean;
+  configured: boolean;
+  providers: AIHealthProvider[];
+}
+
 interface Stats {
   total: number;
   open: number;
@@ -37,6 +51,7 @@ interface Stats {
   resolved: number;
   escalated: number;
   aiEnabled: boolean;
+  aiHealth?: AIHealth;
 }
 
 const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
@@ -105,7 +120,7 @@ export default function AdminSupportClient() {
   }, [filter, fetchTickets, fetchStats]);
 
   if (selectedTicket) {
-    return <AdminTicketDetail ticketId={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(filter); fetchStats(); }} />;
+    return <AdminTicketDetail ticketId={selectedTicket} onBack={() => { setSelectedTicket(null); fetchTickets(filter); fetchStats(); }} onStatusChange={() => { fetchStats(); }} />;
   }
 
   return (
@@ -139,7 +154,33 @@ export default function AdminSupportClient() {
             <StatCard icon={<AlertCircle className="h-5 w-5" />} label="Open / Escalated" value={stats.open} color="text-amber-300" />
             <StatCard icon={<Bot className="h-5 w-5" />} label="AI Resolved" value={stats.aiResolved} color="text-indigo-300" />
             <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="Resolved" value={stats.resolved} color="text-emerald-300" />
-            <StatCard icon={<Zap className="h-5 w-5" />} label="AI Status" value={stats.aiEnabled ? 'Active' : 'Off'} color={stats.aiEnabled ? 'text-emerald-300' : 'text-zinc-400'} />
+            <StatCard icon={<Zap className="h-5 w-5" />} label="AI Status" value={stats.aiHealth?.ready ? 'Active' : (stats.aiEnabled ? 'Error' : 'Off')} color={stats.aiHealth?.ready ? 'text-emerald-300' : (stats.aiEnabled ? 'text-red-400' : 'text-zinc-400')} />
+          </div>
+        )}
+
+        {/* AI Health warning banner */}
+        {stats?.aiEnabled && stats.aiHealth && !stats.aiHealth.ready && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-red-400 mt-0.5 shrink-0" />
+              <div className="space-y-1.5">
+                <p className="font-semibold text-red-300">
+                  AI support is configured but not responding
+                </p>
+                <p className="text-sm text-red-200/80">
+                  The AI providers are returning errors. New tickets will not receive AI triage or responses until this is fixed.
+                </p>
+                <div className="mt-2 space-y-1">
+                  {stats.aiHealth.providers.map((p) => (
+                    <div key={p.name} className="text-sm font-mono text-red-200/70">
+                      <span className="text-red-400">✗</span> {p.name} ({p.model})
+                      {p.httpStatus ? ` — HTTP ${p.httpStatus}` : ''}
+                      {p.error ? `: ${p.error}` : ''}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -216,7 +257,7 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
   );
 }
 
-function AdminTicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => void }) {
+function AdminTicketDetail({ ticketId, onBack, onStatusChange }: { ticketId: string; onBack: () => void; onStatusChange?: () => void }) {
   const [ticket, setTicket] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,6 +312,7 @@ function AdminTicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () 
         body: JSON.stringify({ status }),
       });
       fetchDetail();
+      onStatusChange?.();
     } catch {
       // ignore
     } finally {

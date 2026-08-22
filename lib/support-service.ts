@@ -101,6 +101,110 @@ export function isSupportAIReady(): boolean {
   return Boolean(process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY);
 }
 
+/**
+ * Probe the configured AI providers with a tiny test request to determine
+ * whether they are actually working (e.g. credits remaining, key valid).
+ *
+ * Returns a status object the admin UI can display so that when the AI is
+ * *not* responding the operator can see WHY rather than staring at a silent
+ * failure.
+ */
+export async function checkSupportAIHealth(): Promise<{
+  ready: boolean;
+  configured: boolean;
+  providers: Array<{
+    name: string;
+    model: string;
+    ok: boolean;
+    error: string | null;
+    httpStatus: number | null;
+  }>;
+}> {
+  const providers = buildProviders();
+
+  if (providers.length === 0) {
+    return {
+      ready: false,
+      configured: false,
+      providers: [],
+    };
+  }
+
+  const probeMessages = [
+    { role: 'system', content: 'Reply with the single word: ok' },
+    { role: 'user', content: 'ping' },
+  ];
+
+  const results = await Promise.all(
+    providers.map(async (p) => {
+      try {
+        const payload: Record<string, unknown> = {
+          model: p.model,
+          messages: probeMessages,
+          stream: false,
+        };
+        if (p.style === 'gpt5') {
+          payload.max_completion_tokens = 16;
+        } else {
+          payload.max_tokens = 16;
+          payload.temperature = 0;
+        }
+
+        const res = await fetch(`${p.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${p.apiKey}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          let errorMsg = body.slice(0, 300);
+          try {
+            const j = JSON.parse(body);
+            errorMsg = j?.error?.message || errorMsg;
+          } catch {
+            /* keep raw text */
+          }
+          return {
+            name: p.name,
+            model: p.model,
+            ok: false,
+            error: errorMsg,
+            httpStatus: res.status,
+          };
+        }
+
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        return {
+          name: p.name,
+          model: p.model,
+          ok: typeof content === 'string',
+          error: null,
+          httpStatus: res.status,
+        };
+      } catch (err) {
+        return {
+          name: p.name,
+          model: p.model,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          httpStatus: null,
+        };
+      }
+    })
+  );
+
+  return {
+    ready: results.some((r) => r.ok),
+    configured: true,
+    providers: results,
+  };
+}
+
 async function callProvider(
   p: Provider,
   messages: Array<{ role: string; content: string }>
@@ -128,7 +232,10 @@ async function callProvider(
     });
 
     if (!res.ok) {
-      console.warn(`[support/triage] ${p.name} returned ${res.status}`);
+      const body = await res.text().catch(() => '');
+      console.warn(
+        `[support/triage] ${p.name} returned ${res.status}: ${body.slice(0, 200)}`
+      );
       return null;
     }
 
@@ -585,10 +692,31 @@ export async function adminUpdateTicketStatus(
   if (!validStatuses.includes(status)) {
     throw new Error(`Invalid status: ${status}`);
   }
-  await query(
-    `UPDATE web_support_tickets SET status = $1 WHERE id = $2`,
-    [status, ticketId]
-  );
+
+  // When a ticket is resolved or closed, clear the escalated flag (it's no
+  // longer open/escalated) and stamp resolved_at.  When re-opening, clear
+  // resolved_at and mark escalated so it surfaces in the admin queue again.
+  if (status === 'resolved' || status === 'closed') {
+    await query(
+      `UPDATE web_support_tickets
+       SET status = $1, escalated = FALSE, resolved_at = COALESCE(resolved_at, NOW())
+       WHERE id = $2`,
+      [status, ticketId]
+    );
+  } else if (status === 'open') {
+    await query(
+      `UPDATE web_support_tickets
+       SET status = $1, escalated = TRUE, resolved_at = NULL
+       WHERE id = $2`,
+      [status, ticketId]
+    );
+  } else {
+    // ai_resolved — just set the status
+    await query(
+      `UPDATE web_support_tickets SET status = $1 WHERE id = $2`,
+      [status, ticketId]
+    );
+  }
 }
 
 export async function getTicketStats(): Promise<{
@@ -607,10 +735,10 @@ export async function getTicketStats(): Promise<{
   }>(
     `SELECT
        COUNT(*)::text AS total,
-       COUNT(*) FILTER (WHERE status = 'open' OR escalated = TRUE)::text AS open,
+       COUNT(*) FILTER (WHERE status = 'open')::text AS open,
        COUNT(*) FILTER (WHERE status = 'ai_resolved')::text AS ai_resolved,
        COUNT(*) FILTER (WHERE status = 'resolved')::text AS resolved,
-       COUNT(*) FILTER (WHERE escalated = TRUE)::text AS escalated
+       COUNT(*) FILTER (WHERE status = 'open' AND escalated = TRUE)::text AS escalated
      FROM web_support_tickets`
   );
   const r = result.rows[0];
