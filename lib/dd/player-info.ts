@@ -89,7 +89,23 @@ interface EspnStatLogEntry {
 }
 
 interface EspnStatSplit {
-  categories: Array<{
+  splits?: {
+    categories?: Array<{
+      name: string;
+      displayName: string;
+      stats: Array<{
+        name: string;
+        displayName: string;
+        value: number;
+        displayValue: string;
+        perGameValue?: number;
+        perGameDisplayValue?: string;
+        abbreviation?: string;
+      }>;
+    }>;
+  };
+  // Some endpoints return categories at top level (fallback)
+  categories?: Array<{
     name: string;
     displayName: string;
     stats: Array<{
@@ -138,8 +154,12 @@ async function fetchEspnSeasonStats(refUrl: string): Promise<SeasonStatLine | nu
     if (!res.ok) return null;
     const data: EspnStatSplit = await res.json();
 
+    // ESPN returns stats under data.splits.categories (primary)
+    // but some endpoints may use data.categories (fallback)
+    const categories = data?.splits?.categories ?? data?.categories ?? [];
+
     const stats: SeasonStatLine['stats'] = {};
-    for (const cat of data?.categories ?? []) {
+    for (const cat of categories) {
       for (const s of cat.stats ?? []) {
         // Only keep stats with meaningful values (skip null/undefined)
         if (s.value === undefined || s.value === null) continue;
