@@ -189,9 +189,12 @@ export default function DraftRoomClient({
     }
     // Clear any pending open
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    // Capture the target rect NOW — e.currentTarget becomes null after the
+    // handler returns (React nulls it), so we can't access it inside setTimeout
+    const targetEl = e.currentTarget as HTMLElement;
+    const rect = targetEl.getBoundingClientRect();
     // Delay showing the card to avoid flicker on quick mouse-overs
     hoverTimerRef.current = setTimeout(() => {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       const cardWidth = 380; // matches w-[380px] in PlayerInfoCard
       const cardHeight = 500; // approximate max height including padding
       const viewportWidth = window.innerWidth;
