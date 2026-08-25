@@ -41,6 +41,15 @@ interface EspnAthlete {
   injuries?: Array<{ details?: string; shortName?: string; status?: { name?: string } }>;
   group?: string;      // roster group name e.g. "Offense", "Injured Reserve", "Practice Squad"
   depthIdx?: number;   // 0-based index within the position group (starters first)
+  // Bio fields for the hover info card
+  displayHeight?: string;
+  displayWeight?: string;
+  age?: number;
+  dateOfBirth?: string;
+  debutYear?: number;
+  college?: { name?: string; shortName?: string; abbrev?: string };
+  birthPlace?: { city?: string; state?: string; country?: string };
+  headshot?: { href?: string };
 }
 
 const SPORT_PATH: Record<Sport, string> = {
@@ -103,6 +112,14 @@ async function fetchRoster(sport: Sport, teamId: string): Promise<EspnAthlete[]>
         injuries: a.injuries,
         group: groupName,
         depthIdx: i,
+        displayHeight: a.displayHeight,
+        displayWeight: a.displayWeight,
+        age: a.age,
+        dateOfBirth: a.dateOfBirth,
+        debutYear: a.debutYear,
+        college: a.college,
+        birthPlace: a.birthPlace,
+        headshot: a.headshot,
       });
     }
   }
@@ -470,6 +487,16 @@ export interface EspnPoolPlayer {
   isRookie: boolean;
   injuryStatus: string | null;
   espnId: string;
+  // Bio data (from ESPN roster) for the hover info card
+  headshot?: string | null;
+  height?: string | null;
+  weight?: string | null;
+  age?: number | null;
+  college?: string | null;
+  debutYear?: number | null;
+  experienceYears?: number | null;
+  birthPlace?: string | null;
+  jersey?: string | null;
 }
 
 export interface EspnPoolResult {
@@ -580,6 +607,14 @@ export async function fetchEspnPool(
       const proj = buildProjectionFromPoints(sport, fpos, adjustedPts);
       const scored = scoreStatLine(sport, proj, scoringConfig);
 
+      // Bio data for the hover info card
+      const collegeName = a.college?.name || a.college?.shortName || null;
+      const birthPlaceStr = a.birthPlace
+        ? [a.birthPlace.city, a.birthPlace.state, a.birthPlace.country]
+            .filter(Boolean)
+            .join(', ')
+        : null;
+
       players.push({
         seasonYear,
         sport,
@@ -592,6 +627,15 @@ export async function fetchEspnPool(
         isRookie,
         injuryStatus,
         espnId: a.id,
+        headshot: a.headshot?.href || null,
+        height: a.displayHeight || null,
+        weight: a.displayWeight || null,
+        age: a.age ?? null,
+        college: collegeName,
+        debutYear: a.debutYear ?? null,
+        experienceYears: a.experience?.years ?? null,
+        birthPlace: birthPlaceStr,
+        jersey: a.jersey || null,
       });
     }
   }

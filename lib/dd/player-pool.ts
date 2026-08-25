@@ -42,6 +42,17 @@ export interface PlayerPoolEntry {
   zScores: Record<string, number> | null;
   isRookie: boolean;
   injuryStatus: string | null;
+  // Bio data (from ESPN roster) for the hover info card
+  espnId?: string | null;
+  headshot?: string | null;
+  height?: string | null;
+  weight?: string | null;
+  age?: number | null;
+  college?: string | null;
+  debutYear?: number | null;
+  experienceYears?: number | null;
+  birthPlace?: string | null;
+  jersey?: string | null;
 }
 
 export interface GeneratePoolOptions {
@@ -254,6 +265,16 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
         zScores: null,
         isRookie: p.isRookie,
         injuryStatus: p.injuryStatus,
+        espnId: p.espnId,
+        headshot: p.headshot ?? null,
+        height: p.height ?? null,
+        weight: p.weight ?? null,
+        age: p.age ?? null,
+        college: p.college ?? null,
+        debutYear: p.debutYear ?? null,
+        experienceYears: p.experienceYears ?? null,
+        birthPlace: p.birthPlace ?? null,
+        jersey: p.jersey ?? null,
       }));
       source = 'espn';
     }
@@ -356,8 +377,11 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
       await client.query(
         `INSERT INTO dd_player_pool
            (season_year, sport, player_name, team, position, eligible_pos,
-            adp, rank, tier, projection, projected_points, is_rookie, injury_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            adp, rank, tier, projection, projected_points, is_rookie, injury_status,
+            espn_id, headshot_url, height, weight, age, college, debut_year,
+            experience_years, birth_place, jersey)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                 $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
         [
           entry.seasonYear,
           entry.sport,
@@ -372,6 +396,16 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
           entry.projectedPoints,
           entry.isRookie,
           entry.injuryStatus,
+          entry.espnId ?? null,
+          entry.headshot ?? null,
+          entry.height ?? null,
+          entry.weight ?? null,
+          entry.age ?? null,
+          entry.college ?? null,
+          entry.debutYear ?? null,
+          entry.experienceYears ?? null,
+          entry.birthPlace ?? null,
+          entry.jersey ?? null,
         ]
       );
     }
@@ -465,10 +499,22 @@ export async function queryPlayerPool(opts: PoolQueryOptions): Promise<{
     projected_points: string;
     is_rookie: boolean;
     injury_status: string | null;
+    espn_id: string | null;
+    headshot_url: string | null;
+    height: string | null;
+    weight: string | null;
+    age: number | null;
+    college: string | null;
+    debut_year: number | null;
+    experience_years: number | null;
+    birth_place: string | null;
+    jersey: string | null;
   }>(
     `SELECT id::text, player_name, team, position, eligible_pos,
             adp::text, rank, tier, projection, projected_points::text,
-            is_rookie, injury_status
+            is_rookie, injury_status,
+            espn_id, headshot_url, height, weight, age, college,
+            debut_year, experience_years, birth_place, jersey
      FROM dd_player_pool
      WHERE ${whereClause}
      ORDER BY ${sortColumn} ${sortOrder}
@@ -492,6 +538,16 @@ export async function queryPlayerPool(opts: PoolQueryOptions): Promise<{
     zScores: null,
     isRookie: r.is_rookie,
     injuryStatus: r.injury_status,
+    espnId: r.espn_id,
+    headshot: r.headshot_url,
+    height: r.height,
+    weight: r.weight,
+    age: r.age,
+    college: r.college,
+    debutYear: r.debut_year,
+    experienceYears: r.experience_years,
+    birthPlace: r.birth_place,
+    jersey: r.jersey,
   }));
 
   return { players, total };
@@ -518,10 +574,22 @@ export async function getPlayerFromPool(
     projected_points: string;
     is_rookie: boolean;
     injury_status: string | null;
+    espn_id: string | null;
+    headshot_url: string | null;
+    height: string | null;
+    weight: string | null;
+    age: number | null;
+    college: string | null;
+    debut_year: number | null;
+    experience_years: number | null;
+    birth_place: string | null;
+    jersey: string | null;
   }>(
     `SELECT id::text, player_name, team, position, eligible_pos,
             adp::text, rank, tier, projection, projected_points::text,
-            is_rookie, injury_status
+            is_rookie, injury_status,
+            espn_id, headshot_url, height, weight, age, college,
+            debut_year, experience_years, birth_place, jersey
      FROM dd_player_pool
      WHERE sport = $1 AND season_year = $2 AND player_name = $3`,
     [sport, seasonYear, playerName]
@@ -545,6 +613,89 @@ export async function getPlayerFromPool(
     zScores: null,
     isRookie: r.is_rookie,
     injuryStatus: r.injury_status,
+    espnId: r.espn_id,
+    headshot: r.headshot_url,
+    height: r.height,
+    weight: r.weight,
+    age: r.age,
+    college: r.college,
+    debutYear: r.debut_year,
+    experienceYears: r.experience_years,
+    birthPlace: r.birth_place,
+    jersey: r.jersey,
+  };
+}
+
+/**
+ * Get a single player from the pool by its dd_player_pool id.
+ */
+export async function getPlayerByIdFromPool(
+  poolId: string
+): Promise<PlayerPoolEntry | null> {
+  const r = await queryOne<{
+    id: string;
+    season_year: number;
+    sport: string;
+    player_name: string;
+    team: string | null;
+    position: string | null;
+    eligible_pos: string[];
+    adp: string | null;
+    rank: number;
+    tier: number;
+    projection: Record<string, number> | null;
+    projected_points: string;
+    is_rookie: boolean;
+    injury_status: string | null;
+    espn_id: string | null;
+    headshot_url: string | null;
+    height: string | null;
+    weight: string | null;
+    age: number | null;
+    college: string | null;
+    debut_year: number | null;
+    experience_years: number | null;
+    birth_place: string | null;
+    jersey: string | null;
+  }>(
+    `SELECT id::text, season_year, sport, player_name, team, position, eligible_pos,
+            adp::text, rank, tier, projection, projected_points::text,
+            is_rookie, injury_status,
+            espn_id, headshot_url, height, weight, age, college,
+            debut_year, experience_years, birth_place, jersey
+     FROM dd_player_pool
+     WHERE id = $1`,
+    [BigInt(poolId)]
+  );
+
+  if (!r) return null;
+
+  return {
+    id: r.id,
+    seasonYear: r.season_year,
+    sport: r.sport as Sport,
+    playerName: r.player_name,
+    team: r.team,
+    position: r.position,
+    eligiblePos: r.eligible_pos ?? [],
+    adp: r.adp ? parseFloat(r.adp) : null,
+    rank: r.rank,
+    tier: r.tier,
+    projection: r.projection,
+    projectedPoints: parseFloat(r.projected_points),
+    zScores: null,
+    isRookie: r.is_rookie,
+    injuryStatus: r.injury_status,
+    espnId: r.espn_id,
+    headshot: r.headshot_url,
+    height: r.height,
+    weight: r.weight,
+    age: r.age,
+    college: r.college,
+    debutYear: r.debut_year,
+    experienceYears: r.experience_years,
+    birthPlace: r.birth_place,
+    jersey: r.jersey,
   };
 }
 

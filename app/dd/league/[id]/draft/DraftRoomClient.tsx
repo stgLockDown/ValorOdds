@@ -6,11 +6,23 @@ import {
   Trophy, Search, Clock, Pause, Play, Check, Loader2, ArrowLeft,
   Target, Shield, Crown, ChevronRight, X, Filter, Zap,
 } from 'lucide-react';
+import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
 
 interface Player {
   id: string; playerName: string; team: string | null; position: string | null;
   rank: number | null; tier: number | null; projectedPoints: number | null;
   adp: number | null;
+  // Bio fields (returned by /api/dd/players from dd_player_pool)
+  espnId?: string | null;
+  headshot?: string | null;
+  height?: string | null;
+  weight?: string | null;
+  age?: number | null;
+  college?: string | null;
+  debutYear?: number | null;
+  experienceYears?: number | null;
+  birthPlace?: string | null;
+  jersey?: string | null;
 }
 
 interface DraftPick {
@@ -79,6 +91,14 @@ export default function DraftRoomClient({
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPickAttemptedRef = useRef<Set<number>>(new Set()); // track overall picks we've tried to auto-pick
+
+  // ── Hover info card state ──
+  const [hoveredPlayer, setHoveredPlayer] = useState<Player | null>(null);
+  const [cardVisible, setCardVisible] = useState(false);
+  const [cardPos, setCardPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
   const sportIcon = sport === 'NFL'
     ? <Shield className="w-5 h-5" />
@@ -159,6 +179,82 @@ export default function DraftRoomClient({
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
   }, [playerSearch, positionFilter, fetchPlayers]);
+
+  // ── Hover info card handlers ──
+  const handlePlayerMouseEnter = useCallback((player: Player, e: React.MouseEvent<HTMLDivElement>) => {
+    // Clear any pending close
+    if (cardCloseTimerRef.current) {
+      clearTimeout(cardCloseTimerRef.current);
+      cardCloseTimerRef.current = null;
+    }
+    // Clear any pending open
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    // Delay showing the card to avoid flicker on quick mouse-overs
+    hoverTimerRef.current = setTimeout(() => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const cardWidth = 380; // matches w-[380px] in PlayerInfoCard
+      const cardHeight = 500; // approximate max height including padding
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const scrollY = window.scrollY;
+
+      // Horizontal positioning: right of row if room, otherwise left
+      let left = rect.right + 8;
+      if (left + cardWidth > viewportWidth - 16) {
+        left = rect.left - cardWidth - 8;
+      }
+      if (left < 16) left = 16;
+      if (left + cardWidth > viewportWidth - 16) left = viewportWidth - cardWidth - 16;
+
+      // Vertical positioning: align with row top, but shift up if it would overflow viewport
+      let top = rect.top + scrollY;
+      const bottomEdge = rect.top + cardHeight;
+      if (bottomEdge > viewportHeight - 16) {
+        // Shift up so the card bottom stays within viewport
+        top = scrollY + viewportHeight - cardHeight - 16;
+        // But don't go above the page top
+        if (top < scrollY + 16) top = scrollY + 16;
+      }
+
+      setHoveredPlayer(player);
+      setCardPos({ top, left });
+      setCardVisible(true);
+    }, 350); // 350ms hover delay
+  }, []);
+
+  const handlePlayerMouseLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    // Small grace period before closing — lets user move mouse into the card
+    cardCloseTimerRef.current = setTimeout(() => {
+      setCardVisible(false);
+      setHoveredPlayer(null);
+    }, 200);
+  }, []);
+
+  const handleCardMouseEnter = useCallback(() => {
+    if (cardCloseTimerRef.current) {
+      clearTimeout(cardCloseTimerRef.current);
+      cardCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const handleCardMouseLeave = useCallback(() => {
+    cardCloseTimerRef.current = setTimeout(() => {
+      setCardVisible(false);
+      setHoveredPlayer(null);
+    }, 200);
+  }, []);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (cardCloseTimerRef.current) clearTimeout(cardCloseTimerRef.current);
+    };
+  }, []);
 
   const makePick = async (player: Player) => {
     if (!draftState?.currentTurn) return;
@@ -538,7 +634,9 @@ export default function DraftRoomClient({
                 players.map((player) => (
                   <div
                     key={player.id}
-                    className="flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group"
+                    className="flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group cursor-pointer"
+                    onMouseEnter={(e) => handlePlayerMouseEnter(player, e)}
+                    onMouseLeave={handlePlayerMouseLeave}
                   >
                     {/* Rank badge */}
                     <div className="w-8 h-8 rounded-md bg-brand-surface border border-brand-border flex items-center justify-center text-xs font-bold text-brand-muted flex-shrink-0">
@@ -597,6 +695,26 @@ export default function DraftRoomClient({
           </div>
         </div>
       </div>
+
+      {/* ── Floating Player Info Card (hover popover) ── */}
+      {cardVisible && hoveredPlayer && (
+        <div
+          ref={cardRef}
+          className="fixed z-50"
+          style={{ top: cardPos.top, left: cardPos.left }}
+          onMouseEnter={handleCardMouseEnter}
+          onMouseLeave={handleCardMouseLeave}
+        >
+          <PlayerInfoCard
+            poolId={hoveredPlayer.id}
+            sport={sport}
+            seasonYear={seasonYear}
+            playerName={hoveredPlayer.playerName}
+            position={hoveredPlayer.position}
+            team={hoveredPlayer.team}
+          />
+        </div>
+      )}
     </div>
   );
 }
