@@ -68,7 +68,7 @@ function GameCardTile({ game, sportSlug }: { game: GameCard; sportSlug: string }
   const showScores = game.status !== 'scheduled';
 
   return (
-    <Link href={`/dashboard/games/${sportSlug}/${encodeURIComponent(game.slug)}`} className="card card-interactive block">
+    <Link href={`/dashboard/games/${sportSlug}/${encodeURIComponent(game.slug)}/details`} className="card card-interactive block">
       <div className="flex items-center justify-between">
         <StatusPill game={game} />
         {game.nBooks > 0 && <span className="text-[11px] text-brand-muted">{game.nBooks} books</span>}

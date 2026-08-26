@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TrendingUp, Zap, Activity, AlertTriangle, BarChart2,
   Star, Settings, MessageSquare, RefreshCw, ChevronRight, ChevronLeft,
-  Shield, Users, Trophy, Target, Flame, DollarSign, KeyRound, Headphones
+  Shield, Users, Trophy, Target, Flame, DollarSign, KeyRound, Headphones,
+  CalendarDays,
 } from 'lucide-react';
 import Link from 'next/link';
 import ChatClient from '../(sub)/chat/ChatClient';
@@ -35,7 +36,7 @@ function renderMarkdown(src: string): string {
 
 type Tab = 'command-center' | 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'preferences';
 
-const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
+const TABS: { id: Tab; label: string; icon: any; premium?: boolean; href?: string }[] = [
   { id: 'command-center', label: 'Command Center', icon: Zap },
   { id: 'overview',    label: 'Overview',       icon: Activity },
   { id: 'best-bets',  label: 'Best Bets',       icon: Star },
@@ -48,6 +49,13 @@ const TABS: { id: Tab; label: string; icon: any; premium?: boolean }[] = [
   { id: 'sportsbooks',label: 'Sportsbooks',      icon: Shield },
   { id: 'chat',       label: 'AI Chat',          icon: MessageSquare },
   { id: 'preferences',label: 'Preferences',     icon: Settings },
+];
+
+// Tabs that navigate to a separate route (not state-switched). These render
+// as <Link> elements instead of <button> so clicking them does a real
+// navigation to the target page.
+const LINK_TABS: { id: string; label: string; icon: any; href: string }[] = [
+  { id: 'games', label: 'Games', icon: CalendarDays, href: '/dashboard/games/mlb' },
 ];
 
 const SPORTS = ['All', 'NBA', 'NFL', 'MLB', 'NHL', 'SOCCER', 'MMA', 'BOXING', 'TENNIS'];
@@ -1580,6 +1588,20 @@ export default function DashboardClient({ user }: { user: any }) {
     );
   }
 
+  // Link-based tab button — navigates to a separate route via <Link> instead of
+  // switching local state. Used for "Games" and other full-page destinations.
+  function LinkTabButton({ id, label, icon: Icon, href }: { id: string; label: string; icon: any; href: string }) {
+    return (
+      <Link
+        href={href}
+        className="flex items-center gap-2.5 rounded-lg font-medium whitespace-nowrap transition-colors text-brand-muted hover:text-white hover:bg-brand-elevated px-3 py-2 text-sm lg:w-full lg:px-3.5 lg:py-2.5 lg:text-[13px]"
+      >
+        <Icon className="h-4 w-4 flex-shrink-0" />
+        <span className="flex-1 text-left">{label}</span>
+      </Link>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-brand-bg">
       <div className="lg:grid lg:grid-cols-[230px,1fr] lg:gap-8">
@@ -1591,6 +1613,9 @@ export default function DashboardClient({ user }: { user: any }) {
             </div>
             {TABS.map(({ id, label, icon, premium }) => (
               <TabButton key={id} id={id} label={label} icon={icon} premium={premium} />
+            ))}
+            {LINK_TABS.map(({ id, label, icon, href }) => (
+              <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
             ))}
             {user.isAdmin && (
               <div className="pt-3 mt-3 border-t border-brand-border">
@@ -1620,6 +1645,9 @@ export default function DashboardClient({ user }: { user: any }) {
           <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-2">
             {TABS.map(({ id, label, icon, premium }) => (
               <TabButton key={id} id={id} label={label} icon={icon} premium={premium} />
+            ))}
+            {LINK_TABS.map(({ id, label, icon, href }) => (
+              <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
             ))}
             {user.isAdmin && (
               <>
