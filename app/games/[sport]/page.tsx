@@ -16,10 +16,11 @@ import { getGamesGrid, isGamesHubSport, fmtAmerican, type GameCard } from '@/lib
  * badge. Each card links into the tabbed per-game detail page
  * (/games/[sport]/[gameSlug]/[tab]).
  *
- * ISR-rendered; short revalidate window since live scores/odds change fast.
+ * Dynamically rendered on each request since live scores/odds change fast
+ * and the ESPN scoreboard API uses cache: 'no-store'.
  */
 
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
 
 function findSport(slug: string) {

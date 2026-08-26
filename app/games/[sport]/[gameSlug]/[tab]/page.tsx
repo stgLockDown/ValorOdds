@@ -24,7 +24,7 @@ import GameFuturesTab from '@/components/games/GameFuturesTab';
  * Tabs: details, odds, box-score, standings, injuries, futures (placeholder).
  * The slug-level page redirects here to the `details` tab.
  */
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
 
 type Params = { params: { sport: string; gameSlug: string; tab: string } };
