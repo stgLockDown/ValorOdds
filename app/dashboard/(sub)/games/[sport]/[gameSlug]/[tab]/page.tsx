@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { SPORTS } from '@/lib/seo';
 import {
   getGameBySlug,
@@ -70,6 +71,17 @@ export default async function DashboardGameTabPage({ params }: Params) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+      {/* Back button */}
+      <div className="mb-4">
+        <Link
+          href={`/dashboard/games/${sport.slug}`}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-muted hover:text-brand-text transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to {sport.name} Games
+        </Link>
+      </div>
+
       <div className="mb-4 flex items-center gap-2 text-sm text-brand-muted">
         <Link href="/dashboard/games/mlb" className="hover:text-brand-text">Games</Link>
         <span>/</span>

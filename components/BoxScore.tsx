@@ -178,33 +178,6 @@ export default function BoxScore({
         </div>
       )}
 
-      {/* Team stats comparison */}
-      {data.teamStats.length > 0 && (
-        <div className="card">
-          <h3 className="mb-3 text-sm font-semibold text-brand-text">Team Stats</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs uppercase tracking-wider text-brand-muted">
-                  <th className="py-1 text-left font-medium">{data.away.abbrev}</th>
-                  <th className="py-1 text-center font-medium"></th>
-                  <th className="py-1 text-right font-medium">{data.home.abbrev}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.teamStats.map((s) => (
-                  <tr key={s.label} className="border-t border-brand-border/50">
-                    <td className="py-1.5 text-left text-brand-text">{s.away}</td>
-                    <td className="py-1.5 text-center text-xs text-brand-muted">{s.label}</td>
-                    <td className="py-1.5 text-right text-brand-text">{s.home}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* Player stats with home/away toggle */}
       {playerGroups.length > 0 && (
         <div className="card">
@@ -266,6 +239,33 @@ export default function BoxScore({
           </div>
         </div>
       )}
+      {/* Team stats comparison */}
+      {data.teamStats.length > 0 && (
+        <div className="card">
+          <h3 className="mb-3 text-sm font-semibold text-brand-text">Team Stats</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-wider text-brand-muted">
+                  <th className="py-1 text-left font-medium">{data.away.abbrev}</th>
+                  <th className="py-1 text-center font-medium"></th>
+                  <th className="py-1 text-right font-medium">{data.home.abbrev}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.teamStats.map((s) => (
+                  <tr key={s.label} className="border-t border-brand-border/50">
+                    <td className="py-1.5 text-left text-brand-text">{s.away}</td>
+                    <td className="py-1.5 text-center text-xs text-brand-muted">{s.label}</td>
+                    <td className="py-1.5 text-right text-brand-text">{s.home}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -734,21 +734,33 @@ export async function getPlayerByIdFromPool(
  * Check if a player pool exists for a given sport/season.
  * If not, generate it on the fly.
  */
+// In-memory flag: tracks which (sport, seasonYear) pools have been confirmed
+// to exist in the DB during this server process. Avoids a redundant COUNT query
+// on every /api/dd/players request once the pool is known to exist.
+const _poolExistsCache = new Set<string>();
+
 export async function ensurePlayerPool(
   sport: Sport,
   seasonYear: number,
   scoringPreset: string
 ): Promise<{ count: number; generated: boolean }> {
+  const cacheKey = `${sport}:${seasonYear}`;
+  if (_poolExistsCache.has(cacheKey)) {
+    return { count: 0, generated: false };
+  }
+
   const existing = await queryOne<{ cnt: string }>(
     `SELECT COUNT(*)::text AS cnt FROM dd_player_pool WHERE sport = $1 AND season_year = $2`,
     [sport, seasonYear]
   );
 
   if (existing && parseInt(existing.cnt, 10) > 0) {
+    _poolExistsCache.add(cacheKey);
     return { count: parseInt(existing.cnt, 10), generated: false };
   }
 
   // Generate the pool
   const result = await generatePlayerPool({ sport, seasonYear, scoringPreset });
+  _poolExistsCache.add(cacheKey);
   return { count: result.count, generated: true };
 }

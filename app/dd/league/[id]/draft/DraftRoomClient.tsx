@@ -300,7 +300,6 @@ export default function DraftRoomClient({
       const cardHeight = 500; // approximate max height including padding
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      const scrollY = window.scrollY;
 
       // Horizontal positioning: right of row if room, otherwise left
       let left = rect.right + 8;
@@ -310,14 +309,23 @@ export default function DraftRoomClient({
       if (left < 16) left = 16;
       if (left + cardWidth > viewportWidth - 16) left = viewportWidth - cardWidth - 16;
 
-      // Vertical positioning: align with row top, but shift up if it would overflow viewport
-      let top = rect.top + scrollY;
-      const bottomEdge = rect.top + cardHeight;
-      if (bottomEdge > viewportHeight - 16) {
-        // Shift up so the card bottom stays within viewport
-        top = scrollY + viewportHeight - cardHeight - 16;
-        // But don't go above the page top
-        if (top < scrollY + 16) top = scrollY + 16;
+      // Vertical positioning: align with row top, but shift up if it would overflow viewport.
+      // NOTE: The card uses position:fixed, which is relative to the VIEWPORT, so we use
+      // rect.top (viewport-relative) directly — do NOT add window.scrollY here.
+      let top: number;
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+
+      if (spaceBelow >= cardHeight + 16) {
+        // Enough room below the row — place it just below
+        top = rect.bottom + 4;
+      } else if (spaceAbove >= cardHeight + 16) {
+        // Not enough room below, but enough above — place it just above
+        top = rect.top - cardHeight - 4;
+      } else {
+        // Not enough room on either side — center it in the viewport
+        top = (viewportHeight - cardHeight) / 2;
+        if (top < 16) top = 16;
       }
 
       setHoveredPlayer(player);

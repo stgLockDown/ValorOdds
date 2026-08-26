@@ -150,6 +150,13 @@ const PROJ_LABELS: Record<string, string> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Module-level client cache for player info — survives component unmount/remount
+// cycles (common with hover popovers). Keyed by poolId, stores the full PlayerInfo
+// response. This means re-hovering a previously-loaded player is instant.
+// ─────────────────────────────────────────────────────────────────────────────
+const playerInfoCache = new Map<string, PlayerInfo>();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PlayerInfoCard component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -170,15 +177,27 @@ export function PlayerInfoCard({
   position,
   team,
 }: PlayerInfoCardProps) {
-  const [info, setInfo] = useState<PlayerInfo | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [info, setInfo] = useState<PlayerInfo | null>(() => playerInfoCache.get(poolId) ?? null);
+  const [loading, setLoading] = useState(() => !playerInfoCache.has(poolId));
   const [error, setError] = useState<string | null>(null);
   const fetchedRef = useRef<string | null>(null);
 
+  // Client-side cache: persists across mount/unmount cycles so re-hovering
+  // the same player shows data instantly without another API round-trip.
   const fetchInfo = useCallback(async () => {
     // Avoid duplicate fetches for the same player
     if (fetchedRef.current === poolId) return;
     fetchedRef.current = poolId;
+
+    // Check the module-level cache first
+    const cached = playerInfoCache.get(poolId);
+    if (cached) {
+      setInfo(cached);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -186,6 +205,7 @@ export function PlayerInfoCard({
       const data = await res.json();
       if (res.ok) {
         setInfo(data);
+        playerInfoCache.set(poolId, data);
       } else {
         setError(data.error || 'Failed to load player info');
       }
