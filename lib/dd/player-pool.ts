@@ -21,6 +21,7 @@ import type { Sport, ScoringConfig } from './presets';
 import { getScoringPreset, getRosterPreset } from './presets';
 import { scoreStatLine } from './scoring';
 import { fetchEspnPool } from './espn-pool';
+import { stampVegasRanks } from './vegas-rankings';
 
 // ──────────────────────────────────────────────
 // Types
@@ -53,6 +54,9 @@ export interface PlayerPoolEntry {
   experienceYears?: number | null;
   birthPlace?: string | null;
   jersey?: string | null;
+  // Vegas-odds fantasy ranking (derived from implied team totals / win prob)
+  vegasScore?: number | null;
+  vegasRank?: number | null;
 }
 
 export interface GeneratePoolOptions {
@@ -379,9 +383,9 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
            (season_year, sport, player_name, team, position, eligible_pos,
             adp, rank, tier, projection, projected_points, is_rookie, injury_status,
             espn_id, headshot_url, height, weight, age, college, debut_year,
-            experience_years, birth_place, jersey)
+            experience_years, birth_place, jersey, vegas_score, vegas_rank)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                 $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+                 $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
         [
           entry.seasonYear,
           entry.sport,
@@ -406,10 +410,21 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
           entry.experienceYears ?? null,
           entry.birthPlace ?? null,
           entry.jersey ?? null,
+          entry.vegasScore ?? null,
+          entry.vegasRank ?? null,
         ]
       );
     }
   });
+
+  // Stamp Vegas-odds fantasy rankings (implied team totals / win prob → score)
+  // Best-effort: failures are logged but don't break pool generation.
+  try {
+    const vegasRes = await stampVegasRanks(sport, seasonYear);
+    console.log(`[player-pool] Vegas ranks stamped for ${sport} ${seasonYear}: ${vegasRes.stamped} players`);
+  } catch (vegasErr) {
+    console.error(`[player-pool] Vegas rank stamping failed for ${sport} ${seasonYear}:`, vegasErr);
+  }
 
   return {
     sport,
@@ -433,7 +448,7 @@ export interface PoolQueryOptions {
   excludeNames?: string[];
   limit?: number;
   offset?: number;
-  sortBy?: 'rank' | 'projected_points' | 'adp' | 'name';
+  sortBy?: 'rank' | 'projected_points' | 'adp' | 'name' | 'vegas_rank';
 }
 
 export async function queryPlayerPool(opts: PoolQueryOptions): Promise<{
@@ -450,9 +465,10 @@ export async function queryPlayerPool(opts: PoolQueryOptions): Promise<{
     projected_points: 'projected_points',
     adp: 'adp',
     name: 'player_name',
+    vegas_rank: 'vegas_rank',
   }[sortBy] ?? 'rank';
 
-  const sortOrder = sortBy === 'name' ? 'ASC' : 'ASC NULLS LAST';
+  const sortOrder = sortBy === 'name' ? 'ASC' : sortBy === 'vegas_rank' ? 'ASC NULLS LAST' : 'ASC NULLS LAST';
 
   const conditions: string[] = ['sport = $1', 'season_year = $2'];
   const params: unknown[] = [sport, seasonYear];
@@ -509,12 +525,15 @@ export async function queryPlayerPool(opts: PoolQueryOptions): Promise<{
     experience_years: number | null;
     birth_place: string | null;
     jersey: string | null;
+    vegas_score: string | null;
+    vegas_rank: number | null;
   }>(
     `SELECT id::text, player_name, team, position, eligible_pos,
             adp::text, rank, tier, projection, projected_points::text,
             is_rookie, injury_status,
             espn_id, headshot_url, height, weight, age, college,
-            debut_year, experience_years, birth_place, jersey
+            debut_year, experience_years, birth_place, jersey,
+            vegas_score::text, vegas_rank
      FROM dd_player_pool
      WHERE ${whereClause}
      ORDER BY ${sortColumn} ${sortOrder}
@@ -548,6 +567,8 @@ export async function queryPlayerPool(opts: PoolQueryOptions): Promise<{
     experienceYears: r.experience_years,
     birthPlace: r.birth_place,
     jersey: r.jersey,
+    vegasScore: r.vegas_score ? parseFloat(r.vegas_score) : null,
+    vegasRank: r.vegas_rank,
   }));
 
   return { players, total };
@@ -584,12 +605,15 @@ export async function getPlayerFromPool(
     experience_years: number | null;
     birth_place: string | null;
     jersey: string | null;
+    vegas_score: string | null;
+    vegas_rank: number | null;
   }>(
     `SELECT id::text, player_name, team, position, eligible_pos,
             adp::text, rank, tier, projection, projected_points::text,
             is_rookie, injury_status,
             espn_id, headshot_url, height, weight, age, college,
-            debut_year, experience_years, birth_place, jersey
+            debut_year, experience_years, birth_place, jersey,
+            vegas_score::text, vegas_rank
      FROM dd_player_pool
      WHERE sport = $1 AND season_year = $2 AND player_name = $3`,
     [sport, seasonYear, playerName]
@@ -623,6 +647,8 @@ export async function getPlayerFromPool(
     experienceYears: r.experience_years,
     birthPlace: r.birth_place,
     jersey: r.jersey,
+    vegasScore: r.vegas_score ? parseFloat(r.vegas_score) : null,
+    vegasRank: r.vegas_rank,
   };
 }
 
@@ -657,12 +683,15 @@ export async function getPlayerByIdFromPool(
     experience_years: number | null;
     birth_place: string | null;
     jersey: string | null;
+    vegas_score: string | null;
+    vegas_rank: number | null;
   }>(
     `SELECT id::text, season_year, sport, player_name, team, position, eligible_pos,
             adp::text, rank, tier, projection, projected_points::text,
             is_rookie, injury_status,
             espn_id, headshot_url, height, weight, age, college,
-            debut_year, experience_years, birth_place, jersey
+            debut_year, experience_years, birth_place, jersey,
+            vegas_score::text, vegas_rank
      FROM dd_player_pool
      WHERE id = $1`,
     [BigInt(poolId)]
@@ -696,6 +725,8 @@ export async function getPlayerByIdFromPool(
     experienceYears: r.experience_years,
     birthPlace: r.birth_place,
     jersey: r.jersey,
+    vegasScore: r.vegas_score ? parseFloat(r.vegas_score) : null,
+    vegasRank: r.vegas_rank,
   };
 }
 

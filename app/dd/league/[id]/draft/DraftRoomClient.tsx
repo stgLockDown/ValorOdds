@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Trophy, Search, Clock, Pause, Play, Check, Loader2, ArrowLeft,
-  Target, Shield, Crown, ChevronRight, X, Filter, Zap,
+  Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown,
 } from 'lucide-react';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
 
@@ -12,6 +12,8 @@ interface Player {
   id: string; playerName: string; team: string | null; position: string | null;
   rank: number | null; tier: number | null; projectedPoints: number | null;
   adp: number | null;
+  vegasScore?: number | null;
+  vegasRank?: number | null;
   // Bio fields (returned by /api/dd/players from dd_player_pool)
   espnId?: string | null;
   headshot?: string | null;
@@ -85,6 +87,7 @@ export default function DraftRoomClient({
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerSearch, setPlayerSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'rank' | 'vegas_rank' | 'projected_points' | 'adp'>('rank');
   const [playersLoading, setPlayersLoading] = useState(false);
   const [picking, setPicking] = useState<string | null>(null);
   const [lastPollTime, setLastPollTime] = useState(0);
@@ -130,7 +133,7 @@ export default function DraftRoomClient({
         sport,
         seasonYear: String(seasonYear),
         excludeDrafted: leagueId,
-        sort: 'rank',
+        sort: sortBy,
         limit: '100',
       });
       if (playerSearch) params.set('search', playerSearch);
@@ -146,7 +149,7 @@ export default function DraftRoomClient({
     } finally {
       setPlayersLoading(false);
     }
-  }, [sport, seasonYear, leagueId, playerSearch, positionFilter]);
+  }, [sport, seasonYear, leagueId, playerSearch, positionFilter, sortBy]);
 
   // Initial load
   useEffect(() => {
@@ -623,6 +626,33 @@ export default function DraftRoomClient({
               ))}
             </div>
 
+            {/* Sort selector */}
+            <div className="flex items-center gap-2 mb-3">
+              <ArrowUpDown className="w-3.5 h-3.5 text-brand-muted" />
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  ['rank', 'ESPN Rank'],
+                  ['vegas_rank', 'Vegas Rank'],
+                  ['projected_points', 'Proj Pts'],
+                  ['adp', 'ADP'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSortBy(key)}
+                    className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+                      sortBy === key
+                        ? key === 'vegas_rank'
+                          ? 'bg-brand-accent text-white'
+                          : 'bg-brand-primary text-white'
+                        : 'bg-brand-elevated text-brand-muted hover:text-brand-text'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Player list */}
             <div className="space-y-1.5 max-h-[600px] overflow-y-auto">
               {playersLoading ? (
@@ -646,12 +676,20 @@ export default function DraftRoomClient({
                       {player.rank ?? '?'}
                     </div>
 
+                    {/* Vegas Rank badge (if available) */}
+                    {player.vegasRank != null && (
+                      <div className="w-8 h-8 rounded-md bg-brand-accent/15 border border-brand-accent/30 flex items-center justify-center text-xs font-bold text-brand-accent flex-shrink-0" title={`Vegas Score: ${player.vegasScore?.toFixed(1) ?? '—'}`}>
+                        {player.vegasRank}
+                      </div>
+                    )}
+
                     {/* Player info */}
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-brand-text truncate">{player.playerName}</div>
                       <div className="text-xs text-brand-muted">
                         {player.position} · {player.team}
                         {player.projectedPoints && ` · ${player.projectedPoints.toFixed(1)} pts`}
+                        {player.adp != null && ` · ADP ${player.adp}`}
                       </div>
                     </div>
 

@@ -28,6 +28,12 @@ type Props = {
   espnEventId?: string | null;
   /** Auto-refresh interval (ms) while the game is live. 0 disables. */
   liveRefreshMs?: number;
+  /**
+   * API base path to fetch from. Defaults to the authed dashboard route
+   * (`/api/games/[id]/boxscore`). Public game-detail pages pass
+   * `/api/public/games` to hit the anonymous-safe variant instead.
+   */
+  apiBase?: string;
 };
 
 function StatusBadge({ s }: { s: GameSummary }) {
@@ -42,7 +48,15 @@ function StatusBadge({ s }: { s: GameSummary }) {
   return <span className="rounded bg-brand-elevated px-2 py-0.5 text-xs font-semibold text-brand-muted">UPCOMING</span>;
 }
 
-export default function BoxScore({ gameId, sport, homeTeam, awayTeam, espnEventId, liveRefreshMs = 30000 }: Props) {
+export default function BoxScore({
+  gameId,
+  sport,
+  homeTeam,
+  awayTeam,
+  espnEventId,
+  liveRefreshMs = 30000,
+  apiBase,
+}: Props) {
   const [data, setData] = useState<GameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +66,8 @@ export default function BoxScore({ gameId, sport, homeTeam, awayTeam, espnEventI
     try {
       const qs = new URLSearchParams({ sport, home: homeTeam, away: awayTeam });
       if (espnEventId) qs.set('event', espnEventId);
-      const res = await fetch(`/api/games/${encodeURIComponent(gameId)}/boxscore?${qs.toString()}`);
+      const base = apiBase ?? `/api/games/${encodeURIComponent(gameId)}/boxscore`;
+      const res = await fetch(`${base}?${qs.toString()}`);
       if (!res.ok) throw new Error('unavailable');
       const j = await res.json();
       setData(j.data);
@@ -62,7 +77,7 @@ export default function BoxScore({ gameId, sport, homeTeam, awayTeam, espnEventI
     } finally {
       setLoading(false);
     }
-  }, [gameId, sport, homeTeam, awayTeam, espnEventId]);
+  }, [gameId, sport, homeTeam, awayTeam, espnEventId, apiBase]);
 
   useEffect(() => {
     load();

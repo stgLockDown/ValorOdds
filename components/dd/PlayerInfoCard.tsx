@@ -35,6 +35,8 @@ interface PlayerInfo {
   projection: Record<string, number> | null;
   isRookie: boolean;
   injuryStatus: string | null;
+  vegasScore: number | null;
+  vegasRank: number | null;
   espnId: string | null;
   headshot: string | null;
   height: string | null;
@@ -301,6 +303,13 @@ export function PlayerInfoCard({
               <div className="text-xs text-brand-muted">Tier {info.tier ?? '?'}</div>
             </div>
           )}
+          {/* Vegas Rank badge */}
+          {info.vegasRank != null && (
+            <div className="text-right shrink-0 border-l border-brand-border pl-3 ml-1">
+              <div className="text-2xl font-bold text-brand-accent">#{info.vegasRank}</div>
+              <div className="text-xs text-brand-muted">Vegas Rank</div>
+            </div>
+          )}
         </div>
 
         {/* Quick bio row */}
@@ -338,7 +347,7 @@ export function PlayerInfoCard({
           <TrendingUp className="w-4 h-4 text-brand-primaryText" />
           <h4 className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Draft Outlook</h4>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           {info.projectedPoints != null && (
             <div className="bg-brand-elevated/50 rounded-lg p-2 text-center">
               <div className="text-lg font-bold text-brand-text">{info.projectedPoints.toFixed(1)}</div>
@@ -349,6 +358,12 @@ export function PlayerInfoCard({
             <div className="bg-brand-elevated/50 rounded-lg p-2 text-center">
               <div className="text-lg font-bold text-brand-text">{info.adp}</div>
               <div className="text-xs text-brand-muted">Est. ADP</div>
+            </div>
+          )}
+          {info.vegasScore != null && (
+            <div className="bg-brand-accent/10 rounded-lg p-2 text-center">
+              <div className="text-lg font-bold text-brand-accent">{info.vegasScore.toFixed(1)}</div>
+              <div className="text-xs text-brand-muted">Vegas Score</div>
             </div>
           )}
           {info.debutYear && (

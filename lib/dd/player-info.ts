@@ -48,6 +48,9 @@ export interface PlayerInfo {
   projection: Record<string, number> | null;
   isRookie: boolean;
   injuryStatus: string | null;
+  // Vegas-odds fantasy ranking (implied team totals / win prob)
+  vegasScore: number | null;
+  vegasRank: number | null;
   // Bio
   espnId: string | null;
   headshot: string | null;
@@ -585,6 +588,8 @@ export async function getPlayerInfo(opts: {
     projection: player.projection,
     isRookie: player.isRookie,
     injuryStatus: player.injuryStatus,
+    vegasScore: player.vegasScore ?? null,
+    vegasRank: player.vegasRank ?? null,
     espnId: player.espnId ?? null,
     headshot: player.headshot ?? null,
     height: player.height ?? null,

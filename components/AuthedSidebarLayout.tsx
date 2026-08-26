@@ -4,7 +4,7 @@ import Footer from '@/components/Footer';
 import FloatingSupportButton from '@/components/FloatingSupportButton';
 import {
   LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield,
-  Link as LinkIcon, LifeBuoy, Headphones, Code2, Trophy,
+  Link as LinkIcon, LifeBuoy, Headphones, Code2, Trophy, CalendarDays,
 } from 'lucide-react';
 
 export interface AuthedSidebarUser {
@@ -17,6 +17,7 @@ export interface AuthedSidebarUser {
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/games/mlb', label: 'Games', icon: CalendarDays },
   { href: '/dd', label: 'DiamondDraft', icon: Trophy },
   { href: '/dashboard/chat', label: 'AI Chat', icon: MessageSquare },
   { href: '/dashboard/stats', label: 'Your stats', icon: BarChart3 },

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Navbar from '@/components/MarketingNavbar';
 import Footer from '@/components/Footer';
 import Breadcrumbs from '@/components/Breadcrumbs';
@@ -13,10 +13,17 @@ import {
 } from '@/lib/seo';
 import { JsonLd } from '@/components/JsonLd';
 import { getGameById, fmtAmerican, impliedProb, teamSlug } from '@/lib/public-data';
+import { isGamesHubSport } from '@/lib/games-data';
 import { formatTeamName } from '@/lib/espn-scores';
 
 /**
- * Per-game landing page: /games/[sport]/[gameId]
+ * Per-game landing page: /games/[sport]/[gameSlug]
+ *
+ * For MLB/NFL (the sports with the full tabbed detail experience — see the
+ * [tab] segment) this immediately redirects to the `details` tab so there's
+ * one canonical URL per game. For every other sport (no tabbed pages built
+ * yet) this renders the original single-page odds summary, keyed off the
+ * raw `game_id` exactly as before — old links keep working unchanged.
  *
  * Long-tail SEO target: "Team A vs Team B odds", "Team A vs Team B prediction".
  * Each page carries a SportsEvent JSON-LD payload so it is eligible for
@@ -34,18 +41,19 @@ function findSport(slug: string) {
   return SPORTS.find((s) => s.slug === slug);
 }
 
-type Params = { params: { sport: string; gameId: string } };
+type Params = { params: { sport: string; gameSlug: string } };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const sport = findSport(params.sport);
   if (!sport) return { title: 'Game Not Found' };
-  const gameId = decodeURIComponent(params.gameId);
+  if (isGamesHubSport(sport.code)) return {}; // redirects before rendering, see default export
+  const gameId = decodeURIComponent(params.gameSlug);
   const game = await getGameById(sport.code, gameId);
   if (!game) {
     return buildMetadata({
       title: `${sport.name} Game Odds`,
       description: `Live ${sport.fullName} odds and matchup analysis from Valor Odds.`,
-      path: `/games/${sport.slug}/${params.gameId}`,
+      path: `/games/${sport.slug}/${params.gameSlug}`,
       noindex: true,
     });
   }
@@ -86,7 +94,10 @@ function formatGameTime(iso: string): string {
 export default async function GamePage({ params }: Params) {
   const sport = findSport(params.sport);
   if (!sport) notFound();
-  const gameId = decodeURIComponent(params.gameId);
+  if (isGamesHubSport(sport.code)) {
+    redirect(`/games/${sport.slug}/${params.gameSlug}/details`);
+  }
+  const gameId = decodeURIComponent(params.gameSlug);
   const game = await getGameById(sport.code, gameId);
   if (!game) notFound();
 
