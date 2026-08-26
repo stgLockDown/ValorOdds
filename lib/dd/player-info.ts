@@ -24,6 +24,14 @@ const SPORT_LEAGUE: Record<string, string> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// In-memory cache for getPlayerInfo — avoids redundant ESPN + LLM API calls
+// when the same player's hover card is opened repeatedly in the draft room.
+// TTL of 10 minutes balances freshness vs. performance.
+// ─────────────────────────────────────────────────────────────────────────────
+const PLAYER_INFO_CACHE = new Map<string, { data: PlayerInfo | null; expiresAt: number }>();
+const PLAYER_INFO_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -537,21 +545,37 @@ export async function getPlayerInfo(opts: {
   seasonYear?: number;
   playerName?: string;
 }): Promise<PlayerInfo | null> {
+  // Build a cache key from the lookup parameters
+  const cacheKey = opts.poolId
+    ? `pid:${opts.poolId}`
+    : `lookup:${opts.sport}:${opts.seasonYear}:${opts.playerName}`;
+
+  // Check the in-memory cache first
+  const cached = PLAYER_INFO_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
   let player;
   if (opts.poolId) {
     player = await getPlayerByIdFromPool(opts.poolId);
   } else if (opts.sport && opts.seasonYear && opts.playerName) {
     player = await getPlayerFromPool(opts.sport, opts.seasonYear, opts.playerName);
   }
-  if (!player) return null;
+  if (!player) {
+    // Cache the null result too (short TTL to avoid permanent negative caching)
+    PLAYER_INFO_CACHE.set(cacheKey, { data: null, expiresAt: Date.now() + 60_000 });
+    return null;
+  }
 
-  // Fetch career stats from ESPN (if we have an ESPN ID)
-  const careerStats: SeasonStatLine[] = player.espnId
-    ? await fetchCareerStats(player.sport, player.espnId, 3).catch(() => [])
-    : [];
-
-  // Fetch DB season stats as cross-reference
-  const dbSeasonStats = await fetchDbSeasonStats(player.sport, player.playerName);
+  // Fetch career stats from ESPN and DB season stats in parallel (both are
+  // independent — only the AI analytics step needs both to be complete).
+  const [careerStats, dbSeasonStats] = await Promise.all([
+    player.espnId
+      ? fetchCareerStats(player.sport, player.espnId, 3).catch(() => [])
+      : Promise.resolve([] as SeasonStatLine[]),
+    fetchDbSeasonStats(player.sport, player.playerName),
+  ]);
 
   // Generate AI analytics
   const { text: aiAnalytics, error: aiError } = await generateAIAnalytics(
@@ -574,7 +598,7 @@ export async function getPlayerInfo(opts: {
     dbSeasonStats
   );
 
-  return {
+  const result: PlayerInfo = {
     poolId: player.id!,
     playerName: player.playerName,
     team: player.team,
@@ -605,4 +629,9 @@ export async function getPlayerInfo(opts: {
     aiAnalytics,
     aiError,
   };
+
+  // Cache the result for subsequent hover calls
+  PLAYER_INFO_CACHE.set(cacheKey, { data: result, expiresAt: Date.now() + PLAYER_INFO_CACHE_TTL });
+
+  return result;
 }
