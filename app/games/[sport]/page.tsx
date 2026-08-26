@@ -29,7 +29,9 @@ function findSport(slug: string) {
 type Params = { params: { sport: string } };
 
 export async function generateStaticParams() {
-  return SPORTS.filter((s) => isGamesHubSport(s.code)).map((s) => ({ sport: s.slug }));
+  // Return empty — pages are generated on-demand at runtime via ISR (revalidate=60).
+  // Pre-rendering at build time requires DB access which can hang the build.
+  return [];
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {

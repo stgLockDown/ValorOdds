@@ -34,8 +34,9 @@ function findSport(slug: string) {
 }
 
 export async function generateStaticParams() {
-  const sports = SPORTS.filter((s) => isGamesHubSport(s.code));
-  return sports.flatMap((s) => GAME_TABS.map((t) => ({ sport: s.slug, gameSlug: '[]', tab: t.slug })));
+  // Return empty — pages are generated on-demand at runtime via ISR (revalidate=60).
+  // Pre-rendering at build time requires DB access which can hang the build.
+  return [];
 }
 
 function isValidTab(tab: string): tab is GameTabSlug {
