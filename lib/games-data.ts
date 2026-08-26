@@ -15,7 +15,7 @@
 import { query } from '@/lib/db';
 import { unstable_cache } from 'next/cache';
 import { sportFilterClause } from '@/lib/sport-filter';
-import { normalizeTeam, formatTeamName, buildEspnScoreIndex, SPORT_PATHS, type EspnScore } from '@/lib/espn-scores';
+import { normalizeTeam, formatTeamName, buildEspnScoreIndex, SPORT_PATHS, isDerivativeMarket, matchupSignature, type EspnScore } from '@/lib/espn-scores';
 import { formatBookmakerName } from '@/lib/sportsbooks';
 import { teamSlug, fmtAmerican, impliedProb, isValidAmericanOdds, MAX_VALID_AMERICAN_ODDS } from '@/lib/public-data';
 import { teamLogoUrl } from '@/lib/team-logos';
@@ -202,10 +202,17 @@ export async function getGamesGrid(sportCode: string, limit = 60): Promise<GameC
   }
 
   // De-dupe by matchup signature (same pattern as getUpcomingGamesBySport),
-  // keeping the game_id with richer sportsbook coverage.
+  // keeping the game_id with richer sportsbook coverage. The signature is
+  // time-tolerant (truncated to the hour) so the same game from
+  // different feeds with slightly different start times (e.g. 20:07 vs
+  // 20:09 vs 20:13) collapses to a single card instead of rendering as
+  // duplicates. We also filter out derivative/junk markets ("Home Runs
+  // (15 Games)", "Home (Runs)", etc.) that aren't real games.
   const bySignature = new Map<string, any>();
   for (const row of rows) {
-    const sig = [normalizeTeam(row.home_team), normalizeTeam(row.away_team), new Date(row.commence_time).toISOString()].join('|');
+    if (isDerivativeMarket(row.home_team, row.away_team)) continue;
+    const sig = matchupSignature(row.home_team, row.away_team, row.commence_time);
+    if (!sig) continue;
     const existing = bySignature.get(sig);
     if (!existing || row.n_books > existing.n_books) bySignature.set(sig, row);
   }

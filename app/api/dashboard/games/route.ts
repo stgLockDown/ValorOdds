@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { buildEspnScoreIndex, normalizeTeam } from '@/lib/espn-scores';
+import { buildEspnScoreIndex, normalizeTeam, isDerivativeMarket, matchupSignature } from '@/lib/espn-scores';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,11 +70,9 @@ export async function GET(req: Request) {
   // recently fetched row on a tie).
   const bySignature = new Map<string, any>();
   for (const row of result.rows as any[]) {
-    const sig = [
-      normalizeTeam(row.home_team),
-      normalizeTeam(row.away_team),
-      row.commence_time ? new Date(row.commence_time).toISOString() : '',
-    ].join('|');
+    if (isDerivativeMarket(row.home_team, row.away_team)) continue;
+    const sig = matchupSignature(row.home_team, row.away_team, row.commence_time || '');
+    if (!sig) continue;
     const existing = bySignature.get(sig);
     if (
       !existing ||
