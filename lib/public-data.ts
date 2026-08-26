@@ -16,7 +16,7 @@ import { query } from '@/lib/db';
 import { unstable_cache } from 'next/cache';
 import { sportFilterClause } from '@/lib/sport-filter';
 import { isSameBook, formatBookmakerName } from '@/lib/sportsbooks';
-import { normalizeTeam } from '@/lib/espn-scores';
+import { normalizeTeam, isDerivativeMarket, matchupSignature } from '@/lib/espn-scores';
 
 /**
  * Sport filter logic lives in `@/lib/sport-filter` so authenticated
@@ -79,11 +79,9 @@ export const getUpcomingGamesBySport = unstable_cache(
 
       const bySignature = new Map<string, any>();
       for (const row of r.rows as any[]) {
-        const sig = [
-          normalizeTeam(row.home_team),
-          normalizeTeam(row.away_team),
-          new Date(row.commence_time).toISOString(),
-        ].join('|');
+        if (isDerivativeMarket(row.home_team, row.away_team)) continue;
+        const sig = matchupSignature(row.home_team, row.away_team, row.commence_time);
+        if (!sig) continue;
         const existing = bySignature.get(sig);
         if (!existing || row.n_books > existing.n_books) {
           bySignature.set(sig, row);
@@ -171,11 +169,9 @@ export const getBestOddsBySportMarket = unstable_cache(
       // rows (i.e. richer bookmaker coverage).
       const bySignature = new Map<string, BestOdds>();
       for (const game of Object.values(byGame)) {
-        const sig = [
-          normalizeTeam(game.homeTeam),
-          normalizeTeam(game.awayTeam),
-          game.commenceTime,
-        ].join('|');
+        if (isDerivativeMarket(game.homeTeam, game.awayTeam)) continue;
+        const sig = matchupSignature(game.homeTeam, game.awayTeam, game.commenceTime);
+        if (!sig) continue;
         const existing = bySignature.get(sig);
         if (!existing || game.outcomes.length > existing.outcomes.length) {
           bySignature.set(sig, game);

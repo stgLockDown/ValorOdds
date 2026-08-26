@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { sportFilterClause } from '@/lib/sport-filter';
 import { formatBookmakerName } from '@/lib/sportsbooks';
-import { normalizeTeam } from '@/lib/espn-scores';
+import { normalizeTeam, isDerivativeMarket, matchupSignature } from '@/lib/espn-scores';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -88,11 +88,9 @@ export async function GET(req: Request) {
   // game_id has more bookmaker coverage.
   const bySignature = new Map<string, any>();
   for (const game of Object.values(games) as any[]) {
-    const sig = [
-      normalizeTeam(game.home_team),
-      normalizeTeam(game.away_team),
-      game.commence_time ? new Date(game.commence_time).toISOString() : '',
-    ].join('|');
+    if (isDerivativeMarket(game.home_team, game.away_team)) continue;
+    const sig = matchupSignature(game.home_team, game.away_team, game.commence_time || '');
+    if (!sig) continue;
     const existing = bySignature.get(sig);
     const bookCount = Object.keys(game.books).length;
     const existingBookCount = existing ? Object.keys(existing.books).length : -1;

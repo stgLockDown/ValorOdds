@@ -98,6 +98,21 @@ const CITY_ABBREVIATIONS: [RegExp, string][] = [
   [/\bbos\b/g, 'boston'],
   [/\bcin\b/g, 'cincinnati'],
   [/\bhst\b/g, 'houston'],
+  // NFL city abbreviations used by some odds feeds but missing above.
+  // Without these, "IND Colts" normalizes to "indcolts" while the full
+  // "Indianapolis Colts" normalizes to "indianapoliscolts" — they never
+  // match, so the same game from two feeds produces duplicate game cards.
+  [/\bind\b/g, 'indianapolis'],
+  [/\blv\b/g, 'las vegas'],
+  [/\bne\b/g, 'new england'],
+  [/\bno\b/g, 'new orleans'],
+  [/\bgb\b/g, 'green bay'],
+  [/\bjax\b/g, 'jacksonville'],
+  [/\bten\b/g, 'tennessee'],
+  [/\bcar\b/g, 'carolina'],
+  [/\bden\b/g, 'denver'],
+  [/\bdal\b/g, 'dallas'],
+  [/\buf\b/g, 'buffalo'],
   [/\bnym\b/g, 'new york'],    // NY Mets
   [/\bnyy\b/g, 'new york'],    // NY Yankees
   [/\bchc\b/g, 'chicago'],     // Chi Cubs
@@ -158,16 +173,80 @@ const MLB_TEAM_DISPLAY_NAMES: Record<string, string> = {
 };
 
 /**
- * Formats a raw team name for display, expanding known MLB city
- * abbreviations to their full names. Falls back to the original string
- * (trimmed) for teams/sports not in the lookup table, so this is safe to
- * apply universally without breaking non-MLB team names.
+ * Canonical NFL full team names, keyed by every raw variant seen coming out
+ * of the odds feed (full name and city-abbreviated forms). Same purpose as
+ * the MLB map above — display normalization so abbreviated feed names like
+ * "IND Colts" render as "Indianapolis Colts" instead of the raw abbreviation.
+ */
+const NFL_TEAM_DISPLAY_NAMES: Record<string, string> = {
+  'ari cardinals': 'Arizona Cardinals',
+  'arizona cardinals': 'Arizona Cardinals',
+  'atlanta falcons': 'Atlanta Falcons',
+  'baltimore ravens': 'Baltimore Ravens',
+  'bal ravens': 'Baltimore Ravens',
+  'buffalo bills': 'Buffalo Bills',
+  'buf bills': 'Buffalo Bills',
+  'carolina panthers': 'Carolina Panthers',
+  'car panthers': 'Carolina Panthers',
+  'chicago bears': 'Chicago Bears',
+  'cincinnati bengals': 'Cincinnati Bengals',
+  'cleveland browns': 'Cleveland Browns',
+  'dallas cowboys': 'Dallas Cowboys',
+  'dal cowboys': 'Dallas Cowboys',
+  'denver broncos': 'Denver Broncos',
+  'den broncos': 'Denver Broncos',
+  'detroit lions': 'Detroit Lions',
+  'det lions': 'Detroit Lions',
+  'green bay packers': 'Green Bay Packers',
+  'gb packers': 'Green Bay Packers',
+  'houston texans': 'Houston Texans',
+  'indianapolis colts': 'Indianapolis Colts',
+  'ind colts': 'Indianapolis Colts',
+  'jacksonville jaguars': 'Jacksonville Jaguars',
+  'jax jaguars': 'Jacksonville Jaguars',
+  'kansas city chiefs': 'Kansas City Chiefs',
+  'kc chiefs': 'Kansas City Chiefs',
+  'las vegas raiders': 'Las Vegas Raiders',
+  'lv raiders': 'Las Vegas Raiders',
+  'los angeles chargers': 'Los Angeles Chargers',
+  'la chargers': 'Los Angeles Chargers',
+  'los angeles rams': 'Los Angeles Rams',
+  'la rams': 'Los Angeles Rams',
+  'miami dolphins': 'Miami Dolphins',
+  'mia dolphins': 'Miami Dolphins',
+  'minnesota vikings': 'Minnesota Vikings',
+  'new england patriots': 'New England Patriots',
+  'ne patriots': 'New England Patriots',
+  'new orleans saints': 'New Orleans Saints',
+  'no saints': 'New Orleans Saints',
+  'new york giants': 'New York Giants',
+  'ny giants': 'New York Giants',
+  'new york jets': 'New York Jets',
+  'ny jets': 'New York Jets',
+  'philadelphia eagles': 'Philadelphia Eagles',
+  'pittsburgh steelers': 'Pittsburgh Steelers',
+  'san francisco 49ers': 'San Francisco 49ers',
+  'sf 49ers': 'San Francisco 49ers',
+  'seattle seahawks': 'Seattle Seahawks',
+  'tampa bay buccaneers': 'Tampa Bay Buccaneers',
+  'tb buccaneers': 'Tampa Bay Buccaneers',
+  'tennessee titans': 'Tennessee Titans',
+  'ten titans': 'Tennessee Titans',
+  'washington commanders': 'Washington Commanders',
+  'wash commanders': 'Washington Commanders',
+};
+
+/**
+ * Formats a raw team name for display, expanding known city abbreviations
+ * to their full names for both MLB and NFL. Falls back to the original
+ * string (trimmed) for teams/sports not in the lookup tables, so this is
+ * safe to apply universally without breaking unknown team names.
  */
 export function formatTeamName(name: string | null | undefined): string {
   const raw = String(name || '').trim();
   if (!raw) return raw;
   const key = raw.toLowerCase().replace(/\s+/g, ' ').trim();
-  return MLB_TEAM_DISPLAY_NAMES[key] || raw;
+  return MLB_TEAM_DISPLAY_NAMES[key] || NFL_TEAM_DISPLAY_NAMES[key] || raw;
 }
 
 export function normalizeTeam(name: string | null | undefined): string {
@@ -182,6 +261,64 @@ export function normalizeTeam(name: string | null | undefined): string {
     n = n.replace(pattern, full);
   }
   return n.replace(/[^a-z0-9]+/g, '').trim();
+}
+
+/**
+ * Detects derivative/junk "markets" that odds feeds inject alongside real
+ * games — e.g. "Home Runs (15 Games)", "Away Runs (15 Games)", "Home (Runs)",
+ * "Away (Runs)". These are aggregate/prop markets, not real matchups, but
+ * they carry the same column structure so they'd render as bogus game cards
+ * on the games hub without this filter.
+ *
+ * Returns true if the row should be EXCLUDED (it's a junk/derivative entry).
+ */
+const DERIVATIVE_MARKET_PATTERNS = [
+  /^home\s*runs/i,
+  /^away\s*runs/i,
+  /^home\s*\(runs\)/i,
+  /^away\s*\(runs\)/i,
+  /^home\s+team\s+total/i,
+  /^away\s+team\s+total/i,
+  /^home\s+runs\s*\(/i,
+  /^away\s+runs\s*\(/i,
+  /^(over|under)\s*\(/i,
+  /^(1st|2nd|3rd|4th|5th|6th|7th|8th|9th)\s+inning/i,
+  /^first\s+(half|quarter)/i,
+  /^second\s+(half|quarter)/i,
+];
+
+export function isDerivativeMarket(homeTeam: string, awayTeam: string): boolean {
+  const h = String(homeTeam || '');
+  const a = String(awayTeam || '');
+  // If either side matches a derivative pattern, exclude the whole row.
+  return DERIVATIVE_MARKET_PATTERNS.some((re) => re.test(h) || re.test(a));
+}
+
+/**
+ * Builds a time-tolerant matchup signature for de-duplication. Different
+ * odds feeds report slightly different start times for the same real-world
+ * game (e.g. 20:07, 20:09, and 20:13 for the same Angels vs Guardians
+ * game), so including the exact ISO timestamp in the signature causes the
+ * same game to appear multiple times. We instead truncate the time to the
+ * hour, which collapses near-identical start times while still
+ * distinguishing genuinely different games on the same day (the team names
+ * in the signature ensure different games in the same hour stay distinct).
+ */
+export function matchupSignature(
+  homeTeam: string,
+  awayTeam: string,
+  commenceTime: string | Date,
+): string {
+  const d = new Date(commenceTime);
+  if (Number.isNaN(d.getTime())) return '';
+  // Truncate to the hour. Different odds feeds report start times that
+  // differ by a few minutes for the same real-world game (e.g. 20:07,
+  // 20:09, 20:13), so we bucket to the hour to collapse those variants.
+  // Since the signature already includes normalized team names, two
+  // genuinely different games in the same hour (different teams) still
+  // get distinct signatures.
+  const timeBucket = d.toISOString().slice(0, 13); // YYYY-MM-DDTHH
+  return [normalizeTeam(homeTeam), normalizeTeam(awayTeam), timeBucket].join('|');
 }
 
 function dateKeyUTC(iso: string | null | undefined): string {
