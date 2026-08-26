@@ -35,27 +35,34 @@ export async function POST(req: NextRequest) {
   const sport = (body.sport === 'MLB' ? 'MLB' : 'NFL') as Sport;
   const numBots = Math.max(1, Math.min(11, Number(body.numBots) || 7));
   const totalTeams = numBots + 1; // user + bots
+  // draftPosition: 1-indexed slot the user wants to draft from (1..totalTeams)
+  const requestedPos = Math.max(1, Math.min(totalTeams, Number(body.draftPosition) || 1));
 
   // Validate team count
   if (totalTeams < 6) {
     // If fewer than 6 total, pad with extra bots to meet the 6-minimum DB constraint
     const extraNeeded = 6 - totalTeams;
     const adjustedBots = numBots + extraNeeded;
-    return createMockLeague(session, sport, adjustedBots, totalTeams + extraNeeded);
+    // Clamp draft position to the new total
+    const adjustedPos = Math.min(requestedPos, totalTeams + extraNeeded);
+    return createMockLeague(session, sport, adjustedBots, totalTeams + extraNeeded, adjustedPos);
   }
 
-  return createMockLeague(session, sport, numBots, totalTeams);
+  return createMockLeague(session, sport, numBots, totalTeams, requestedPos);
 }
 
 async function createMockLeague(
   session: { user: { id: string; email?: string | null } },
   sport: Sport,
   numBots: number,
-  totalTeams: number
+  totalTeams: number,
+  userDraftPosition: number
 ) {
   const userId = Number(session.user.id);
   const numTeams = Math.max(6, Math.min(12, totalTeams));
   const actualBots = numTeams - 1; // user + (numTeams-1) bots
+  // Ensure userDraftPosition is within valid range for the actual numTeams
+  const userPos = Math.max(1, Math.min(numTeams, userDraftPosition));
 
   // Determine season year
   const now = new Date();
@@ -75,7 +82,17 @@ async function createMockLeague(
     try {
       await ensurePlayerPool(sport, seasonYear, scoringKey);
     } catch {
-      // Non-fatal — we'll handle empty pool below
+      // Non-fatal -- we'll handle empty pool below
+    }
+
+    // Clean up old completed mock leagues for this user to keep the DB tidy.
+    // Deletes mock leagues (settings->>'isMock' = 'true') that are no longer drafting
+    // (status in 'in_season', 'completed', 'archived') and were created by this user.
+    try {
+      await cleanupOldMockLeagues(userId);
+    } catch (err) {
+      console.error('[mock-league] cleanup of old mock leagues failed:', err);
+      // Non-fatal -- don't block new mock draft creation
     }
 
     // Check we have enough players in the pool
@@ -136,28 +153,35 @@ async function createMockLeague(
       const userTeamName = `${session.user.email?.split('@')[0] ?? 'My'} Team`;
       await client.query(
         `INSERT INTO dd_league_members (league_id, user_id, team_name, is_commissioner, draft_position, faab_budget)
-         VALUES ($1, $2, $3, TRUE, 1, 100)`,
-        [leagueId, userId, userTeamName]
+         VALUES ($1, $2, $3, TRUE, $4, 100)`,
+        [leagueId, userId, userTeamName, userPos]
       );
 
-      const memberIds: { slot: number; memberId: string; isBot: boolean; userId: number }[] = [
-        { slot: 0, memberId: '', isBot: false, userId },
-      ];
+      // memberIds array: index = slot (0-based), maps to the member at that draft position
+      const memberIds: { slot: number; memberId: string; isBot: boolean; userId: number }[] =
+        new Array(numTeams).fill(null);
 
-      for (let i = 0; i < actualBots; i++) {
-        const botTeamName = BOT_TEAM_NAMES[i % BOT_TEAM_NAMES.length];
+      // Place the user at slot (userPos - 1)
+      memberIds[userPos - 1] = { slot: userPos - 1, memberId: '', isBot: false, userId };
+
+      // Fill remaining slots with bots
+      let botIndex = 0;
+      for (let slot = 0; slot < numTeams; slot++) {
+        if (slot === userPos - 1) continue; // skip user's slot
+        const botTeamName = BOT_TEAM_NAMES[botIndex % BOT_TEAM_NAMES.length];
         const memberRes = await client.query<{ id: string }>(
           `INSERT INTO dd_league_members (league_id, user_id, team_name, is_commissioner, draft_position, faab_budget)
            VALUES ($1, $2, $3, FALSE, $4, 100)
            RETURNING id::text`,
-          [leagueId, botUserIds[i], botTeamName, i + 2]
+          [leagueId, botUserIds[botIndex], botTeamName, slot + 1]
         );
-        memberIds.push({
-          slot: i + 1,
+        memberIds[slot] = {
+          slot,
           memberId: memberRes.rows[0].id,
           isBot: true,
-          userId: botUserIds[i],
-        });
+          userId: botUserIds[botIndex],
+        };
+        botIndex++;
       }
 
       // ── 4. Create the draft record (is_mock = true) ─────────────────────
@@ -179,24 +203,26 @@ async function createMockLeague(
       return { leagueId, draftId, memberIds };
     });
 
-    // ── 5. Auto-pick for all bot slots up to the user's first pick ────────
-    // In a snake draft with the user at slot 0 (pick 1), the user picks first.
-    // So we don't auto-pick anything before the user — the user picks #1.
-    // But if the user wants bots to have picked first, we'd pick for slots > 0.
-    // For the best testing experience, the user picks first (slot 0, overall pick 1),
-    // then bots auto-pick after each user pick.
-    //
-    // However, to make it feel like a real draft where you're "in the middle",
-    // let's auto-pick the bot picks that come BEFORE the user's slot in round 1
-    // only if the user is NOT slot 0. Since user is always slot 0 (position 1),
-    // there are no pre-user picks. The DraftRoomClient polling will handle
-    // auto-picking bots after each user pick.
+    // -- 5. Auto-pick for all bot slots that come BEFORE the user's first pick --
+    // In a snake draft, round 1 goes slots 0->(N-1). The user is at slot (userPos-1).
+    // All slots before the user in round 1 (slots 0..userPos-2) are bots and need
+    // to be auto-picked so the draft advances to the user's turn.
+    // If userPos == 1 (slot 0), there are no pre-user picks -- user picks first.
+    const preUserPicks = userPos - 1;
+    for (let i = 0; i < preUserPicks; i++) {
+      try {
+        await autoPickBestAvailable(result.draftId, sport, seasonYear);
+      } catch (err) {
+        console.error(`Pre-user auto-pick ${i + 1}/${preUserPicks} failed:`, err);
+        break; // stop if something goes wrong; user can still draft
+      }
+    }
 
     // Record the mock draft in dd_mock_drafts for tracking
     try {
       await query(
         `INSERT INTO dd_mock_drafts (user_id, sport, league_config, ai_difficulty, ai_tendencies, user_pick_slot, status)
-         VALUES ($1, $2, $3, 'average', '{}', 0, 'in_progress')`,
+         VALUES ($1, $2, $3, 'average', '{}', $4, 'in_progress')`,
         [
           userId,
           sport,
@@ -207,10 +233,11 @@ async function createMockLeague(
             draftRounds,
             sport,
           }),
+          userPos - 1, // 0-indexed slot
         ]
       );
     } catch {
-      // Non-fatal — tracking only
+      // Non-fatal -- tracking only
     }
 
     return NextResponse.json({
@@ -219,7 +246,10 @@ async function createMockLeague(
       sport,
       numTeams,
       draftRounds,
-      message: 'Mock draft created! You pick first — bots will auto-draft after you.',
+      userDraftPosition: userPos,
+      message: userPos === 1
+        ? 'Mock draft created! You pick first -- bots will auto-draft after you.'
+        : `Mock draft created! You draft from position #${userPos} -- ${preUserPicks} bot pick${preUserPicks > 1 ? 's' : ''} made before your turn.`,
     });
   } catch (err: any) {
     console.error('Mock league creation failed:', err);
@@ -237,4 +267,182 @@ function generateMockInviteCode(): string {
     code += chars[Math.floor(Math.random() * chars.length)];
   }
   return code;
+}
+
+// ── Helper: clean up old completed mock leagues for a user ──
+// Removes mock leagues that are no longer drafting along with their bot users,
+// draft picks, and members. Keeps the dd_mock_drafts tracking record intact.
+async function cleanupOldMockLeagues(userId: number): Promise<void> {
+  // Find completed mock leagues where this user is the commissioner
+  const oldLeagues = await query<{ id: string }>(
+    `SELECT l.id::text
+     FROM dd_leagues l
+     WHERE l.commissioner_id = $1
+       AND l.settings->>'isMock' = 'true'
+       AND l.status IN ('in_season', 'completed', 'archived')`,
+    [userId]
+  );
+
+  if (oldLeagues.rows.length === 0) return;
+
+  for (const row of oldLeagues.rows) {
+    const leagueId = BigInt(row.id);
+    try {
+      await tx(async (client) => {
+        // Get the draft id (if any) and bot user ids before deleting
+        const draftRow = await client.query<{ id: string }>(
+          `SELECT d.id::text FROM dd_drafts d WHERE d.league_id = $1`,
+          [leagueId]
+        );
+        const draftId = draftRow.rows[0]?.id ? BigInt(draftRow.rows[0].id) : null;
+
+        // Get bot user ids (users with bot_no_login password that are members)
+        const botUsers = await client.query<{ user_id: string }>(
+          `SELECT m.user_id::text FROM dd_league_members m
+           JOIN web_users u ON u.id = m.user_id
+           WHERE m.league_id = $1 AND u.password_hash = 'bot_no_login'`,
+          [leagueId]
+        );
+        const botUserIds = botUsers.rows.map((r) => BigInt(r.user_id));
+
+        // Delete draft picks
+        if (draftId) {
+          await client.query(`DELETE FROM dd_draft_picks WHERE draft_id = $1`, [draftId]);
+        }
+        // Delete draft record
+        if (draftId) {
+          await client.query(`DELETE FROM dd_drafts WHERE id = $1`, [draftId]);
+        }
+        // Delete league members
+        await client.query(`DELETE FROM dd_league_members WHERE league_id = $1`, [leagueId]);
+        // Delete the league
+        await client.query(`DELETE FROM dd_leagues WHERE id = $1`, [leagueId]);
+        // Delete bot users
+        for (const botId of botUserIds) {
+          await client.query(`DELETE FROM web_users WHERE id = $1`, [botId]);
+        }
+      });
+    } catch (err) {
+      console.error(`[mock-league] Failed to clean up league ${row.id}:`, err);
+      // Continue to next league
+    }
+  }
+}
+
+// ── Helper: auto-pick the best available player for the current on-clock bot ──
+// Used to pre-fill bot picks before the user's first turn in mock drafts.
+async function autoPickBestAvailable(
+  draftId: number,
+  sport: Sport,
+  seasonYear: number,
+): Promise<void> {
+  // Fetch draft state
+  const draft = await queryOne<{
+    draft_type: string; status: string; round_count: number;
+    current_round: number; current_pick: number;
+    league_id: string; num_teams: number;
+  }>(
+    `SELECT d.draft_type, d.status, d.round_count, d.current_round, d.current_pick,
+            d.league_id::text, l.num_teams
+     FROM dd_drafts d
+     JOIN dd_leagues l ON l.id = d.league_id
+     WHERE d.id = $1`,
+    [draftId]
+  );
+  if (!draft) throw new Error('Draft not found');
+  if (draft.status !== 'in_progress') throw new Error(`Draft is ${draft.status}`);
+
+  const numTeams = draft.num_teams;
+  const rounds = draft.round_count;
+  const fullOrder = generateDraftOrder(draft.draft_type as any, numTeams, rounds);
+
+  const picksMade = await queryOne<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks WHERE draft_id = $1`,
+    [draftId]
+  );
+  const currentOverallPick = Number(picksMade?.cnt ?? '0') + 1;
+  const currentOrderEntry = fullOrder.find((p) => p.overallPick === currentOverallPick);
+  if (!currentOrderEntry) throw new Error('Draft is complete');
+
+  const expectedSlot = currentOrderEntry.slot;
+  const expectedDraftPosition = expectedSlot + 1;
+
+  // Find the on-clock member
+  const onClockMember = await queryOne<{
+    id: string; is_bot: boolean;
+  }>(
+    `SELECT m.id::text,
+            (u.password_hash = 'bot_no_login') AS is_bot
+     FROM dd_league_members m
+     JOIN web_users u ON u.id = m.user_id
+     WHERE m.league_id = $1 AND m.draft_position = $2`,
+    [draft.league_id, expectedDraftPosition]
+  );
+  if (!onClockMember) throw new Error('On-clock member not found');
+  if (!onClockMember.is_bot) throw new Error('On-clock member is not a bot');
+
+  // Find best available player by rank
+  const bestPlayer = await queryOne<{
+    id: string; player_name: string; team: string | null; position: string | null;
+  }>(
+    `SELECT pp.id::text, pp.player_name, pp.team, pp.position
+     FROM dd_player_pool pp
+     WHERE pp.sport = $1
+       AND pp.season_year = $2
+       AND pp.id::text NOT IN (
+         SELECT player_id FROM dd_draft_picks
+         WHERE draft_id = $3 AND player_id IS NOT NULL
+       )
+       AND pp.player_name NOT IN (
+         SELECT player_name FROM dd_draft_picks WHERE draft_id = $3
+       )
+     ORDER BY pp.rank NULLS LAST, pp.projected_points DESC NULLS LAST
+     LIMIT 1`,
+    [sport, seasonYear, draftId]
+  );
+  if (!bestPlayer) throw new Error('No available players to draft');
+
+  const memberIdForPick = BigInt(onClockMember.id);
+  const nextOverall = currentOverallPick + 1;
+  const nextOrderEntry = fullOrder.find((p) => p.overallPick === nextOverall);
+  const isLastPick = currentOverallPick >= numTeams * rounds;
+  const nextRound = nextOrderEntry?.round ?? draft.round_count;
+  const nextPickInRound = nextOrderEntry?.pickInRound ?? 1;
+
+  await tx(async (client) => {
+    await client.query(
+      `INSERT INTO dd_draft_picks
+        (draft_id, round_num, pick_in_round, overall_pick, member_id,
+         player_name, player_id, team, position, sport, is_auto_picked, picked_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, NOW())`,
+      [
+        draftId,
+        currentOrderEntry.round,
+        currentOrderEntry.pickInRound,
+        currentOverallPick,
+        memberIdForPick,
+        bestPlayer.player_name,
+        bestPlayer.id,
+        bestPlayer.team,
+        bestPlayer.position,
+        sport,
+      ]
+    );
+
+    if (isLastPick) {
+      await client.query(
+        `UPDATE dd_drafts SET status = 'completed', current_round = $1, current_pick = $2, completed_at = NOW() WHERE id = $3`,
+        [draft.round_count, numTeams, draftId]
+      );
+      await client.query(
+        `UPDATE dd_leagues SET status = 'in_season', updated_at = NOW() WHERE id = $1`,
+        [draft.league_id]
+      );
+    } else {
+      await client.query(
+        `UPDATE dd_drafts SET current_round = $1, current_pick = $2 WHERE id = $3`,
+        [nextRound, nextPickInRound, draftId]
+      );
+    }
+  });
 }

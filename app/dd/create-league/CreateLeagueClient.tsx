@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import {
   Target, Shield, Trophy, ChevronRight, ChevronLeft, Check,
   Users, Settings, Zap, Loader2, Copy, CheckCircle,
+  X, Save, Trash2,
 } from 'lucide-react';
 
 interface RosterPresetInfo {
   key: string; name: string; totalRosterSize: number; totalStarters: number;
+  qbCount: number; hasSuperflex: boolean; slotSummary: string;
 }
 interface ScoringPresetInfo {
   key: string; name: string; mode: string;
@@ -50,6 +52,69 @@ export default function CreateLeagueClient() {
   const [isPublic, setIsPublic] = useState(true);
   const [teamName, setTeamName] = useState('');
   const [lineupSetting, setLineupSetting] = useState<'daily' | 'weekly'>('daily');
+  const [pickTimerSeconds, setPickTimerSeconds] = useState(90);
+  const [faabBudget, setFaabBudget] = useState(100);
+  const [playoffWeeks, setPlayoffWeeks] = useState(3);
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+
+  const DRAFT_STORAGE_KEY = 'dd_create_league_draft';
+
+  // Save wizard state to localStorage whenever form fields change
+  useEffect(() => {
+    if (!hasRestoredDraft) return; // don't save until we've restored any existing draft
+    const draftData = {
+      step,
+      sport,
+      name,
+      format,
+      scoringPreset,
+      rosterPreset,
+      numTeams,
+      draftType,
+      keeperType,
+      isPublic,
+      teamName,
+      lineupSetting,
+      pickTimerSeconds,
+      faabBudget,
+      playoffWeeks,
+      savedAt: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+    } catch {
+      // localStorage might be full or unavailable -- non-fatal
+    }
+  }, [hasRestoredDraft, step, sport, name, format, scoringPreset, rosterPreset, numTeams, draftType, keeperType, isPublic, teamName, lineupSetting, pickTimerSeconds, faabBudget, playoffWeeks]);
+
+  // Restore wizard state from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.step !== undefined) setStep(data.step);
+        if (data.sport) setSport(data.sport);
+        if (data.name) setName(data.name);
+        if (data.format) setFormat(data.format);
+        if (data.scoringPreset) setScoringPreset(data.scoringPreset);
+        if (data.rosterPreset) setRosterPreset(data.rosterPreset);
+        if (data.numTeams) setNumTeams(data.numTeams);
+        if (data.draftType) setDraftType(data.draftType);
+        if (data.keeperType) setKeeperType(data.keeperType);
+        if (typeof data.isPublic === 'boolean') setIsPublic(data.isPublic);
+        if (data.teamName) setTeamName(data.teamName);
+        if (data.lineupSetting) setLineupSetting(data.lineupSetting);
+        if (data.pickTimerSeconds) setPickTimerSeconds(data.pickTimerSeconds);
+        if (data.faabBudget) setFaabBudget(data.faabBudget);
+        if (data.playoffWeeks) setPlayoffWeeks(data.playoffWeeks);
+      }
+    } catch {
+      // Corrupt or unavailable -- non-fatal
+    }
+    setHasRestoredDraft(true);
+  }, []);
 
   useEffect(() => {
     fetch('/api/dd/presets')
@@ -102,6 +167,9 @@ export default function CreateLeagueClient() {
           isPublic,
           lineupSetting,
           teamName: teamName.trim() || undefined,
+          pickTimerSeconds,
+          faabBudget,
+          playoffWeeks: sport === 'NFL' ? playoffWeeks : undefined,
         }),
       });
       const data = await res.json();
@@ -115,6 +183,12 @@ export default function CreateLeagueClient() {
         inviteCode: data.inviteCode,
         name: data.leagueName,
       });
+      // Clear saved draft since the league was successfully created
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {
+        // non-fatal
+      }
       setSubmitting(false);
     } catch {
       setError('Network error');
@@ -188,6 +262,35 @@ export default function CreateLeagueClient() {
         <Trophy className="w-7 h-7 text-brand-accent" />
         <h1 className="text-2xl sm:text-3xl font-bold text-brand-text">Create a League</h1>
       </div>
+
+      {/* Restored draft banner */}
+      {hasRestoredDraft && (() => {
+        let savedAt: string | null = null;
+        try {
+          const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (saved) savedAt = JSON.parse(saved)?.savedAt ?? null;
+        } catch { /* ignore */ }
+        if (!savedAt) return null;
+        const date = new Date(savedAt);
+        const timeStr = date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return (
+          <div className="flex items-center justify-between gap-3 mb-4 p-3 rounded-lg bg-brand-primary/10 border border-brand-primary/30">
+            <div className="flex items-center gap-2 text-sm text-brand-text">
+              <Save className="w-4 h-4 text-brand-primary flex-shrink-0" />
+              <span>Continuing from a saved draft (last saved {timeStr})</span>
+            </div>
+            <button
+              onClick={() => {
+                try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ignore */ }
+                window.location.reload();
+              }}
+              className="text-xs text-brand-muted hover:text-brand-danger flex items-center gap-1 flex-shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Start fresh
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Stepper */}
       <div className="flex items-center gap-1 sm:gap-2 mb-8">
@@ -308,6 +411,18 @@ export default function CreateLeagueClient() {
                     <div className="text-xs text-brand-muted mt-1">
                       {r.totalRosterSize} players · {r.totalStarters} starters
                     </div>
+                    {sport === 'NFL' && (
+                      <div className="text-xs mt-1.5 flex items-center justify-center gap-1.5 flex-wrap">
+                        <span className={`px-1.5 py-0.5 rounded ${r.qbCount === 1 && !r.hasSuperflex ? 'bg-brand-primary/20 text-brand-primaryText' : 'bg-brand-elevated text-brand-muted'}`}>
+                          {r.qbCount} QB{r.hasSuperflex ? ' + SFlex' : ''}
+                        </span>
+                      </div>
+                    )}
+                    {r.slotSummary && (
+                      <div className="text-xs text-brand-muted mt-1.5 font-mono break-words">
+                        {r.slotSummary}
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
@@ -464,6 +579,82 @@ export default function CreateLeagueClient() {
                 </div>
               </label>
             </div>
+
+            {/* Pick Timer */}
+            <div>
+              <label className="block text-sm font-medium text-brand-text mb-1.5">
+                Draft Pick Timer: <span className="text-brand-primaryText">{pickTimerSeconds}s</span> per pick
+              </label>
+              <input
+                type="range"
+                min={30}
+                max={300}
+                step={15}
+                value={pickTimerSeconds}
+                onChange={(e) => setPickTimerSeconds(parseInt(e.target.value, 10))}
+                className="w-full accent-brand-primary"
+              />
+              <div className="flex justify-between text-xs text-brand-muted mt-1">
+                <span>30s (fast)</span>
+                <span>90s</span>
+                <span>300s (5 min)</span>
+              </div>
+              <p className="text-xs text-brand-muted mt-1">
+                How long each manager has to make a pick before auto-draft kicks in.
+              </p>
+            </div>
+
+            {/* FAAB Budget */}
+            <div>
+              <label className="block text-sm font-medium text-brand-text mb-1.5">
+                FAAB Budget (Free Agent Acquisition Budget): <span className="text-brand-primaryText">${faabBudget}</span>
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={500}
+                step={25}
+                value={faabBudget}
+                onChange={(e) => setFaabBudget(parseInt(e.target.value, 10))}
+                className="w-full accent-brand-primary"
+              />
+              <div className="flex justify-between text-xs text-brand-muted mt-1">
+                <span>$0</span>
+                <span>$100</span>
+                <span>$500</span>
+              </div>
+              <p className="text-xs text-brand-muted mt-1">
+                Blind bidding budget for waiver wire pickups. Set to $0 for first-come-first-served.
+              </p>
+            </div>
+
+            {/* Playoff Weeks (NFL only) */}
+            {sport === 'NFL' && (
+              <div>
+                <label className="block text-sm font-medium text-brand-text mb-1.5">
+                  Playoff Weeks: <span className="text-brand-primaryText">{playoffWeeks}</span> teams
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[2, 4, 6, 8].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setPlayoffWeeks(n)}
+                      className={`p-2.5 rounded-lg border text-sm font-medium transition-all ${
+                        playoffWeeks === n
+                          ? 'border-brand-primary bg-brand-primary/10 text-brand-text'
+                          : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-brand-muted mt-1">
+                  Number of teams that qualify for the playoff bracket at the end of the season.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -480,11 +671,14 @@ export default function CreateLeagueClient() {
               <ReviewRow label="Your Team" value={teamName || 'Default'} />
               <ReviewRow label="Format" value={presets?.leagueFormats.find(f => f.value === format)?.label ?? format} />
               <ReviewRow label="Scoring" value={presets?.sports[sport]?.scoringPresets.find(s => s.key === scoringPreset)?.name ?? scoringPreset} />
-              <ReviewRow label="Roster" value={presets?.sports[sport]?.rosterPresets.find(r => r.key === rosterPreset)?.name ?? rosterPreset} />
+              <ReviewRow label="Roster" value={`${presets?.sports[sport]?.rosterPresets.find(r => r.key === rosterPreset)?.name ?? rosterPreset}${sport === 'NFL' ? (presets?.sports[sport]?.rosterPresets.find(r => r.key === rosterPreset)?.hasSuperflex ? ' (Superflex)' : ' (1-QB)') : ''}`} />
               <ReviewRow label="Teams" value={String(numTeams)} />
               <ReviewRow label="Draft" value={presets?.draftTypes.find(d => d.value === draftType)?.label ?? draftType} />
               <ReviewRow label="Keeper" value={presets?.keeperTypes.find(k => k.value === keeperType)?.label ?? keeperType} />
               <ReviewRow label="Lineup" value={lineupSetting === 'daily' ? 'Daily' : 'Weekly'} />
+              <ReviewRow label="Pick Timer" value={`${pickTimerSeconds}s per pick`} />
+              <ReviewRow label="FAAB Budget" value={`$${faabBudget}`} />
+              {sport === 'NFL' && <ReviewRow label="Playoff Teams" value={String(playoffWeeks)} />}
               <ReviewRow label="Visibility" value={isPublic ? 'Public' : 'Private (invite code)'} />
             </div>
             {error && (
@@ -498,13 +692,22 @@ export default function CreateLeagueClient() {
 
       {/* Navigation Buttons */}
       <div className="flex items-center justify-between mt-6">
-        <button
-          onClick={() => setStep(Math.max(0, step - 1))}
-          disabled={step === 0}
-          className="btn-secondary"
-        >
-          <ChevronLeft className="w-4 h-4" /> Back
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowExitModal(true)}
+            className="btn-secondary text-brand-muted hover:text-brand-danger"
+            title="Exit without creating"
+          >
+            <X className="w-4 h-4" /> Exit
+          </button>
+          <button
+            onClick={() => setStep(Math.max(0, step - 1))}
+            disabled={step === 0}
+            className="btn-secondary"
+          >
+            <ChevronLeft className="w-4 h-4" /> Back
+          </button>
+        </div>
         {step < steps.length - 1 ? (
           <button
             onClick={() => setStep(step + 1)}
@@ -527,6 +730,60 @@ export default function CreateLeagueClient() {
           </button>
         )}
       </div>
+
+      {/* Exit Confirmation Modal */}
+      {showExitModal && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowExitModal(false)}
+        >
+          <div
+            className="bg-brand-surface border border-brand-border rounded-2xl p-6 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-brand-text mb-2 flex items-center gap-2">
+              <X className="w-5 h-5 text-brand-muted" /> Exit Create League?
+            </h3>
+            <p className="text-sm text-brand-muted mb-4">
+              Your league setup will be saved as a draft so you can continue later.
+              You can discard it if you'd prefer to start fresh next time.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  // Save draft and exit — the autosave useEffect already persists to localStorage
+                  setShowExitModal(false);
+                  router.push('/dd');
+                }}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                <Save className="w-4 h-4" /> Save Draft & Exit
+              </button>
+              <button
+                onClick={() => {
+                  // Discard draft and exit
+                  try {
+                    localStorage.removeItem(DRAFT_STORAGE_KEY);
+                  } catch {
+                    // non-fatal
+                  }
+                  setShowExitModal(false);
+                  router.push('/dd');
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-brand-danger/50 text-brand-danger hover:bg-brand-danger/10 transition-all text-sm font-medium"
+              >
+                <Trash2 className="w-4 h-4" /> Discard & Exit
+              </button>
+              <button
+                onClick={() => setShowExitModal(false)}
+                className="btn-secondary w-full"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

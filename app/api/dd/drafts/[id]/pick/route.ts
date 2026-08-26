@@ -146,6 +146,76 @@ export async function POST(
   const nextRound = nextOrderEntry?.round ?? draft.round_count;
   const nextPickInRound = nextOrderEntry?.pickInRound ?? 1;
 
+  // ── Position requirement check (soft warning) ──
+  // If the user already has enough starters at this player's position but still
+  // has unfilled starter slots at other positions, include a warning. This is
+  // advisory — we don't block the pick because the user may be intentionally
+  // drafting for depth/flex.
+  let positionWarning: string | null = null;
+  if (playerInfo.position && memberIdForPick) {
+    try {
+      // Fetch roster config for this league
+      const rosterConfigRow = await queryOne<{ roster_config: any }>(
+        `SELECT roster_config FROM dd_leagues WHERE id = $1`,
+        [leagueId]
+      );
+      const rc = rosterConfigRow?.roster_config;
+      const slots: { slot: string; count: number; eligible: string[]; isStarter: boolean }[] =
+        rc && typeof rc === 'object' && Array.isArray(rc.slots) ? rc.slots : [];
+
+      if (slots.length > 0) {
+        // Count how many picks this member has at each position so far
+        const positionCountsRes = await query<{ position: string; cnt: string }>(
+          `SELECT position, COUNT(*)::text AS cnt
+           FROM dd_draft_picks
+           WHERE draft_id = $1 AND member_id = $2 AND position IS NOT NULL
+           GROUP BY position`,
+          [draftId, memberIdForPick]
+        );
+        const filled: Record<string, number> = {};
+        for (const row of positionCountsRes.rows) {
+          filled[row.position] = Number(row.cnt);
+        }
+
+        // Check if the drafted player's position is already at capacity for starter slots
+        const slotsForThisPos = slots.filter(
+          (s) => s.isStarter && (s.eligible.includes(playerInfo.position!) || s.eligible.includes('*'))
+        );
+        const filledAtThisPos = slotsForThisPos.reduce(
+          (sum, s) => {
+            if (s.eligible.includes('*')) return sum; // skip flex for this check
+            return sum + (filled[s.slot] ?? 0);
+          },
+          0
+        );
+        const capacityAtThisPos = slotsForThisPos.reduce(
+          (sum, s) => (s.eligible.includes('*') ? sum : sum + s.count),
+          0
+        );
+
+        // Check if there are still unfilled non-flex starter slots at other positions
+        const unfilledOtherPositions: string[] = [];
+        for (const s of slots) {
+          if (!s.isStarter || s.eligible.includes('*')) continue;
+          const filledForSlot = s.eligible.reduce((sum, pos) => sum + (filled[pos] ?? 0), 0);
+          if (filledForSlot < s.count) {
+            for (const pos of s.eligible) {
+              if (pos !== playerInfo.position && !unfilledOtherPositions.includes(pos)) {
+                unfilledOtherPositions.push(pos);
+              }
+            }
+          }
+        }
+
+        if (filledAtThisPos >= capacityAtThisPos && unfilledOtherPositions.length > 0) {
+          positionWarning = `You already have enough ${playerInfo.position} starters. You still need: ${unfilledOtherPositions.join(', ')}.`;
+        }
+      }
+    } catch (e) {
+      // Non-critical — if the check fails, just skip the warning
+    }
+  }
+
   const result = await tx(async (client) => {
     // Insert the pick
     await client.query(
@@ -207,6 +277,7 @@ export async function POST(
       isAutoPicked: false,
     },
     isDraftComplete: isLastPick,
+    positionWarning,
     nextTurn: isLastPick
       ? null
       : {

@@ -201,8 +201,14 @@ export function PlayerInfoCard({
     if (fetchedRef.current !== poolId) {
       setInfo(null);
       setError(null);
+      fetchedRef.current = null; // reset so fetchInfo will re-fetch
     }
   }, [poolId]);
+
+  // Trigger fetch when poolId changes
+  useEffect(() => {
+    fetchInfo();
+  }, [fetchInfo]);
 
   // Render loading state
   if (loading) {

@@ -80,6 +80,12 @@ export default async function DDHomePage() {
        FROM dd_leagues l
        JOIN dd_league_members m ON m.league_id = l.id
        WHERE m.user_id = $1
+         AND NOT (
+           -- Hide completed mock drafts: mock leagues whose draft is done
+           (l.settings->>'isMock' = 'true')
+           AND l.draft_id IS NOT NULL
+           AND l.status IN ('in_season', 'completed', 'archived')
+         )
        ORDER BY l.created_at DESC`,
       [BigInt(session.user.id)]
     );

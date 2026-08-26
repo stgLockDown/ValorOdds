@@ -260,12 +260,87 @@ export async function getGamesGrid(sportCode: string, limit = 60): Promise<GameC
  * lookup table.
  */
 export async function getGameBySlug(sportCode: string, slug: string): Promise<GameCard | null> {
-  const games = await getGamesGrid(sportCode, 200);
-  // Primary lookup: human-readable {away}-{home}-{date} slug.
-  const bySlug = games.find((g) => g.slug === slug);
+  const code = (sportCode || '').toUpperCase();
+  const decoded = decodeURIComponent(slug || '');
+
+  // --- Primary: direct DB lookup by parsed date + team slug matching ---
+  // The slug format is {awaySlug}-{homeSlug}-{yyyy-mm-dd}. We extract the
+  // date (last 10 chars), query the DB for all games on that date (±2 days
+  // for timezone safety), and match by recomputing each candidate's slug.
+  // This avoids the 16h-ago..10d-ahead window + 200-game cap that getGamesGrid
+  // imposes, which caused 404s for games that had already started/ended.
+  const dateMatch = decoded.match(/(\d{4}-\d{2}-\d{2})$/);
+  if (dateMatch && isGamesHubSport(code)) {
+    const filter = sportFilterClause(code, 1);
+    if (filter) {
+      try {
+        const targetDate = new Date(dateMatch[1] + 'T00:00:00Z');
+        const startIdx = filter.params.length + 1;
+        const endIdx = filter.params.length + 2;
+        const r = await query(
+          `SELECT game_id, sport, home_team, away_team, commence_time,
+                  COUNT(DISTINCT bookmaker_key)::int AS n_books
+           FROM odds_snapshots
+           WHERE ${filter.clause}
+             AND commence_time IS NOT NULL
+             AND commence_time >= $${startIdx}
+             AND commence_time <= $${endIdx}
+           GROUP BY game_id, sport, home_team, away_team, commence_time
+           ORDER BY commence_time ASC
+           LIMIT 600`,
+          [...filter.params, new Date(targetDate.getTime() - 2 * 86400000), new Date(targetDate.getTime() + 3 * 86400000)],
+        );
+        // Build GameCards from the direct query results (same logic as grid)
+        const [oddsByGame, espnIndex] = await Promise.all([
+          fetchOddsForGames(code, r.rows.map((g: any) => g.game_id)),
+          buildEspnScoreIndex([code]).catch(
+            () => ({ match: () => null, size: 0 }) as { match: (h: string, a: string) => EspnScore | null; size: number },
+          ),
+        ]);
+        const candidates: GameCard[] = r.rows.map((row: any) => {
+          const homeTeam = formatTeamName(row.home_team);
+          const awayTeam = formatTeamName(row.away_team);
+          const espn = espnIndex.match(row.home_team, row.away_team);
+          const oddsRows = oddsByGame.get(row.game_id) || [];
+          const status: GameCard['status'] = espn?.isLive ? 'live' : espn?.isFinal ? 'final' : 'scheduled';
+          return {
+            gameId: row.game_id,
+            sport: code,
+            slug: buildGameSlug(awayTeam, homeTeam, new Date(row.commence_time).toISOString()),
+            homeTeam,
+            awayTeam,
+            homeLogo: teamLogoUrl(code, homeTeam),
+            awayLogo: teamLogoUrl(code, awayTeam),
+            commenceTime: new Date(row.commence_time).toISOString(),
+            status,
+            statusDetail: espn?.statusDetail ?? null,
+            period: espn?.period ?? 0,
+            clock: espn?.clock ?? null,
+            homeScore: espn?.homeScore ?? 0,
+            awayScore: espn?.awayScore ?? 0,
+            espnEventId: espn?.eventId ?? null,
+            bestMoneyline: bestMoneylineFromRows(oddsRows, homeTeam, awayTeam),
+            bestSpread: bestSpreadFromRows(oddsRows, homeTeam, awayTeam),
+            bestTotal: bestTotalFromRows(oddsRows),
+            nBooks: row.n_books || 0,
+          };
+        });
+        // Match by slug (primary) or raw game_id (legacy fallback)
+        const bySlug = candidates.find((g) => g.slug === decoded);
+        if (bySlug) return bySlug;
+        const byGameId = candidates.find((g) => g.gameId === decoded);
+        if (byGameId) return byGameId;
+      } catch {
+        // fall through to grid-based lookup
+      }
+    }
+  }
+
+  // --- Fallback: grid-based lookup (16h..10d window, 200-game cap) ---
+  const games = await getGamesGrid(code, 200);
+  const bySlug = games.find((g) => g.slug === decoded);
   if (bySlug) return bySlug;
-  // Fallback: legacy links may pass the raw numeric game_id directly.
-  return games.find((g) => g.gameId === slug) ?? null;
+  return games.find((g) => g.gameId === decoded) ?? null;
 }
 
 // ---------------------------------------------------------------------------

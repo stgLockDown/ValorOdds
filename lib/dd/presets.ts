@@ -419,14 +419,27 @@ export function getScoringPreset(sport: Sport, key: string): ScoringConfig {
   return NFL_SCORING_PRESETS[key] ?? NFL_STANDARD_PPR;
 }
 
-export function listRosterPresets(sport: Sport): { key: string; name: string; totalRosterSize: number; totalStarters: number }[] {
+export function listRosterPresets(sport: Sport): { key: string; name: string; totalRosterSize: number; totalStarters: number; qbCount: number; hasSuperflex: boolean; slotSummary: string }[] {
   const presets = sport === 'MLB' ? MLB_ROSTER_PRESETS : NFL_ROSTER_PRESETS;
-  return Object.entries(presets).map(([key, p]) => ({
-    key,
-    name: p.name,
-    totalRosterSize: p.totalRosterSize,
-    totalStarters: p.totalStarters,
-  }));
+  return Object.entries(presets).map(([key, p]) => {
+    const qbSlot = p.slots.find((s) => s.slot === 'QB');
+    const hasSuperflex = p.slots.some((s) => s.slot === 'SFLEX');
+    const qbCount = qbSlot?.count ?? 0;
+    // Build a compact summary of starter slots
+    const starterSlots = p.slots.filter((s) => s.isStarter);
+    const slotSummary = starterSlots
+      .map((s) => `${s.count > 1 ? s.count : ''}${s.slot}`)
+      .join(' · ');
+    return {
+      key,
+      name: p.name,
+      totalRosterSize: p.totalRosterSize,
+      totalStarters: p.totalStarters,
+      qbCount,
+      hasSuperflex,
+      slotSummary,
+    };
+  });
 }
 
 export function listScoringPresets(sport: Sport): { key: string; name: string; mode: string }[] {

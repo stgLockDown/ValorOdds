@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Trophy, Search, Clock, Pause, Play, Check, Loader2, ArrowLeft,
-  Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown,
+  Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown, AlertCircle,
 } from 'lucide-react';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
 
@@ -34,10 +34,14 @@ interface DraftPick {
   isAutoPicked: boolean; pickedAt: string;
 }
 
+interface RosterSlot {
+  slot: string; label: string; count: number; eligible: string[]; isStarter: boolean;
+}
+
 interface DraftBoardEntry {
   round: number; pickInRound: number; overallPick: number; slot: number;
   memberId?: string; teamName?: string; displayName?: string;
-  pick?: { playerName: string; position: string | null; team: string | null; isAutoPicked: boolean } | null;
+  pick?: { playerName: string; position: string | null; team: string | null; isAutoPicked: boolean; headshot?: string | null } | null;
 }
 
 interface Member {
@@ -52,6 +56,7 @@ interface DraftState {
     currentRound: number; currentPick: number; timerSeconds: number | null;
     startedAt: string | null; completedAt: string | null;
     isComplete: boolean; picksMade: number; totalPicks: number; isMock?: boolean;
+    rosterConfig?: { slots: RosterSlot[]; name?: string; totalRosterSize?: number; totalStarters?: number } | RosterSlot[];
   };
   currentTurn: {
     overallPick: number; round: number; pickInRound: number; slot: number;
@@ -91,9 +96,14 @@ export default function DraftRoomClient({
   const [playersLoading, setPlayersLoading] = useState(false);
   const [picking, setPicking] = useState<string | null>(null);
   const [lastPollTime, setLastPollTime] = useState(0);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [positionWarning, setPositionWarning] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPickAttemptedRef = useRef<Set<number>>(new Set()); // track overall picks we've tried to auto-pick
+  const turnStartRef = useRef<number>(0); // timestamp when current turn started
+  const lastOverallPickRef = useRef<number>(0); // track overall pick changes to reset timer
 
   // ── Hover info card state ──
   const [hoveredPlayer, setHoveredPlayer] = useState<Player | null>(null);
@@ -157,20 +167,108 @@ export default function DraftRoomClient({
     fetchPlayers();
   }, [fetchDraftState, fetchPlayers]);
 
-  // Polling for live draft updates
+  // Real-time updates: use Server-Sent Events (SSE) for live draft sync.
+  // Falls back to polling every 5s if SSE is unavailable.
   useEffect(() => {
     if (!draftState || draftState.draft.isComplete) return;
 
-    const poll = () => {
-      fetchDraftState();
-      pollRef.current = setTimeout(poll, 5000); // Poll every 5 seconds
+    let sseConnected = false;
+    let pollStarted = false;
+
+    // ── SSE connection for real-time updates ──
+    const draftId = draftState.draft.id;
+    const es = new EventSource(`/api/dd/drafts/${draftId}/stream`);
+    eventSourceRef.current = es;
+
+    es.onopen = () => {
+      sseConnected = true;
+      // Stop polling if SSE is working
+      if (pollRef.current) {
+        clearTimeout(pollRef.current);
+        pollRef.current = null;
+      }
     };
 
-    pollRef.current = setTimeout(poll, 5000);
-    return () => {
-      if (pollRef.current) clearTimeout(pollRef.current);
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'state' && data.draft) {
+          // Update draft state from SSE push
+          setDraftState(data);
+          setLastPollTime(Date.now());
+          // Also refresh players when picks change
+          if (data.draft.picksMade !== draftState.draft.picksMade) {
+            fetchPlayers();
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
     };
-  }, [draftState?.draft.isComplete, fetchDraftState]);
+
+    es.onerror = () => {
+      sseConnected = false;
+      es.close();
+      eventSourceRef.current = null;
+      // Start polling fallback if not already running
+      if (!pollRef.current && !draftState.draft.isComplete) {
+        pollStarted = true;
+        const poll = () => {
+          fetchDraftState();
+          pollRef.current = setTimeout(poll, 5000);
+        };
+        pollRef.current = setTimeout(poll, 5000);
+      }
+    };
+
+    // Also start polling as a backup in case SSE takes time to connect
+    // (will be cleared once SSE connects successfully)
+    if (!sseConnected && !pollStarted) {
+      const poll = () => {
+        if (!sseConnected) {
+          fetchDraftState();
+          pollRef.current = setTimeout(poll, 5000);
+        }
+      };
+      pollRef.current = setTimeout(poll, 5000);
+    }
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+      if (pollRef.current) {
+        clearTimeout(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [draftState?.draft.isComplete, draftState?.draft.id, fetchDraftState, fetchPlayers]);
+
+  // Countdown timer: track when the current turn started and tick down every second
+  useEffect(() => {
+    if (!draftState?.currentTurn || draftState.draft.isComplete) {
+      setCountdown(null);
+      return;
+    }
+    const overallPick = draftState.currentTurn.overallPick;
+    const timerSeconds = draftState.draft.timerSeconds ?? 90;
+
+    // Reset timer when a new pick slot comes on the clock
+    if (lastOverallPickRef.current !== overallPick) {
+      lastOverallPickRef.current = overallPick;
+      turnStartRef.current = Date.now();
+      setCountdown(timerSeconds);
+    }
+
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - turnStartRef.current) / 1000);
+      const remaining = Math.max(0, timerSeconds - elapsed);
+      setCountdown(remaining);
+    };
+
+    tick(); // immediate update
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [draftState?.currentTurn?.overallPick, draftState?.draft.isComplete, draftState?.draft.timerSeconds]);
 
   // Debounced player search
   useEffect(() => {
@@ -266,6 +364,7 @@ export default function DraftRoomClient({
     if (!draftState?.currentTurn) return;
     setPicking(player.playerName);
     setError('');
+    setPositionWarning(null);
     try {
       const res = await fetch(`/api/dd/drafts/${draftState.draft.id}/pick`, {
         method: 'POST',
@@ -281,6 +380,9 @@ export default function DraftRoomClient({
       if (!res.ok) {
         setError(data.error || 'Failed to make pick');
       } else {
+        if (data.positionWarning) {
+          setPositionWarning(data.positionWarning);
+        }
         // Immediately refresh draft state
         fetchDraftState();
         fetchPlayers();
@@ -391,6 +493,47 @@ export default function DraftRoomClient({
     ? ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']
     : ['C', '1B', '2B', '3B', 'SS', 'OF', 'SP', 'RP'];
 
+  // ── Roster needs calculation: which starter positions still need to be filled ──
+  const rosterSlots: RosterSlot[] = Array.isArray(draft.rosterConfig)
+    ? draft.rosterConfig
+    : draft.rosterConfig?.slots ?? [];
+  const positionNeeds = (() => {
+    if (!rosterSlots.length) return { needed: [] as string[], filled: {} as Record<string, number>, remaining: {} as Record<string, number> };
+    const filled: Record<string, number> = {};
+    // Count how many of each position the user has drafted
+    for (const pick of myRoster) {
+      const pos = pick.position ?? 'BN';
+      filled[pos] = (filled[pos] ?? 0) + 1;
+    }
+    // Calculate remaining needs for each starter slot
+    const remaining: Record<string, number> = {};
+    const needed: string[] = [];
+    for (const slot of rosterSlots) {
+      if (!slot.isStarter) continue;
+      // For each starter slot, check if the user has enough eligible players
+      const eligibleFilled = slot.eligible.includes('*')
+        ? myRoster.length
+        : slot.eligible.reduce((sum, pos) => sum + (filled[pos] ?? 0), 0);
+      const need = Math.max(0, slot.count - eligibleFilled);
+      if (need > 0) {
+        remaining[slot.slot] = need;
+        // Add eligible positions for this slot to needed list
+        if (!slot.eligible.includes('*')) {
+          for (const pos of slot.eligible) {
+            if (!needed.includes(pos)) needed.push(pos);
+          }
+        }
+      }
+    }
+    return { needed, filled, remaining };
+  })();
+
+  // Check if a player fills a needed position
+  const playerFillsNeed = (playerPos: string | null): boolean => {
+    if (!playerPos || !positionNeeds.needed.length) return false;
+    return positionNeeds.needed.includes(playerPos);
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-4">
       {/* Header */}
@@ -455,6 +598,21 @@ export default function DraftRoomClient({
             <div className="text-right">
               <div className="text-sm text-brand-muted">Pick #{currentTurn.overallPick}</div>
               <div className="text-sm text-brand-text">Round {currentTurn.round}</div>
+              {countdown !== null && (
+                <div
+                  className={`text-2xl font-bold tabular-nums mt-1 ${
+                    countdown <= 10
+                      ? 'text-brand-danger'
+                      : countdown <= 30
+                      ? 'text-brand-accent'
+                      : isMyTurn
+                      ? 'text-brand-primaryText'
+                      : 'text-brand-muted'
+                  }`}
+                >
+                  {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+                </div>
+              )}
             </div>
           </div>
           {isMyTurn && (
@@ -471,15 +629,30 @@ export default function DraftRoomClient({
           <Trophy className="w-10 h-10 text-brand-accent mx-auto mb-2" />
           <h2 className="text-xl font-bold text-brand-text">Draft Complete!</h2>
           <p className="text-brand-muted mt-1">All {draft.totalPicks} picks have been made.</p>
-          <Link href={`/dd/league/${leagueId}`} className="btn-primary mt-4">
-            Go to League Home
-          </Link>
+          {draft.isMock ? (
+            <Link href="/dd" className="btn-primary mt-4">
+              Back to DiamondDraft
+            </Link>
+          ) : (
+            <Link href={`/dd/league/${leagueId}`} className="btn-primary mt-4">
+              Go to League Home
+            </Link>
+          )}
         </div>
       )}
 
       {error && (
         <div className="bg-brand-danger/10 text-brand-danger text-sm rounded-lg p-3 mb-4">
           {error}
+        </div>
+      )}
+
+      {positionWarning && (
+        <div className="bg-brand-accent/10 text-brand-accent text-sm rounded-lg p-3 mb-4 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div>
+            <span className="font-semibold">Position Notice:</span> {positionWarning}
+          </div>
         </div>
       )}
 
@@ -500,10 +673,10 @@ export default function DraftRoomClient({
                       Round
                     </th>
                     {members.map((m) => (
-                      <th key={m.id} className="text-center py-2 px-1 text-brand-muted font-medium min-w-[80px]">
+                      <th key={m.id} className="text-center py-2 px-1.5 text-brand-muted font-medium min-w-[110px] max-w-[140px]">
                         <div className="truncate flex items-center justify-center gap-1" title={m.teamName}>
                           {m.isBot && <Zap className="w-3 h-3 text-brand-accent flex-shrink-0" />}
-                          <span className="truncate">{m.teamName}</span>
+                          <span className="truncate text-xs">{m.teamName}</span>
                         </div>
                         <div className="text-xs text-brand-muted">#{m.draftPosition}</div>
                       </th>
@@ -528,6 +701,15 @@ export default function DraftRoomClient({
                                 <div className={`rounded-md py-1.5 px-1 ${
                                   pick.pick.isAutoPicked ? 'bg-brand-elevated' : 'bg-brand-primary/10'
                                 }`}>
+                                  {pick.pick.headshot && (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={pick.pick.headshot}
+                                      alt={pick.pick.playerName}
+                                      className="w-6 h-6 rounded-full object-cover mx-auto mb-0.5 bg-brand-surface"
+                                      loading="lazy"
+                                    />
+                                  )}
                                   <div className="text-xs font-medium text-brand-text truncate" title={pick.pick.playerName}>
                                     {pick.pick.playerName}
                                   </div>
@@ -562,6 +744,35 @@ export default function DraftRoomClient({
               Your Team — {currentTeamName}
               <span className="text-sm text-brand-muted font-normal">({myRoster.length} players)</span>
             </h3>
+
+            {/* Position needs indicator */}
+            {rosterSlots.length > 0 && Object.keys(positionNeeds.remaining).length > 0 && (
+              <div className="mb-3 p-2.5 rounded-lg bg-brand-primary/10 border border-brand-primary/30">
+                <div className="text-xs font-medium text-brand-text mb-1.5 flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-brand-primary" />
+                  Positions Still Needed:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(positionNeeds.remaining).map(([slot, count]) => {
+                    const slotInfo = rosterSlots.find((s) => s.slot === slot);
+                    return (
+                      <span key={slot} className="text-xs px-2 py-0.5 rounded-full bg-brand-primary/20 text-brand-primaryText font-medium">
+                        {count}× {slotInfo?.label ?? slot}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {rosterSlots.length > 0 && Object.keys(positionNeeds.remaining).length === 0 && myRoster.length > 0 && (
+              <div className="mb-3 p-2.5 rounded-lg bg-brand-success/10 border border-brand-success/30">
+                <div className="text-xs font-medium text-brand-success flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" />
+                  All required starter positions filled!
+                </div>
+              </div>
+            )}
+
             {myRoster.length === 0 ? (
               <p className="text-sm text-brand-muted text-center py-4">
                 No players drafted yet.
@@ -569,7 +780,7 @@ export default function DraftRoomClient({
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {myRoster.map((p, i) => (
-                  <div key={i} className="bg-brand-elevated rounded-lg p-2.5">
+                  <div key={i} className={`bg-brand-elevated rounded-lg p-2.5 ${playerFillsNeed(p.position) ? 'ring-1 ring-brand-primary/30' : ''}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-brand-muted">R{p.round}</span>
                       <span className="text-xs text-brand-muted">#{p.overallPick}</span>
@@ -664,10 +875,12 @@ export default function DraftRoomClient({
                   No players found.
                 </p>
               ) : (
-                players.map((player) => (
+                players.map((player) => {
+                  const fillsNeed = playerFillsNeed(player.position);
+                  return (
                   <div
                     key={player.id}
-                    className="flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group cursor-pointer"
+                    className={`flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group cursor-pointer ${fillsNeed ? 'border-l-2 border-brand-primary bg-brand-primary/5' : ''}`}
                     onMouseEnter={(e) => handlePlayerMouseEnter(player, e)}
                     onMouseLeave={handlePlayerMouseLeave}
                   >
@@ -683,9 +896,29 @@ export default function DraftRoomClient({
                       </div>
                     )}
 
+                    {/* Player headshot */}
+                    {player.headshot ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={player.headshot}
+                        alt={player.playerName}
+                        className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-brand-surface border border-brand-border"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-brand-surface border border-brand-border flex items-center justify-center flex-shrink-0">
+                        {sport === 'NFL' ? <Shield className="w-4 h-4 text-brand-muted" /> : <Target className="w-4 h-4 text-brand-muted" />}
+                      </div>
+                    )}
+
                     {/* Player info */}
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-brand-text truncate">{player.playerName}</div>
+                      <div className="text-sm font-medium text-brand-text truncate flex items-center gap-1.5">
+                        {player.playerName}
+                        {fillsNeed && (
+                          <span className="text-[9px] font-bold uppercase tracking-wide bg-brand-primary/20 text-brand-primary px-1 py-0.5 rounded">Need</span>
+                        )}
+                      </div>
                       <div className="text-xs text-brand-muted">
                         {player.position} · {player.team}
                         {player.projectedPoints && ` · ${player.projectedPoints.toFixed(1)} pts`}
@@ -708,7 +941,8 @@ export default function DraftRoomClient({
                       </button>
                     )}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -724,6 +958,12 @@ export default function DraftRoomClient({
                 .map((p) => (
                   <div key={p.overallPick} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-lg bg-brand-elevated/30">
                     <span className="text-xs text-brand-muted w-8">#{p.overallPick}</span>
+                    {p.pick!.headshot ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.pick!.headshot} alt={p.pick!.playerName} className="w-6 h-6 rounded-full object-cover flex-shrink-0 bg-brand-surface" loading="lazy" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-brand-surface border border-brand-border flex-shrink-0" />
+                    )}
                     <span className="font-medium text-brand-text flex-1 truncate">{p.pick!.playerName}</span>
                     <span className="text-xs text-brand-muted">{p.pick!.position}</span>
                     <span className="text-xs text-brand-muted truncate max-w-[80px]">{p.teamName}</span>

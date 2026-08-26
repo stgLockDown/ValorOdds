@@ -252,12 +252,15 @@ export async function GET(req: NextRequest) {
     id: string; round_num: number; pick_in_round: number; overall_pick: number;
     member_id: string; player_name: string; player_id: string; team: string;
     position: string; is_auto_picked: boolean; picked_at: string;
+    headshot: string | null;
   }>(
-    `SELECT id::text, round_num, pick_in_round, overall_pick, member_id::text,
-            player_name, player_id, team, position, is_auto_picked, picked_at
-     FROM dd_draft_picks
-     WHERE draft_id = $1
-     ORDER BY overall_pick`,
+    `SELECT dp.id::text, dp.round_num, dp.pick_in_round, dp.overall_pick, dp.member_id::text,
+            dp.player_name, dp.player_id, dp.team, dp.position, dp.is_auto_picked, dp.picked_at,
+            pp.headshot_url AS headshot
+     FROM dd_draft_picks dp
+     LEFT JOIN dd_player_pool pp ON pp.id::text = dp.player_id
+     WHERE dp.draft_id = $1
+     ORDER BY dp.overall_pick`,
     [draftId]
   );
 
@@ -294,6 +297,7 @@ export async function GET(req: NextRequest) {
             position: pick.position,
             isAutoPicked: pick.is_auto_picked,
             pickedAt: pick.picked_at,
+            headshot: pick.headshot ?? null,
           }
         : null,
     };

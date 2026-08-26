@@ -69,6 +69,8 @@ const CreateLeagueSchema = z.object({
   lineupSetting: z.enum(['daily', 'weekly']).default('daily'),
   isPublic: z.boolean().default(false),
   pickTimerSeconds: z.number().int().min(30).max(300).optional(),
+  faabBudget: z.number().int().min(0).max(500).optional(),
+  playoffWeeks: z.number().int().min(2).max(8).optional(),
   teamName: z.string().min(2).max(40).optional(),
 });
 
@@ -133,6 +135,8 @@ export async function POST(req: Request) {
             draftType: input.draftType,
             draftRounds,
             pickTimerSeconds: input.pickTimerSeconds ?? 90,
+            faabBudget: input.faabBudget ?? 100,
+            playoffWeeks: input.playoffWeeks,
           }),
         ]
       );
@@ -141,9 +145,9 @@ export async function POST(req: Request) {
       // Add commissioner as first member
       const teamName = input.teamName || `${session.user.email?.split('@')[0] ?? 'My'} FC`;
       await client.query(
-        `INSERT INTO dd_league_members (league_id, user_id, team_name, is_commissioner, draft_position)
-         VALUES ($1, $2, $3, TRUE, 1)`,
-        [leagueId, userId, teamName]
+        `INSERT INTO dd_league_members (league_id, user_id, team_name, is_commissioner, draft_position, faab_budget)
+         VALUES ($1, $2, $3, TRUE, 1, $4)`,
+        [leagueId, userId, teamName, input.faabBudget ?? 100]
       );
 
       return { leagueId, inviteCode };

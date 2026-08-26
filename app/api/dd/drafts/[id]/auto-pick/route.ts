@@ -110,7 +110,7 @@ export async function POST(
      FROM dd_player_pool pp
      WHERE pp.sport = $1
        AND pp.season_year = $2
-       AND pp.id NOT IN (
+       AND pp.id::text NOT IN (
          SELECT player_id FROM dd_draft_picks
          WHERE draft_id = $3 AND player_id IS NOT NULL
        )

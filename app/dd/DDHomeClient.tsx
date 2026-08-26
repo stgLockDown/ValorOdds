@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Trophy, Plus, Users, Target, Shield, Crown, Zap, Flame,
   ChevronRight, Sparkles, Award, TrendingUp,
@@ -52,11 +52,19 @@ export default function DDHomeClient({
   const [showMockModal, setShowMockModal] = useState(false);
   const [mockSport, setMockSport] = useState<'NFL' | 'MLB'>('NFL');
   const [mockNumBots, setMockNumBots] = useState(7);
+  const [mockDraftPosition, setMockDraftPosition] = useState(1);
   const [mockStarting, setMockStarting] = useState(false);
   const [mockError, setMockError] = useState('');
 
   const sportIcon = (sport: string) =>
     sport === 'NFL' ? <Shield className="w-5 h-5" /> : <Target className="w-5 h-5" />;
+
+  // Keep draft position within valid range when team count changes
+  useEffect(() => {
+    if (mockDraftPosition > mockNumBots + 1) {
+      setMockDraftPosition(mockNumBots + 1);
+    }
+  }, [mockNumBots, mockDraftPosition]);
 
   const statusColor = (status: string) => {
     switch (status) {
@@ -159,6 +167,7 @@ export default function DDHomeClient({
         body: JSON.stringify({
           sport: mockSport,
           numBots: mockNumBots,
+          draftPosition: mockDraftPosition,
         }),
       });
       const createData = await createRes.json();
@@ -550,6 +559,29 @@ export default function DDHomeClient({
               <span>1 bot</span>
               <span>11 bots</span>
             </div>
+
+            {/* Draft position picker */}
+            <label className="block text-sm font-medium text-brand-text mb-1.5">
+              Your Draft Position (pick #{mockDraftPosition} of {mockNumBots + 1})
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {Array.from({ length: mockNumBots + 1 }, (_, i) => i + 1).map((pos) => (
+                <button
+                  key={pos}
+                  onClick={() => setMockDraftPosition(pos)}
+                  className={`w-9 h-9 rounded-lg border text-sm font-semibold transition-all ${
+                    mockDraftPosition === pos
+                      ? 'border-brand-primary bg-brand-primary text-white'
+                      : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                  }`}
+                >
+                  {pos}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-brand-muted mb-4 -mt-2">
+              Snake draft — picks reverse each round. Pick #1 starts round 1; pick #{mockNumBots + 1} starts round 2.
+            </p>
 
             {mockError && (
               <p className="text-sm text-brand-danger mb-3">{mockError}</p>
