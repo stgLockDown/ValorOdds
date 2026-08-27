@@ -284,6 +284,7 @@ export const getGameBySlug = unstable_cache(
   // by recomputing each candidate's slug. Only the matched game is then
   // enriched with odds + ESPN scores.
   const dateMatch = decoded.match(/(\d{4}-\d{2}-\d{2})$/);
+  let primaryHadRows = false; // tracks whether the date-window query found any games
   if (dateMatch && isGamesHubSport(code)) {
     const filter = sportFilterClause(code, 1);
     if (filter) {
@@ -308,6 +309,7 @@ export const getGameBySlug = unstable_cache(
            LIMIT 200`,
           [...filter.params, new Date(targetDate.getTime() - 1 * 86400000), new Date(targetDate.getTime() + 1 * 86400000)],
         );
+        primaryHadRows = r.rows.length > 0;
 
         // Phase 1: match by slug using only DB columns (no external calls).
         // Build slugs from the raw DB rows to find our target game_id.
@@ -366,6 +368,15 @@ export const getGameBySlug = unstable_cache(
   }
 
   // --- Fallback: grid-based lookup (16h..10d window, 200-game cap) ---
+  // Only fall through to the grid if the primary date-window query returned
+  // NO rows at all (meaning the game's date is outside our ±1 day window,
+  // so the grid's 16h-ago..10d-ahead window might catch it). If we got rows
+  // but none matched the slug, the game doesn't exist in our DB for that
+  // date — no point running the expensive grid fetch (which covers an even
+  // narrower time window and would also not find it).
+  if (primaryHadRows) {
+    return null;
+  }
   const games = await getGamesGrid(code, 200);
   const bySlug = games.find((g) => g.slug === decoded);
   if (bySlug) return bySlug;
