@@ -13,7 +13,7 @@ import { getGamesGrid, isGamesHubSport, fmtAmerican, type GameCard } from '@/lib
  * the marketing page's bordered tiles.
  */
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60; // ISR: cache the games grid for 60s
 
 type Params = { params: { sport: string } };
 

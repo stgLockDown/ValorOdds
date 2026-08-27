@@ -23,8 +23,13 @@ import GameFuturesTab from '@/components/games/GameFuturesTab';
  *
  * Tabs: details, odds, box-score, standings, injuries, futures (placeholder).
  * The slug-level page redirects here to the `details` tab.
+ *
+ * Uses revalidate=60 (ISR) instead of force-dynamic so the rendered page is
+ * cached at the CDN for 60 seconds. The underlying data fetchers
+ * (getGameBySlug, buildEspnScoreIndex) have their own shorter caches (30s)
+ * so data stays fresh while avoiding the 30s+ uncached load times.
  */
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 export const dynamicParams = true;
 
 type Params = { params: { sport: string; gameSlug: string; tab: string } };

@@ -3,7 +3,7 @@ import { fetchGameSummary } from '@/lib/espn-summary';
 import { buildEspnScoreIndex } from '@/lib/espn-scores';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const revalidate = 30; // Cache box-score API responses for 30s
 
 /**
  * Public (anonymous-safe) mirror of /api/games/[id]/boxscore.

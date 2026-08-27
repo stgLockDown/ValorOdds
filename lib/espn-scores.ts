@@ -399,8 +399,14 @@ async function fetchScoreboard(path: string, dates: string): Promise<EspnScore[]
   const base = `https://site.web.api.espn.com/apis/site/v2/sports/${path}/scoreboard`;
   try {
     let res = await fetch(`${base}?dates=${dates}`, {
-      // Always fetch fresh scores; the route is force-dynamic anyway.
-      cache: 'no-store',
+      // Cache scoreboard responses for 30 seconds. Scores don't change more
+      // frequently than that, and the old cache: 'no-store' forced a fresh
+      // 8-second HTTP round-trip on every call — even when the same scoreboard
+      // was needed multiple times within a single page render. The
+      // buildEspnScoreIndex memoization layer also caches the full index for
+      // 30s, but this fetch-level cache provides an additional layer of
+      // protection against redundant ESPN requests.
+      next: { revalidate: 30 },
       signal: AbortSignal.timeout(8000),
     });
     let json: any = res.ok ? await res.json() : null;
@@ -409,7 +415,7 @@ async function fetchScoreboard(path: string, dates: string): Promise<EspnScore[]
     // Off-season / empty date slate → fall back to ESPN's default window so
     // recently completed or upcoming games still surface.
     if (events.length === 0) {
-      res = await fetch(base, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      res = await fetch(base, { next: { revalidate: 30 }, signal: AbortSignal.timeout(8000) });
       json = res.ok ? await res.json() : null;
       events = Array.isArray(json?.events) ? json.events : [];
     }
@@ -426,13 +432,64 @@ export type EspnScoreIndex = {
   size: number;
 };
 
+// ---------------------------------------------------------------------------
+// In-process memoization for buildEspnScoreIndex.
+//
+// ESPN's scoreboard API is called with cache: 'no-store' so scores stay fresh,
+// but within a single request (or across near-simultaneous requests) the same
+// sport's scoreboard is often needed multiple times — e.g. getGameBySlug()
+// calls it once, generateMetadata() calls getGameBySlug() again, and the box-
+// score API calls it again. Without memoization this means 3-9 fresh HTTP
+// round-trips to ESPN per page load, each with an 8-second timeout.
+//
+// We cache the resolved EspnScoreIndex per sport-set for 30 seconds. This is
+// short enough that live scores stay current while eliminating redundant
+// fetches within a single request cycle.
+// ---------------------------------------------------------------------------
+const ESPN_INDEX_CACHE = new Map<string, { index: EspnScoreIndex; expiresAt: number }>();
+const ESPN_INDEX_TTL_MS = 30_000; // 30 seconds
+
+// Track in-flight promises so concurrent calls for the same sport-set share
+// a single fetch rather than each triggering their own.
+const ESPN_INDEX_INFLIGHT = new Map<string, Promise<EspnScoreIndex>>();
+
 /**
  * Build an in-memory index of ESPN scores for the given sports. Sports are
  * the uppercase public codes used by the dashboard (NBA, MLB, SOCCER, ...).
  * Scoreboards for today and yesterday (UTC) are fetched to cover late games
  * that cross midnight.
+ *
+ * Results are memoized for 30 seconds per sport-set to avoid redundant ESPN
+ * HTTP fetches when multiple callers need the same scoreboard within one
+ * request cycle (e.g. getGameBySlug + generateMetadata + box-score API).
  */
 export async function buildEspnScoreIndex(sports: string[]): Promise<EspnScoreIndex> {
+  const cacheKey = [...sports].map((s) => s.toUpperCase()).sort().join(',');
+
+  // Return cached result if still fresh.
+  const cached = ESPN_INDEX_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.index;
+  }
+
+  // Deduplicate concurrent calls for the same sport-set.
+  const inflight = ESPN_INDEX_INFLIGHT.get(cacheKey);
+  if (inflight) return inflight;
+
+  const promise = buildEspnScoreIndexUncached(sports).then((index) => {
+    ESPN_INDEX_CACHE.set(cacheKey, { index, expiresAt: Date.now() + ESPN_INDEX_TTL_MS });
+    ESPN_INDEX_INFLIGHT.delete(cacheKey);
+    return index;
+  }).catch((err) => {
+    ESPN_INDEX_INFLIGHT.delete(cacheKey);
+    throw err;
+  });
+
+  ESPN_INDEX_INFLIGHT.set(cacheKey, promise);
+  return promise;
+}
+
+async function buildEspnScoreIndexUncached(sports: string[]): Promise<EspnScoreIndex> {
   const now = new Date();
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);

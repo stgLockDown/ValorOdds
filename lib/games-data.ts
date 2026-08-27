@@ -260,22 +260,29 @@ export async function getGamesGrid(sportCode: string, limit = 60): Promise<GameC
 }
 
 /**
- * Resolve a single game by its `{away}-{home}-{yyyy-mm-dd}` slug. Scans the
- * same 16h-ago .. 10d-ahead window as the grid (a game detail page is only
- * ever linked to from the grid, so this window always covers it) and
- * matches by recomputing each candidate's slug — avoids needing a second
- * lookup table.
+ * Resolve a single game by its `{away}-{home}-{yyyy-mm-dd}` slug.
+ *
+ * Performance-optimized: instead of fetching ALL games in a ±2-day window
+ * (up to 600), fetching odds for ALL of them, and building ESPN scores for
+ * ALL of them — this queries a narrow date window, finds the matching game
+ * by slug, and then enriches ONLY that one game with odds + ESPN scores.
+ * This reduces the work from O(hundreds of games) to O(1 game).
+ *
+ * Wrapped in unstable_cache (30s revalidate) so that the public page's
+ * generateMetadata() and page body — which both call this — share one
+ * cached result instead of each triggering the full DB + ESPN fetch chain.
  */
-export async function getGameBySlug(sportCode: string, slug: string): Promise<GameCard | null> {
-  const code = (sportCode || '').toUpperCase();
-  const decoded = decodeURIComponent(slug || '');
+export const getGameBySlug = unstable_cache(
+  async (sportCode: string, slug: string): Promise<GameCard | null> => {
+    const code = (sportCode || '').toUpperCase();
+    const decoded = decodeURIComponent(slug || '');
 
   // --- Primary: direct DB lookup by parsed date + team slug matching ---
   // The slug format is {awaySlug}-{homeSlug}-{yyyy-mm-dd}. We extract the
-  // date (last 10 chars), query the DB for all games on that date (±2 days
-  // for timezone safety), and match by recomputing each candidate's slug.
-  // This avoids the 16h-ago..10d-ahead window + 200-game cap that getGamesGrid
-  // imposes, which caused 404s for games that had already started/ended.
+  // date (last 10 chars), query the DB for candidate games on that date
+  // (±1 day for timezone safety — tighter than the old ±2 days), and match
+  // by recomputing each candidate's slug. Only the matched game is then
+  // enriched with odds + ESPN scores.
   const dateMatch = decoded.match(/(\d{4}-\d{2}-\d{2})$/);
   if (dateMatch && isGamesHubSport(code)) {
     const filter = sportFilterClause(code, 1);
@@ -284,6 +291,10 @@ export async function getGameBySlug(sportCode: string, slug: string): Promise<Ga
         const targetDate = new Date(dateMatch[1] + 'T00:00:00Z');
         const startIdx = filter.params.length + 1;
         const endIdx = filter.params.length + 2;
+        // Query a narrow date window (±1 day) to keep the candidate set
+        // small. The old ±2-day / LIMIT 600 approach fetched hundreds of
+        // games and enriched ALL of them with odds + ESPN scores just to
+        // find one — a massive over-fetch that caused 30s+ page loads.
         const r = await query(
           `SELECT game_id, sport, home_team, away_team, commence_time,
                   COUNT(DISTINCT bookmaker_key)::int AS n_books
@@ -294,19 +305,35 @@ export async function getGameBySlug(sportCode: string, slug: string): Promise<Ga
              AND commence_time <= $${endIdx}
            GROUP BY game_id, sport, home_team, away_team, commence_time
            ORDER BY commence_time ASC
-           LIMIT 600`,
-          [...filter.params, new Date(targetDate.getTime() - 2 * 86400000), new Date(targetDate.getTime() + 3 * 86400000)],
+           LIMIT 200`,
+          [...filter.params, new Date(targetDate.getTime() - 1 * 86400000), new Date(targetDate.getTime() + 1 * 86400000)],
         );
-        // Build GameCards from the direct query results (same logic as grid)
-        const [oddsByGame, espnIndex] = await Promise.all([
-          fetchOddsForGames(code, r.rows.map((g: any) => g.game_id)),
-          buildEspnScoreIndex([code]).catch(
-            () => ({ match: () => null, size: 0 }) as { match: (h: string, a: string) => EspnScore | null; size: number },
-          ),
-        ]);
-        const candidates: GameCard[] = r.rows.map((row: any) => {
+
+        // Phase 1: match by slug using only DB columns (no external calls).
+        // Build slugs from the raw DB rows to find our target game_id.
+        let matched: { row: any; homeTeam: string; awayTeam: string } | null = null;
+        for (const row of r.rows as any[]) {
           const homeTeam = formatTeamName(row.home_team);
           const awayTeam = formatTeamName(row.away_team);
+          const candidateSlug = buildGameSlug(awayTeam, homeTeam, new Date(row.commence_time).toISOString());
+          if (candidateSlug === decoded || row.game_id === decoded) {
+            matched = { row, homeTeam, awayTeam };
+            break;
+          }
+        }
+
+        if (matched) {
+          // Phase 2: enrich ONLY the matched game with odds + ESPN scores.
+          // This is the key optimization — we fetch odds for ONE game_id
+          // and build an ESPN score index (which is cached) to look up ONE
+          // game, instead of doing it for every candidate in the window.
+          const { row, homeTeam, awayTeam } = matched;
+          const [oddsByGame, espnIndex] = await Promise.all([
+            fetchOddsForGames(code, [row.game_id]),
+            buildEspnScoreIndex([code]).catch(
+              () => ({ match: () => null, size: 0 }) as { match: (h: string, a: string) => EspnScore | null; size: number },
+            ),
+          ]);
           const espn = espnIndex.match(row.home_team, row.away_team);
           const oddsRows = oddsByGame.get(row.game_id) || [];
           const status: GameCard['status'] = espn?.isLive ? 'live' : espn?.isFinal ? 'final' : 'scheduled';
@@ -331,12 +358,7 @@ export async function getGameBySlug(sportCode: string, slug: string): Promise<Ga
             bestTotal: bestTotalFromRows(oddsRows),
             nBooks: row.n_books || 0,
           };
-        });
-        // Match by slug (primary) or raw game_id (legacy fallback)
-        const bySlug = candidates.find((g) => g.slug === decoded);
-        if (bySlug) return bySlug;
-        const byGameId = candidates.find((g) => g.gameId === decoded);
-        if (byGameId) return byGameId;
+        }
       } catch {
         // fall through to grid-based lookup
       }
@@ -348,7 +370,10 @@ export async function getGameBySlug(sportCode: string, slug: string): Promise<Ga
   const bySlug = games.find((g) => g.slug === decoded);
   if (bySlug) return bySlug;
   return games.find((g) => g.gameId === decoded) ?? null;
-}
+  },
+  ['game-by-slug'],
+  { revalidate: 30, tags: ['games'] },
+);
 
 // ---------------------------------------------------------------------------
 // Full odds breakdown (Odds tab) — every book's price for h2h/spreads/totals.
