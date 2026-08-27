@@ -20,7 +20,7 @@ import { getGamesGrid, isGamesHubSport, fmtAmerican, type GameCard } from '@/lib
  * and the ESPN scoreboard API uses cache: 'no-store'.
  */
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60; // ISR: cache the games grid for 60s
 export const dynamicParams = true;
 
 function findSport(slug: string) {

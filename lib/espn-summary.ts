@@ -122,8 +122,11 @@ async function fetchJsonOnce(url: string): Promise<any | null> {
         Accept: 'application/json',
         Referer: 'https://www.espn.com/',
       },
-      // ESPN summary data is live; don't cache at the framework layer.
-      cache: 'no-store',
+      // Cache at the framework layer for 30 seconds. Box score data doesn't
+      // change more frequently than that, and the old cache: 'no-store'
+      // caused every box-score tab render to make a fresh 8-second HTTP
+      // round-trip to ESPN — even when the same game was viewed seconds apart.
+      next: { revalidate: 30 },
     });
     if (!res.ok) return null;
     return await res.json();

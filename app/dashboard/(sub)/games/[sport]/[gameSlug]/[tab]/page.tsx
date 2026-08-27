@@ -22,8 +22,13 @@ import GameFuturesTab from '@/components/games/GameFuturesTab';
  * Authed equivalent of the public tab page — same shared tab components,
  * dashboard chrome (via the (sub) route group + AuthedSidebarLayout), and
  * the BoxScore tab hits the authed box-score API.
+ *
+ * Uses revalidate=60 (ISR) instead of force-dynamic so the rendered page is
+ * cached at the CDN for 60 seconds. The underlying data fetchers
+ * (getGameBySlug, buildEspnScoreIndex) have their own shorter caches (30s)
+ * so data stays fresh while avoiding the 30s+ uncached load times.
  */
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 type Params = { params: { sport: string; gameSlug: string; tab: string } };
 
