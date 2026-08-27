@@ -112,6 +112,12 @@ export default function DraftRoomClient({
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  // Refs to the currently-hovered row and its scroll panel — used by the
+  // scroll listener to reposition the card as the user scrolls the player list.
+  const hoveredRowRef = useRef<HTMLElement | null>(null);
+  const hoveredPanelRef = useRef<HTMLElement | null>(null);
+  // Track the last computed card position to avoid redundant state updates
+  const lastCardPosRef = useRef<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const sportIcon = sport === 'NFL'
     ? <Shield className="w-5 h-5" />
@@ -282,6 +288,47 @@ export default function DraftRoomClient({
   }, [playerSearch, positionFilter, fetchPlayers]);
 
   // ── Hover info card handlers ──
+  // ── Compute card position relative to the player list panel ──
+  // The card uses position:fixed (viewport-relative). We anchor it to the
+  // LEFT edge of the player-list scroll panel so it appears consistently
+  // next to the list, not floating in random spots. Vertically, we align
+  // the card centre with the hovered row, then clamp within the viewport.
+  const computeCardPosition = useCallback((
+    rowRect: DOMRect,
+    panelRect: DOMRect,
+    cardWidth: number,
+    cardHeight: number,
+  ): { top: number; left: number } => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 12;
+
+    // ── Horizontal: prefer LEFT of the panel (panel is on the right side) ──
+    let left = panelRect.left - cardWidth - 8;
+    if (left < margin) {
+      // Not enough room on the left — try RIGHT of the panel
+      left = panelRect.right + 8;
+    }
+    // If still off-screen on the right, squeeze it into the viewport
+    if (left + cardWidth > vw - margin) {
+      left = vw - cardWidth - margin;
+    }
+    // Final clamp
+    if (left < margin) left = margin;
+
+    // ── Vertical: align card centre with the row centre, then clamp ──
+    const rowCenter = rowRect.top + rowRect.height / 2;
+    let top = rowCenter - cardHeight / 2;
+
+    // Clamp so the card stays fully within the viewport
+    if (top < margin) top = margin;
+    if (top + cardHeight > vh - margin) top = vh - cardHeight - margin;
+    // If the viewport is shorter than the card, just pin to top
+    if (top < margin) top = margin;
+
+    return { top: Math.round(top), left: Math.round(left) };
+  }, []);
+
   const handlePlayerMouseEnter = useCallback((player: Player, e: React.MouseEvent<HTMLDivElement>) => {
     // Clear any pending close
     if (cardCloseTimerRef.current) {
@@ -291,48 +338,42 @@ export default function DraftRoomClient({
     // Clear any pending open
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     // Capture the target rect NOW — e.currentTarget becomes null after the
-    // handler returns (React nulls it), so we can't access it inside setTimeout
+    // handler returns (React nulls it), so we can't access it inside setTimeout.
+    // Also capture the scroll panel rect (closest scrollable ancestor).
     const targetEl = e.currentTarget as HTMLElement;
-    const rect = targetEl.getBoundingClientRect();
+    const rowRect = targetEl.getBoundingClientRect();
+    // Walk up to find the scrollable panel container
+    let panelEl: HTMLElement | null = targetEl.parentElement;
+    while (panelEl) {
+      const style = window.getComputedStyle(panelEl);
+      if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && panelEl.scrollHeight > panelEl.clientHeight) {
+        break;
+      }
+      panelEl = panelEl.parentElement;
+    }
+    const panelRect = panelEl ? panelEl.getBoundingClientRect() : rowRect;
+
+    // Store refs so the scroll listener can reposition
+    hoveredRowRef.current = targetEl;
+    hoveredPanelRef.current = panelEl;
+
     // Delay showing the card to avoid flicker on quick mouse-overs
     hoverTimerRef.current = setTimeout(() => {
-      const cardWidth = 380; // matches w-[380px] in PlayerInfoCard
-      const cardHeight = 500; // approximate max height including padding
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-
-      // Horizontal positioning: right of row if room, otherwise left
-      let left = rect.right + 8;
-      if (left + cardWidth > viewportWidth - 16) {
-        left = rect.left - cardWidth - 8;
-      }
-      if (left < 16) left = 16;
-      if (left + cardWidth > viewportWidth - 16) left = viewportWidth - cardWidth - 16;
-
-      // Vertical positioning: align with row top, but shift up if it would overflow viewport.
-      // NOTE: The card uses position:fixed, which is relative to the VIEWPORT, so we use
-      // rect.top (viewport-relative) directly — do NOT add window.scrollY here.
-      let top: number;
-      const spaceBelow = viewportHeight - rect.bottom;
-      const spaceAbove = rect.top;
-
-      if (spaceBelow >= cardHeight + 16) {
-        // Enough room below the row — place it just below
-        top = rect.bottom + 4;
-      } else if (spaceAbove >= cardHeight + 16) {
-        // Not enough room below, but enough above — place it just above
-        top = rect.top - cardHeight - 4;
-      } else {
-        // Not enough room on either side — center it in the viewport
-        top = (viewportHeight - cardHeight) / 2;
-        if (top < 16) top = 16;
-      }
-
+      // Use the CURRENT rect (the row may have shifted if list was scrolling)
+      const currentRowRect = targetEl.getBoundingClientRect();
+      const currentPanelRect = panelEl ? panelEl.getBoundingClientRect() : currentRowRect;
+      const { top, left } = computeCardPosition(
+        currentRowRect,
+        currentPanelRect,
+        380, // card width (w-[380px])
+        480, // card max height (max-h-[480px])
+      );
       setHoveredPlayer(player);
+      lastCardPosRef.current = { top, left };
       setCardPos({ top, left });
       setCardVisible(true);
     }, 350); // 350ms hover delay
-  }, []);
+  }, [computeCardPosition]);
 
   const handlePlayerMouseLeave = useCallback(() => {
     if (hoverTimerRef.current) {
@@ -343,6 +384,8 @@ export default function DraftRoomClient({
     cardCloseTimerRef.current = setTimeout(() => {
       setCardVisible(false);
       setHoveredPlayer(null);
+      hoveredRowRef.current = null;
+      hoveredPanelRef.current = null;
     }, 200);
   }, []);
 
@@ -357,6 +400,8 @@ export default function DraftRoomClient({
     cardCloseTimerRef.current = setTimeout(() => {
       setCardVisible(false);
       setHoveredPlayer(null);
+      hoveredRowRef.current = null;
+      hoveredPanelRef.current = null;
     }, 200);
   }, []);
 
@@ -367,6 +412,77 @@ export default function DraftRoomClient({
       if (cardCloseTimerRef.current) clearTimeout(cardCloseTimerRef.current);
     };
   }, []);
+
+  // ── Reposition or hide the hover card when the player list scrolls ──
+  // When the user scrolls the player-list panel, the hovered row moves on
+  // screen. We recompute the card's vertical position to track the row. If
+  // the row has scrolled completely out of the panel's visible area, we
+  // hide the card.
+  useEffect(() => {
+    if (!cardVisible) return;
+    const panel = hoveredPanelRef.current;
+    const row = hoveredRowRef.current;
+    if (!panel || !row) return;
+
+    const onScroll = () => {
+      const rowRect = row.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      // If the row is no longer visible within the panel, hide the card
+      if (rowRect.bottom < panelRect.top || rowRect.top > panelRect.bottom) {
+        setCardVisible(false);
+        setHoveredPlayer(null);
+        return;
+      }
+      // Otherwise, reposition the card to track the row
+      const { top, left } = computeCardPosition(rowRect, panelRect, 380, 480);
+      lastCardPosRef.current = { top, left };
+      setCardPos({ top, left });
+    };
+
+    panel.addEventListener('scroll', onScroll, { passive: true });
+    // Also handle window resize
+    window.addEventListener('resize', onScroll, { passive: true });
+    return () => {
+      panel.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [cardVisible, computeCardPosition]);
+
+  // ── Measure actual card height after render and reposition if needed ──
+  // The positioning logic uses an estimated height of 480px, but the actual
+  // card may be shorter (e.g. loading state ~200px) or change height when
+  // data finishes loading. We use a ResizeObserver to detect size changes
+  // and recompute the vertical position so the card stays aligned with the
+  // hovered row and within the viewport.
+  useEffect(() => {
+    if (!cardVisible || !cardRef.current) return;
+    const card = cardRef.current;
+    const row = hoveredRowRef.current;
+    const panel = hoveredPanelRef.current;
+    if (!row) return;
+
+    const reposition = () => {
+      const actualHeight = card.offsetHeight;
+      const actualWidth = card.offsetWidth;
+      const rowRect = row.getBoundingClientRect();
+      const panelRect = panel ? panel.getBoundingClientRect() : rowRect;
+      const { top, left } = computeCardPosition(rowRect, panelRect, actualWidth, actualHeight);
+      if (Math.abs(top - lastCardPosRef.current.top) > 2 || Math.abs(left - lastCardPosRef.current.left) > 2) {
+        lastCardPosRef.current = { top, left };
+        setCardPos({ top, left });
+      }
+    };
+
+    // Reposition immediately on mount
+    reposition();
+
+    // Watch for size changes (loading -> full data transitions)
+    const resizeObserver = new ResizeObserver(() => reposition());
+    resizeObserver.observe(card);
+
+    return () => resizeObserver.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardVisible, hoveredPlayer, computeCardPosition]);
 
   const makePick = async (player: Player) => {
     if (!draftState?.currentTurn) return;
