@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryOne, tx } from '@/lib/db';
 import { generateDraftOrder, type Sport } from '@/lib/dd/presets';
+import { checkPositionLimit, getPositionSummary } from '@/lib/dd/roster-enforcement';
 import { awardXp } from '@/lib/dd/gamification';
 
 // ─── POST /api/dd/drafts/[id]/pick ── Make a draft pick ───────────────────────
@@ -146,22 +147,27 @@ export async function POST(
   const nextRound = nextOrderEntry?.round ?? draft.round_count;
   const nextPickInRound = nextOrderEntry?.pickInRound ?? 1;
 
-  // ── Position requirement check (soft warning) ──
-  // If the user already has enough starters at this player's position but still
-  // has unfilled starter slots at other positions, include a warning. This is
-  // advisory — we don't block the pick because the user may be intentionally
-  // drafting for depth/flex.
+  // ── Position limit enforcement (hard block) ──
+  // If the league has enforcePositionLimits enabled (default true), block
+  // picks that exceed the roster position capacity when other starter
+  // positions still need filling. This prevents drafting an entire team
+  // of QBs when the league limits are e.g. 1 QB.
   let positionWarning: string | null = null;
+  let positionLimits: { position: string; filled: number; capacity: number }[] = [];
   if (playerInfo.position && memberIdForPick) {
     try {
-      // Fetch roster config for this league
-      const rosterConfigRow = await queryOne<{ roster_config: any }>(
-        `SELECT roster_config FROM dd_leagues WHERE id = $1`,
+      // Fetch roster config + settings for this league
+      const leagueRow = await queryOne<{ roster_config: any; settings: any }>(
+        `SELECT roster_config, settings FROM dd_leagues WHERE id = $1`,
         [leagueId]
       );
-      const rc = rosterConfigRow?.roster_config;
-      const slots: { slot: string; count: number; eligible: string[]; isStarter: boolean }[] =
+      const rc = leagueRow?.roster_config;
+      const slots: { slot: string; label: string; count: number; eligible: string[]; isStarter: boolean }[] =
         rc && typeof rc === 'object' && Array.isArray(rc.slots) ? rc.slots : [];
+
+      // Determine if enforcement is enabled (default true)
+      const settings = leagueRow?.settings;
+      const enforceLimits = settings?.enforcePositionLimits !== false; // default true
 
       if (slots.length > 0) {
         // Count how many picks this member has at each position so far
@@ -177,42 +183,48 @@ export async function POST(
           filled[row.position] = Number(row.cnt);
         }
 
-        // Check if the drafted player's position is already at capacity for starter slots
-        const slotsForThisPos = slots.filter(
-          (s) => s.isStarter && (s.eligible.includes(playerInfo.position!) || s.eligible.includes('*'))
+        // Total drafted by this member
+        const totalDraftedRes = await queryOne<{ cnt: string }>(
+          `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks WHERE draft_id = $1 AND member_id = $2`,
+          [draftId, memberIdForPick]
         );
-        const filledAtThisPos = slotsForThisPos.reduce(
-          (sum, s) => {
-            if (s.eligible.includes('*')) return sum; // skip flex for this check
-            return sum + (filled[s.slot] ?? 0);
-          },
-          0
-        );
-        const capacityAtThisPos = slotsForThisPos.reduce(
-          (sum, s) => (s.eligible.includes('*') ? sum : sum + s.count),
-          0
-        );
+        const totalDrafted = Number(totalDraftedRes?.cnt ?? '0');
 
-        // Check if there are still unfilled non-flex starter slots at other positions
-        const unfilledOtherPositions: string[] = [];
-        for (const s of slots) {
-          if (!s.isStarter || s.eligible.includes('*')) continue;
-          const filledForSlot = s.eligible.reduce((sum, pos) => sum + (filled[pos] ?? 0), 0);
-          if (filledForSlot < s.count) {
-            for (const pos of s.eligible) {
-              if (pos !== playerInfo.position && !unfilledOtherPositions.includes(pos)) {
-                unfilledOtherPositions.push(pos);
-              }
-            }
+        // Compute total roster size from slots
+        const totalRosterSize = slots.reduce((sum, s) => sum + s.count, 0);
+
+        // Build position summary for the response (UI uses this)
+        positionLimits = getPositionSummary(slots, filled).map((p) => ({
+          position: p.position,
+          filled: p.filled,
+          capacity: p.capacity,
+        }));
+
+        if (enforceLimits) {
+          const limitCheck = checkPositionLimit(
+            slots,
+            playerInfo.position,
+            filled,
+            totalRosterSize,
+            totalDrafted
+          );
+          if (!limitCheck.allowed) {
+            return NextResponse.json(
+              {
+                error: limitCheck.reason,
+                positionLimits,
+              },
+              { status: 409 }
+            );
           }
-        }
-
-        if (filledAtThisPos >= capacityAtThisPos && unfilledOtherPositions.length > 0) {
-          positionWarning = `You already have enough ${playerInfo.position} starters. You still need: ${unfilledOtherPositions.join(', ')}.`;
+          // If allowed but at capacity (depth pick), include advisory warning
+          if (limitCheck.capacity > 0 && limitCheck.filled >= limitCheck.capacity) {
+            positionWarning = `Note: You've reached the ${playerInfo.position} capacity (${limitCheck.filled}/${limitCheck.capacity}). This player will sit on your bench.`;
+          }
         }
       }
     } catch (e) {
-      // Non-critical — if the check fails, just skip the warning
+      // Non-critical — if the check fails, allow the pick (fail-open)
     }
   }
 
@@ -278,6 +290,7 @@ export async function POST(
     },
     isDraftComplete: isLastPick,
     positionWarning,
+    positionLimits,
     nextTurn: isLastPick
       ? null
       : {

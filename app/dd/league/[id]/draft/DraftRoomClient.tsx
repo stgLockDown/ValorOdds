@@ -7,6 +7,19 @@ import {
   Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown, AlertCircle,
 } from 'lucide-react';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
+import {
+  getPositionColor,
+  positionBadgeStyle,
+  positionLeftBorderStyle,
+  positionCellBgStyle,
+  getPositionLegend,
+} from '@/lib/dd/position-colors';
+import {
+  checkPositionLimit,
+  getPositionSummary,
+  type FilledCounts,
+} from '@/lib/dd/roster-enforcement';
+import DraftLayoutGrid, { PANEL_KEYS } from '@/components/dd/DraftLayoutGrid';
 
 interface Player {
   id: string; playerName: string; team: string | null; position: string | null;
@@ -503,6 +516,10 @@ export default function DraftRoomClient({
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Failed to make pick');
+        // If the server returned position limits, surface a warning too
+        if (data.positionLimits) {
+          setPositionWarning(data.error || null);
+        }
       } else {
         if (data.positionWarning) {
           setPositionWarning(data.positionWarning);
@@ -658,6 +675,28 @@ export default function DraftRoomClient({
     return positionNeeds.needed.includes(playerPos);
   };
 
+  // ── Position limit enforcement (client-side preview) ──
+  // Mirrors the server-side check so the UI can disable the Draft button
+  // and show the reason before the user even clicks.
+  const positionSummary = rosterSlots.length > 0
+    ? getPositionSummary(rosterSlots, positionNeeds.filled as FilledCounts)
+    : [];
+  const totalRosterSize = rosterSlots.reduce((sum, s) => sum + s.count, 0);
+  const enforceLimits = true; // server defaults to true; UI previews accordingly
+
+  const getPickBlockReason = (player: Player): string | null => {
+    if (!rosterSlots.length || !player.position) return null;
+    if (!enforceLimits) return null;
+    const check = checkPositionLimit(
+      rosterSlots,
+      player.position,
+      positionNeeds.filled as FilledCounts,
+      totalRosterSize,
+      myRoster.length
+    );
+    return check.allowed ? null : check.reason;
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-4">
       {/* Header */}
@@ -780,15 +819,28 @@ export default function DraftRoomClient({
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {/* Left: Draft Board (2 cols on xl) */}
-        <div className="xl:col-span-2 space-y-4">
-          {/* Draft Board */}
+      <DraftLayoutGrid draftId={draftState.draft.id}>
+        {{
+          [PANEL_KEYS.DRAFT_BOARD]: (
+            <>
           <div className="card overflow-hidden">
             <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
               <Trophy className="w-5 h-5 text-brand-accent" />
               Draft Board
             </h3>
+            {/* Position color legend */}
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {getPositionLegend(sport).map(({ position, color }) => (
+                <span
+                  key={position}
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                  style={{ color: color.fg, backgroundColor: color.bg, border: `1px solid ${color.border}` }}
+                  title={color.name}
+                >
+                  {position}
+                </span>
+              ))}
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -822,9 +874,12 @@ export default function DraftRoomClient({
                           return (
                             <td key={m.id} className="py-1.5 px-1 text-center">
                               {pick?.pick ? (
-                                <div className={`rounded-md py-1.5 px-1 ${
-                                  pick.pick.isAutoPicked ? 'bg-brand-elevated' : 'bg-brand-primary/10'
-                                }`}>
+                                <div
+                                  className={`rounded-md py-1.5 px-1 ${
+                                    pick.pick.isAutoPicked ? '' : ''
+                                  }`}
+                                  style={positionCellBgStyle(sport, pick.pick.position)}
+                                >
                                   {pick.pick.headshot && (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
@@ -837,8 +892,14 @@ export default function DraftRoomClient({
                                   <div className="text-xs font-medium text-brand-text truncate" title={pick.pick.playerName}>
                                     {pick.pick.playerName}
                                   </div>
-                                  <div className="text-xs text-brand-muted">
-                                    {pick.pick.position} · {pick.pick.team}
+                                  <div className="text-xs">
+                                    <span
+                                      className="inline-block px-1 rounded font-bold"
+                                      style={positionBadgeStyle(sport, pick.pick.position)}
+                                    >
+                                      {pick.pick.position}
+                                    </span>
+                                    <span className="text-brand-muted"> · {pick.pick.team}</span>
                                   </div>
                                 </div>
                               ) : isCurrent ? (
@@ -860,8 +921,10 @@ export default function DraftRoomClient({
               </table>
             </div>
           </div>
-
-          {/* My Team Roster */}
+            </>
+          ),
+          [PANEL_KEYS.MY_ROSTER]: (
+            <>
           <div className="card">
             <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
               <Crown className="w-5 h-5 text-brand-accent" />
@@ -897,6 +960,37 @@ export default function DraftRoomClient({
               </div>
             )}
 
+            {/* Position limits summary — filled / capacity per position */}
+            {positionSummary.length > 0 && (
+              <div className="mb-3 p-2.5 rounded-lg bg-brand-elevated/50 border border-brand-border">
+                <div className="text-xs font-medium text-brand-text mb-1.5 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-brand-primaryText" />
+                  Position Limits
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                  {positionSummary.map((p) => {
+                    const pc = getPositionColor(sport, p.position);
+                    return (
+                      <div key={p.position} className="flex items-center gap-1 text-xs">
+                        <span
+                          className="inline-block px-1 rounded font-bold text-[10px] flex-shrink-0"
+                          style={positionBadgeStyle(sport, p.position)}
+                        >
+                          {p.position}
+                        </span>
+                        <span
+                          className={p.isFull ? 'text-brand-muted line-through' : 'text-brand-text'}
+                          style={p.isFull ? undefined : { color: pc.fg }}
+                        >
+                          {p.filled}/{p.capacity}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {myRoster.length === 0 ? (
               <p className="text-sm text-brand-muted text-center py-4">
                 No players drafted yet.
@@ -904,22 +998,34 @@ export default function DraftRoomClient({
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {myRoster.map((p, i) => (
-                  <div key={i} className={`bg-brand-elevated rounded-lg p-2.5 ${playerFillsNeed(p.position) ? 'ring-1 ring-brand-primary/30' : ''}`}>
+                  <div
+                    key={i}
+                    className={`bg-brand-elevated rounded-lg p-2.5 ${playerFillsNeed(p.position) ? 'ring-1 ring-brand-primary/30' : ''}`}
+                    style={positionLeftBorderStyle(sport, p.position)}
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-brand-muted">R{p.round}</span>
                       <span className="text-xs text-brand-muted">#{p.overallPick}</span>
                     </div>
                     <div className="text-sm font-medium text-brand-text truncate mt-1">{p.playerName}</div>
-                    <div className="text-xs text-brand-muted">{p.position} · {p.team}</div>
+                    <div className="text-xs text-brand-muted flex items-center gap-1.5">
+                      <span
+                        className="inline-block px-1 rounded font-bold text-[10px]"
+                        style={positionBadgeStyle(sport, p.position)}
+                      >
+                        {p.position ?? 'BN'}
+                      </span>
+                      <span className="truncate">{p.team}</span>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
-        </div>
-
-        {/* Right: Player Search & Available Players */}
-        <div className="space-y-4">
+            </>
+          ),
+          [PANEL_KEYS.AVAILABLE_PLAYERS]: (
+            <>
           <div className="card">
             <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
               <Search className="w-5 h-5 text-brand-primaryText" />
@@ -948,17 +1054,24 @@ export default function DraftRoomClient({
               >
                 All
               </button>
-              {positions.map((pos) => (
-                <button
-                  key={pos}
-                  onClick={() => setPositionFilter(pos === positionFilter ? '' : pos)}
-                  className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-                    pos === positionFilter ? 'bg-brand-primary text-white' : 'bg-brand-elevated text-brand-muted hover:text-brand-text'
-                  }`}
-                >
-                  {pos}
-                </button>
-              ))}
+              {positions.map((pos) => {
+                const pc = getPositionColor(sport, pos);
+                const isActive = pos === positionFilter;
+                return (
+                  <button
+                    key={pos}
+                    onClick={() => setPositionFilter(pos === positionFilter ? '' : pos)}
+                    className="text-xs px-2.5 py-1 rounded-md transition-colors font-semibold"
+                    style={
+                      isActive
+                        ? { backgroundColor: pc.fg, color: '#0a0e1a' }
+                        : positionBadgeStyle(sport, pos)
+                    }
+                  >
+                    {pos}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Sort selector */}
@@ -1001,10 +1114,13 @@ export default function DraftRoomClient({
               ) : (
                 players.map((player) => {
                   const fillsNeed = playerFillsNeed(player.position);
+                  const blockReason = getPickBlockReason(player);
+                  const isBlocked = !!blockReason;
                   return (
                   <div
                     key={player.id}
-                    className={`flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group cursor-pointer ${fillsNeed ? 'border-l-2 border-brand-primary bg-brand-primary/5' : ''}`}
+                    className={`flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group cursor-pointer ${fillsNeed ? 'bg-brand-primary/5' : ''} ${isBlocked ? 'opacity-60' : ''}`}
+                    style={positionLeftBorderStyle(sport, player.position)}
                     onMouseEnter={(e) => handlePlayerMouseEnter(player, e)}
                     onMouseLeave={handlePlayerMouseLeave}
                   >
@@ -1043,26 +1159,42 @@ export default function DraftRoomClient({
                           <span className="text-[9px] font-bold uppercase tracking-wide bg-brand-primary/20 text-brand-primary px-1 py-0.5 rounded">Need</span>
                         )}
                       </div>
-                      <div className="text-xs text-brand-muted">
-                        {player.position} · {player.team}
+                      <div className="text-xs text-brand-muted flex items-center gap-1.5">
+                        <span
+                          className="inline-block px-1 rounded font-bold text-[10px]"
+                          style={positionBadgeStyle(sport, player.position)}
+                        >
+                          {player.position ?? '—'}
+                        </span>
+                        <span className="truncate">{player.team}</span>
                         {player.projectedPoints && ` · ${player.projectedPoints.toFixed(1)} pts`}
                         {player.adp != null && ` · ADP ${player.adp}`}
                       </div>
                     </div>
 
-                    {/* Draft button */}
+                    {/* Draft button / blocked indicator */}
                     {(isMyTurn || isCommissioner) && draft.status === 'in_progress' && (
-                      <button
-                        onClick={() => makePick(player)}
-                        disabled={picking !== null}
-                        className="opacity-0 group-hover:opacity-100 btn-primary text-xs px-2.5 py-1.5 transition-opacity"
-                      >
-                        {picking === player.playerName ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <>Draft</>
-                        )}
-                      </button>
+                      isBlocked ? (
+                        <div
+                          className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-md bg-brand-danger/15 text-brand-danger"
+                          title={blockReason ?? undefined}
+                        >
+                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="hidden sm:inline">Limit</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => makePick(player)}
+                          disabled={picking !== null}
+                          className="opacity-0 group-hover:opacity-100 btn-primary text-xs px-2.5 py-1.5 transition-opacity"
+                        >
+                          {picking === player.playerName ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>Draft</>
+                          )}
+                        </button>
+                      )
                     )}
                   </div>
                   );
@@ -1070,8 +1202,10 @@ export default function DraftRoomClient({
               )}
             </div>
           </div>
-
-          {/* Recent picks */}
+            </>
+          ),
+          [PANEL_KEYS.RECENT_PICKS]: (
+            <>
           <div className="card">
             <h3 className="font-semibold text-brand-text mb-3">Recent Picks</h3>
             <div className="space-y-1.5">
@@ -1098,8 +1232,10 @@ export default function DraftRoomClient({
               )}
             </div>
           </div>
-        </div>
-      </div>
+            </>
+          ),
+        }}
+      </DraftLayoutGrid>
 
       {/* ── Floating Player Info Card (hover popover) ── */}
       {cardVisible && hoveredPlayer && (

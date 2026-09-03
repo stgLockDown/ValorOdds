@@ -173,3 +173,39 @@
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* ======================== Draft Layout Grid (react-grid-layout) ======================== */
+.dd-layout-container .react-grid-layout {
+  background: transparent;
+}
+.dd-layout-item {
+  background: transparent;
+  border-radius: 0;
+}
+.dd-layout-item-editing {
+  outline: 1px dashed rgba(79, 70, 229, 0.4);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.dd-layout-editing .react-grid-item.react-draggable-dragging {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 100;
+}
+.dd-layout-container .react-resizable-handle {
+  z-index: 50;
+}
+.dd-layout-container .react-resizable-handle::after {
+  border-right-color: rgba(79, 70, 229, 0.5);
+  border-bottom-color: rgba(79, 70, 229, 0.5);
+}
+.dd-layout-container .react-grid-placeholder {
+  background: rgba(79, 70, 229, 0.15) !important;
+  border-radius: 8px;
+}
+/* When not editing, hide resize handles and drag cursor */
+.dd-layout-container:not(.dd-layout-editing) .react-resizable-handle {
+  display: none;
+}
+.dd-layout-container:not(.dd-layout-editing) .react-grid-item {
+  cursor: default;
+}

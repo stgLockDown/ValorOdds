@@ -72,6 +72,33 @@ const CreateLeagueSchema = z.object({
   faabBudget: z.number().int().min(0).max(500).optional(),
   playoffWeeks: z.number().int().min(2).max(8).optional(),
   teamName: z.string().min(2).max(40).optional(),
+  // Position limit enforcement (default true)
+  enforcePositionLimits: z.boolean().optional(),
+  // Dynasty-specific settings
+  dynastySettings: z.object({
+    /** Carry over entire roster from season to season */
+    carryFullRoster: z.boolean().optional(),
+    /** Number of rookie draft rounds (for rookie drafts) */
+    rookieDraftRounds: z.number().int().min(1).max(10).optional(),
+    /** Taxi squad size */
+    taxiSquadSize: z.number().int().min(0).max(10).optional(),
+    /** IR slots for dynasty */
+    irSlots: z.number().int().min(0).max(10).optional(),
+  }).optional(),
+  // IDP-specific settings
+  idpSettings: z.object({
+    /** IDP scoring tier: 'light', 'standard', 'heavy' */
+    idpScoringTier: z.enum(['light', 'standard', 'heavy']).optional(),
+    /** Whether to use individual defensive players instead of team DEF */
+    useIndividualDefenders: z.boolean().optional(),
+  }).optional(),
+  // Defense-only settings (no offensive players, 2 kickers, IDP-heavy)
+  defenseOnlySettings: z.object({
+    /** No offensive players (QB, RB, WR, TE) are drafted */
+    noOffensivePlayers: z.boolean().optional(),
+    /** Number of kicker slots (default 2 for defense-only) */
+    kickerCount: z.number().int().min(1).max(4).optional(),
+  }).optional(),
 });
 
 export async function POST(req: Request) {
@@ -137,6 +164,10 @@ export async function POST(req: Request) {
             pickTimerSeconds: input.pickTimerSeconds ?? 90,
             faabBudget: input.faabBudget ?? 100,
             playoffWeeks: input.playoffWeeks,
+            enforcePositionLimits: input.enforcePositionLimits ?? true,
+            dynastySettings: input.dynastySettings ?? null,
+            idpSettings: input.idpSettings ?? null,
+            defenseOnlySettings: input.defenseOnlySettings ?? null,
           }),
         ]
       );
