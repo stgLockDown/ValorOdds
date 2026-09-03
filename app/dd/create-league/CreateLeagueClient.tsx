@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Target, Shield, Trophy, ChevronRight, ChevronLeft, Check,
+  Target, Shield, Trophy, Crown, ChevronRight, ChevronLeft, Check,
   Users, Settings, Zap, Loader2, Copy, CheckCircle,
   X, Save, Trash2,
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import {
 interface RosterPresetInfo {
   key: string; name: string; totalRosterSize: number; totalStarters: number;
   qbCount: number; hasSuperflex: boolean; slotSummary: string;
+  isIdp: boolean; isDynasty: boolean; isDefenseOnly: boolean; kickerCount: number;
 }
 interface ScoringPresetInfo {
   key: string; name: string; mode: string;
@@ -58,6 +59,18 @@ export default function CreateLeagueClient() {
   const [showExitModal, setShowExitModal] = useState(false);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
 
+  // Position limit enforcement (default ON)
+  const [enforcePositionLimits, setEnforcePositionLimits] = useState(true);
+
+  // Dynasty-specific settings
+  const [rookieDraftRounds, setRookieDraftRounds] = useState(3);
+  const [taxiSquadSize, setTaxiSquadSize] = useState(4);
+  const [dynastyIRSLOTS, setDynastyIRSlots] = useState(4);
+
+  // IDP-specific settings
+  const [idpScoringTier, setIdpScoringTier] = useState<'light' | 'standard' | 'heavy'>('standard');
+  const [useIndividualDefenders, setUseIndividualDefenders] = useState(true);
+
   const DRAFT_STORAGE_KEY = 'dd_create_league_draft';
 
   // Save wizard state to localStorage whenever form fields change
@@ -79,6 +92,12 @@ export default function CreateLeagueClient() {
       pickTimerSeconds,
       faabBudget,
       playoffWeeks,
+      enforcePositionLimits,
+      rookieDraftRounds,
+      taxiSquadSize,
+      dynastyIRSLOTS,
+      idpScoringTier,
+      useIndividualDefenders,
       savedAt: new Date().toISOString(),
     };
     try {
@@ -86,7 +105,7 @@ export default function CreateLeagueClient() {
     } catch {
       // localStorage might be full or unavailable -- non-fatal
     }
-  }, [hasRestoredDraft, step, sport, name, format, scoringPreset, rosterPreset, numTeams, draftType, keeperType, isPublic, teamName, lineupSetting, pickTimerSeconds, faabBudget, playoffWeeks]);
+  }, [hasRestoredDraft, step, sport, name, format, scoringPreset, rosterPreset, numTeams, draftType, keeperType, isPublic, teamName, lineupSetting, pickTimerSeconds, faabBudget, playoffWeeks, enforcePositionLimits, rookieDraftRounds, taxiSquadSize, dynastyIRSLOTS, idpScoringTier, useIndividualDefenders]);
 
   // Restore wizard state from localStorage on mount
   useEffect(() => {
@@ -109,6 +128,12 @@ export default function CreateLeagueClient() {
         if (data.pickTimerSeconds) setPickTimerSeconds(data.pickTimerSeconds);
         if (data.faabBudget) setFaabBudget(data.faabBudget);
         if (data.playoffWeeks) setPlayoffWeeks(data.playoffWeeks);
+        if (typeof data.enforcePositionLimits === 'boolean') setEnforcePositionLimits(data.enforcePositionLimits);
+        if (data.rookieDraftRounds) setRookieDraftRounds(data.rookieDraftRounds);
+        if (data.taxiSquadSize) setTaxiSquadSize(data.taxiSquadSize);
+        if (data.dynastyIRSLOTS) setDynastyIRSlots(data.dynastyIRSLOTS);
+        if (data.idpScoringTier) setIdpScoringTier(data.idpScoringTier);
+        if (typeof data.useIndividualDefenders === 'boolean') setUseIndividualDefenders(data.useIndividualDefenders);
       }
     } catch {
       // Corrupt or unavailable -- non-fatal
@@ -141,6 +166,13 @@ export default function CreateLeagueClient() {
   }, [sport, presets]);
 
   const steps = ['Sport', 'Format', 'Settings', 'Review'];
+
+  // Detect IDP / Dynasty / Defense-Only roster presets from the selected roster preset
+  const selectedRosterPreset = presets?.sports[sport]?.rosterPresets.find((r) => r.key === rosterPreset);
+  const isIdpRoster = !!selectedRosterPreset?.isIdp;
+  const isDynastyRoster = !!selectedRosterPreset?.isDynasty;
+  const isDefenseOnlyRoster = !!selectedRosterPreset?.isDefenseOnly;
+
   const canProceed = () => {
     if (step === 0) return !!sport;
     if (step === 1) return !!format && !!scoringPreset && !!rosterPreset;
@@ -170,6 +202,30 @@ export default function CreateLeagueClient() {
           pickTimerSeconds,
           faabBudget,
           playoffWeeks: sport === 'NFL' ? playoffWeeks : undefined,
+          enforcePositionLimits,
+          // Dynasty-specific settings (only sent if keeperType is dynasty)
+          ...(keeperType === 'dynasty' ? {
+            dynastySettings: {
+              carryFullRoster: true,
+              rookieDraftRounds,
+              taxiSquadSize,
+              irSlots: dynastyIRSLOTS,
+            },
+          } : {}),
+          // IDP-specific settings (only sent if roster preset is IDP)
+          ...(isIdpRoster ? {
+            idpSettings: {
+              idpScoringTier,
+              useIndividualDefenders,
+            },
+          } : {}),
+          // Defense-only settings (no offensive players, 2 kickers)
+          ...(isDefenseOnlyRoster ? {
+            defenseOnlySettings: {
+              noOffensivePlayers: true,
+              kickerCount: 2,
+            },
+          } : {}),
         }),
       });
       const data = await res.json();
@@ -413,9 +469,29 @@ export default function CreateLeagueClient() {
                     </div>
                     {sport === 'NFL' && (
                       <div className="text-xs mt-1.5 flex items-center justify-center gap-1.5 flex-wrap">
-                        <span className={`px-1.5 py-0.5 rounded ${r.qbCount === 1 && !r.hasSuperflex ? 'bg-brand-primary/20 text-brand-primaryText' : 'bg-brand-elevated text-brand-muted'}`}>
-                          {r.qbCount} QB{r.hasSuperflex ? ' + SFlex' : ''}
-                        </span>
+                        {r.isDefenseOnly ? (
+                          <>
+                            <span className="px-1.5 py-0.5 rounded bg-brand-danger/20 text-brand-danger font-semibold">DEF ONLY</span>
+                            <span className="px-1.5 py-0.5 rounded bg-brand-primary/20 text-brand-primaryText">
+                              {r.kickerCount} K
+                            </span>
+                          </>
+                        ) : (
+                          <span className={`px-1.5 py-0.5 rounded ${r.qbCount === 1 && !r.hasSuperflex ? 'bg-brand-primary/20 text-brand-primaryText' : 'bg-brand-elevated text-brand-muted'}`}>
+                            {r.qbCount} QB{r.hasSuperflex ? ' + SFlex' : ''}
+                          </span>
+                        )}
+                        {r.isIdp && !r.isDefenseOnly && (
+                          <span className="px-1.5 py-0.5 rounded bg-brand-danger/20 text-brand-danger font-semibold">IDP</span>
+                        )}
+                        {r.isDynasty && (
+                          <span className="px-1.5 py-0.5 rounded bg-brand-accent/20 text-brand-accent font-semibold">Dynasty</span>
+                        )}
+                      </div>
+                    )}
+                    {sport === 'MLB' && r.isDynasty && (
+                      <div className="text-xs mt-1.5 flex items-center justify-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-brand-accent/20 text-brand-accent font-semibold">Dynasty</span>
                       </div>
                     )}
                     {r.slotSummary && (
@@ -465,6 +541,186 @@ export default function CreateLeagueClient() {
                     <div className="text-xs text-brand-muted">{k.description}</div>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Defense-only league settings */}
+            {isDefenseOnlyRoster && (
+              <div className="p-4 rounded-lg border border-brand-danger/40 bg-brand-danger/10">
+                <h3 className="text-base font-semibold text-brand-text mb-1 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-brand-danger" />
+                  Defense-Only League Settings
+                </h3>
+                <p className="text-sm text-brand-muted mb-3">
+                  No offensive players (QB, RB, WR, TE) are drafted. Your lineup features <strong className="text-brand-text">2 kickers</strong>, team defense, and individual defensive players (DL, LB, DB + flex). Scoring is heavily weighted toward defense and kicking.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-md bg-brand-elevated/60 border border-brand-border">
+                    <div className="text-xs font-medium text-brand-muted mb-1">Starting Lineup</div>
+                    <div className="text-sm text-brand-text font-mono">
+                      2 K · 1 DEF · 2 DL · 2 LB · 2 DB · 2 D-Flex
+                    </div>
+                    <div className="text-xs text-brand-muted mt-1">11 starters · 9 bench · 3 IR</div>
+                  </div>
+                  <div className="p-3 rounded-md bg-brand-elevated/60 border border-brand-border">
+                    <div className="text-xs font-medium text-brand-muted mb-1">Recommended Scoring</div>
+                    <div className="text-sm text-brand-text">
+                      Defense Only (Kicker + IDP Heavy)
+                    </div>
+                    <div className="text-xs text-brand-muted mt-1">
+                      Boosted: tackles 1.5, sacks 4, INTs 6, FGs 4+
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setScoringPreset('defense_only')}
+                  className={`mt-3 text-xs px-3 py-1.5 rounded-md transition-colors w-full ${
+                    scoringPreset === 'defense_only'
+                      ? 'bg-brand-success/20 text-brand-success border border-brand-success/30'
+                      : 'bg-brand-primary text-white hover:bg-brand-primary/90'
+                  }`}
+                >
+                  {scoringPreset === 'defense_only'
+                    ? '✓ Defense-Only Scoring Selected'
+                    : 'Use Defense-Only Scoring Preset'}
+                </button>
+              </div>
+            )}
+
+            {/* IDP-specific settings */}
+            {isIdpRoster && !isDefenseOnlyRoster && (
+              <div className="p-4 rounded-lg border border-brand-danger/30 bg-brand-danger/5">
+                <h3 className="text-base font-semibold text-brand-text mb-1 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-brand-danger" />
+                  IDP League Settings
+                </h3>
+                <p className="text-sm text-brand-muted mb-3">
+                  Individual Defensive Players — your league drafts DL, LB, and DB players in addition to offense.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-brand-muted mb-1.5 block">IDP Scoring Tier</label>
+                    <div className="flex gap-2">
+                      {(['light', 'standard', 'heavy'] as const).map((tier) => (
+                        <button
+                          key={tier}
+                          onClick={() => setIdpScoringTier(tier)}
+                          className={`text-xs px-3 py-1.5 rounded-md capitalize transition-colors ${
+                            idpScoringTier === tier
+                              ? 'bg-brand-danger text-white'
+                              : 'bg-brand-elevated text-brand-muted hover:text-brand-text'
+                          }`}
+                        >
+                          {tier}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-brand-muted mt-1">
+                      {idpScoringTier === 'light' && 'Tackles worth 0.5, sacks 1.5, INTs 3'}
+                      {idpScoringTier === 'standard' && 'Tackles worth 1, sacks 2, INTs 5'}
+                      {idpScoringTier === 'heavy' && 'Tackles worth 1.5, sacks 4, INTs 6'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-brand-muted mb-1.5 block">Defensive Positions</label>
+                    <button
+                      onClick={() => setUseIndividualDefenders(!useIndividualDefenders)}
+                      className={`w-full text-left p-2.5 rounded-md border transition-colors ${
+                        useIndividualDefenders
+                          ? 'border-brand-danger bg-brand-danger/10'
+                          : 'border-brand-border bg-brand-elevated'
+                      }`}
+                    >
+                      <div className="text-sm font-medium text-brand-text flex items-center justify-between">
+                        Individual Defenders
+                        <span className={`text-xs ${useIndividualDefenders ? 'text-brand-danger' : 'text-brand-muted'}`}>
+                          {useIndividualDefenders ? 'ON' : 'OFF'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-brand-muted mt-0.5">
+                        Draft DL, LB, DB players (vs. team defense only)
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Dynasty-specific settings */}
+            {keeperType === 'dynasty' && (
+              <div className="p-4 rounded-lg border border-brand-accent/30 bg-brand-accent/5">
+                <h3 className="text-base font-semibold text-brand-text mb-1 flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-brand-accent" />
+                  Dynasty League Settings
+                </h3>
+                <p className="text-sm text-brand-muted mb-3">
+                  Keep your entire roster year-to-year. Build a franchise through veteran and rookie drafts.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-brand-muted mb-1.5 block">Rookie Draft Rounds</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={rookieDraftRounds}
+                      onChange={(e) => setRookieDraftRounds(Math.max(1, Math.min(10, Number(e.target.value))))}
+                      className="input"
+                    />
+                    <p className="text-xs text-brand-muted mt-1">Rounds in the annual rookie draft</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-brand-muted mb-1.5 block">Taxi Squad Size</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={taxiSquadSize}
+                      onChange={(e) => setTaxiSquadSize(Math.max(0, Math.min(10, Number(e.target.value))))}
+                      className="input"
+                    />
+                    <p className="text-xs text-brand-muted mt-1">Developmental stash spots for rookies</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-brand-muted mb-1.5 block">IR Slots</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={dynastyIRSLOTS}
+                      onChange={(e) => setDynastyIRSlots(Math.max(0, Math.min(10, Number(e.target.value))))}
+                      className="input"
+                    />
+                    <p className="text-xs text-brand-muted mt-1">Injured reserve slots</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Position limit enforcement toggle */}
+            <div className="p-4 rounded-lg border border-brand-border bg-brand-elevated/50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-brand-text mb-1 flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-brand-primaryText" />
+                    Position Limit Enforcement
+                  </h3>
+                  <p className="text-sm text-brand-muted">
+                    Prevent managers from drafting too many players at one position (e.g., a team of all QBs). Forces filling roster needs.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEnforcePositionLimits(!enforcePositionLimits)}
+                  className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 ${
+                    enforcePositionLimits ? 'bg-brand-success' : 'bg-brand-border'
+                  }`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                      enforcePositionLimits ? 'translate-x-6' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
               </div>
             </div>
 
@@ -675,6 +931,16 @@ export default function CreateLeagueClient() {
               <ReviewRow label="Teams" value={String(numTeams)} />
               <ReviewRow label="Draft" value={presets?.draftTypes.find(d => d.value === draftType)?.label ?? draftType} />
               <ReviewRow label="Keeper" value={presets?.keeperTypes.find(k => k.value === keeperType)?.label ?? keeperType} />
+              {isIdpRoster && !isDefenseOnlyRoster && (
+                <ReviewRow label="IDP Scoring" value={`${idpScoringTier} tier · ${useIndividualDefenders ? 'Individual defenders' : 'Team DEF only'}`} />
+              )}
+              {isDefenseOnlyRoster && (
+                <ReviewRow label="Defense-Only" value="2 Kickers · No Offense · IDP Heavy" />
+              )}
+              {keeperType === 'dynasty' && (
+                <ReviewRow label="Dynasty" value={`${rookieDraftRounds} rookie rounds · ${taxiSquadSize} taxi · ${dynastyIRSLOTS} IR`} />
+              )}
+              <ReviewRow label="Pos. Limits" value={enforcePositionLimits ? 'Enforced' : 'Off (advisory)'} />
               <ReviewRow label="Lineup" value={lineupSetting === 'daily' ? 'Daily' : 'Weekly'} />
               <ReviewRow label="Pick Timer" value={`${pickTimerSeconds}s per pick`} />
               <ReviewRow label="FAAB Budget" value={`$${faabBudget}`} />

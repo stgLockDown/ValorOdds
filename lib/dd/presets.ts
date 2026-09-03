@@ -220,6 +220,71 @@ const NFL_IDP_ROSTER: RosterConfig = {
   totalStarters: 12,
 };
 
+const NFL_DYNASTY_ROSTER: RosterConfig = {
+  sport: 'NFL',
+  name: 'Dynasty (Deep Roster + Taxi Squad)',
+  slots: [
+    { slot: 'QB',    label: 'Quarterback',      count: 1, eligible: ['QB'],        isStarter: true },
+    { slot: 'RB',    label: 'Running Back',     count: 2, eligible: ['RB'],        isStarter: true },
+    { slot: 'WR',    label: 'Wide Receiver',    count: 3, eligible: ['WR'],        isStarter: true },
+    { slot: 'TE',    label: 'Tight End',        count: 1, eligible: ['TE'],        isStarter: true },
+    { slot: 'FLEX',  label: 'Flex (RB/WR/TE)',  count: 2, eligible: ['RB','WR','TE'], isStarter: true },
+    { slot: 'SFLEX', label: 'Super Flex',       count: 1, eligible: ['QB','RB','WR','TE'], isStarter: true },
+    { slot: 'K',     label: 'Kicker',           count: 1, eligible: ['K'],         isStarter: true },
+    { slot: 'DEF',   label: 'Team Defense',     count: 1, eligible: ['DEF'],       isStarter: true },
+    { slot: 'BN',    label: 'Bench',            count: 12, eligible: ['QB','RB','WR','TE','K','DEF'], isStarter: false },
+    { slot: 'TAXI',  label: 'Taxi Squad',       count: 4, eligible: ['*'],         isStarter: false },
+    { slot: 'IR',    label: 'Injured Reserve',  count: 4, eligible: ['*'],         isStarter: false },
+  ],
+  totalRosterSize: 35,
+  totalStarters: 12,
+};
+
+const NFL_DEFENSE_ONLY_ROSTER: RosterConfig = {
+  sport: 'NFL',
+  name: 'Defense Only (2 Kickers, No Offense)',
+  slots: [
+    // No offensive skill positions (QB, RB, WR, TE, FLEX, SFLEX)
+    // Two kickers instead of the usual one
+    { slot: 'K',    label: 'Kicker',           count: 2, eligible: ['K'],         isStarter: true },
+    { slot: 'DEF',  label: 'Team Defense',     count: 1, eligible: ['DEF'],       isStarter: true },
+    // Individual defensive players — expanded starting lineup
+    { slot: 'DL',   label: 'Defensive Line',   count: 2, eligible: ['DL','DE','DT'], isStarter: true },
+    { slot: 'LB',   label: 'Linebacker',       count: 2, eligible: ['LB'],        isStarter: true },
+    { slot: 'DB',   label: 'Defensive Back',   count: 2, eligible: ['DB','CB','S'], isStarter: true },
+    // Flex defensive slots — any IDP
+    { slot: 'D_FLEX', label: 'Defensive Flex (DL/LB/DB)', count: 2, eligible: ['DL','DE','DT','LB','DB','CB','S'], isStarter: true },
+    // Bench — only kickers and defensive players allowed
+    { slot: 'BN',   label: 'Bench',            count: 6, eligible: ['K','DEF','DL','DE','DT','LB','DB','CB','S'], isStarter: false },
+    { slot: 'IR',   label: 'Injured Reserve',  count: 3, eligible: ['*'],         isStarter: false },
+  ],
+  totalRosterSize: 20,
+  totalStarters: 11,
+};
+
+const NFL_IDP_DYNASTY_ROSTER: RosterConfig = {
+  sport: 'NFL',
+  name: 'IDP Dynasty (Offense + Defense + Taxi)',
+  slots: [
+    { slot: 'QB',    label: 'Quarterback',      count: 1, eligible: ['QB'],        isStarter: true },
+    { slot: 'RB',    label: 'Running Back',     count: 2, eligible: ['RB'],        isStarter: true },
+    { slot: 'WR',    label: 'Wide Receiver',    count: 3, eligible: ['WR'],        isStarter: true },
+    { slot: 'TE',    label: 'Tight End',        count: 1, eligible: ['TE'],        isStarter: true },
+    { slot: 'FLEX',  label: 'Flex (RB/WR/TE)',  count: 2, eligible: ['RB','WR','TE'], isStarter: true },
+    { slot: 'SFLEX', label: 'Super Flex',       count: 1, eligible: ['QB','RB','WR','TE'], isStarter: true },
+    { slot: 'K',     label: 'Kicker',           count: 1, eligible: ['K'],         isStarter: true },
+    { slot: 'DEF',   label: 'Team Defense',     count: 1, eligible: ['DEF'],       isStarter: true },
+    { slot: 'DL',    label: 'Defensive Line',   count: 2, eligible: ['DL','DE','DT'], isStarter: true },
+    { slot: 'LB',    label: 'Linebacker',       count: 2, eligible: ['LB'],        isStarter: true },
+    { slot: 'DB',    label: 'Defensive Back',   count: 2, eligible: ['DB','CB','S'], isStarter: true },
+    { slot: 'BN',    label: 'Bench',            count: 10, eligible: ['QB','RB','WR','TE','K','DEF','DL','LB','DB'], isStarter: false },
+    { slot: 'TAXI',  label: 'Taxi Squad',       count: 5, eligible: ['*'],         isStarter: false },
+    { slot: 'IR',    label: 'Injured Reserve',  count: 4, eligible: ['*'],         isStarter: false },
+  ],
+  totalRosterSize: 40,
+  totalStarters: 18,
+};
+
 // ──────────────────────────────────────────────
 // MLB Scoring Presets
 // ──────────────────────────────────────────────
@@ -375,6 +440,104 @@ const NFL_QB_HEAVY: ScoringConfig = {
   ],
 };
 
+// ── IDP Scoring ──
+// Individual Defensive Player scoring rules added on top of the
+// standard offensive scoring. Covers tackles, sacks, interceptions,
+// forced fumbles, and defensive TDs.
+const NFL_IDP_STANDARD: ScoringConfig = {
+  ...NFL_STANDARD_PPR,
+  name: 'IDP Standard (Offense + Individual Defense)',
+  defense: [
+    // Team defense (same as standard)
+    { stat: 'def_td',   label: 'Defensive TD',      pointsPerUnit: 6 },
+    { stat: 'def_int',  label: 'Interception',      pointsPerUnit: 2 },
+    { stat: 'def_sack', label: 'Sack',              pointsPerUnit: 1 },
+    { stat: 'def_fr',   label: 'Fumble Recovery',   pointsPerUnit: 2 },
+    { stat: 'def_safety', label: 'Safety',          pointsPerUnit: 2 },
+    { stat: 'def_0',    label: 'Shutout (0 pts allowed)',  pointsPerUnit: 10 },
+    { stat: 'def_6',    label: '1-6 pts allowed',   pointsPerUnit: 7 },
+    { stat: 'def_13',   label: '7-13 pts allowed',  pointsPerUnit: 4 },
+    { stat: 'def_20',   label: '14-20 pts allowed', pointsPerUnit: 1 },
+    { stat: 'def_27',   label: '21-27 pts allowed', pointsPerUnit: 0 },
+    { stat: 'def_34',   label: '28-34 pts allowed', pointsPerUnit: -1 },
+    { stat: 'def_35',   label: '35+ pts allowed',   pointsPerUnit: -4 },
+    // Individual defensive player stats
+    { stat: 'idp_tackle',     label: 'Solo Tackle',          pointsPerUnit: 1 },
+    { stat: 'idp_ast_tackle', label: 'Assisted Tackle',      pointsPerUnit: 0.5 },
+    { stat: 'idp_sack',       label: 'Sack',                 pointsPerUnit: 2 },
+    { stat: 'idp_tfl',        label: 'Tackle for Loss',      pointsPerUnit: 1.5 },
+    { stat: 'idp_int',        label: 'Interception',         pointsPerUnit: 5 },
+    { stat: 'idp_ff',         label: 'Forced Fumble',        pointsPerUnit: 3 },
+    { stat: 'idp_fr',         label: 'Fumble Recovery',      pointsPerUnit: 3 },
+    { stat: 'idp_pd',         label: 'Pass Defended',        pointsPerUnit: 1.5 },
+    { stat: 'idp_td',         label: 'Defensive TD',         pointsPerUnit: 6 },
+    { stat: 'idp_safety',     label: 'Safety (Individual)',  pointsPerUnit: 4 },
+  ],
+};
+
+const NFL_IDP_HEAVY: ScoringConfig = {
+  ...NFL_IDP_STANDARD,
+  name: 'IDP Heavy (Defense-Heavy Scoring)',
+  defense: NFL_IDP_STANDARD.defense!.map((r) => {
+    // Boost the individual defensive stats for heavy IDP leagues
+    if (r.stat === 'idp_tackle') return { ...r, pointsPerUnit: 1.5 };
+    if (r.stat === 'idp_sack') return { ...r, pointsPerUnit: 4 };
+    if (r.stat === 'idp_int') return { ...r, pointsPerUnit: 6 };
+    if (r.stat === 'idp_ff') return { ...r, pointsPerUnit: 4 };
+    if (r.stat === 'idp_td') return { ...r, pointsPerUnit: 8 };
+    return r;
+  }),
+};
+
+// ── Defense-Only Scoring ──
+// For leagues with no offensive players — heavy emphasis on
+// individual defensive stats, team defense, and kickers.
+// Kicker scoring is boosted slightly to make the 2-kicker format meaningful.
+const NFL_DEFENSE_ONLY: ScoringConfig = {
+  ...NFL_IDP_HEAVY,
+  name: 'Defense Only (Kicker + IDP Heavy)',
+  mode: 'points',
+  // No offensive scoring — clear out passing/rushing/receiving
+  passing: [],
+  rushing: [],
+  receiving: [],
+  // Boosted kicker scoring (2 kickers are a key part of this format)
+  kicking: [
+    { stat: 'fg',       label: 'Field Goal',        pointsPerUnit: 4 },
+    { stat: 'fg_50',    label: '50+ Yard FG',       pointsPerUnit: 6 },
+    { stat: 'fg_40',    label: '40-49 Yard FG',     pointsPerUnit: 5 },
+    { stat: 'xp',       label: 'Extra Point',       pointsPerUnit: 1.5 },
+    { stat: 'fg_miss',  label: 'FG Miss (penalty)', pointsPerUnit: -1 },
+  ],
+  // Heavy individual defense + team defense
+  defense: [
+    // Team defense (boosted for defense-only leagues)
+    { stat: 'def_td',   label: 'Defensive TD',      pointsPerUnit: 8 },
+    { stat: 'def_int',  label: 'Interception',      pointsPerUnit: 3 },
+    { stat: 'def_sack', label: 'Sack',              pointsPerUnit: 2 },
+    { stat: 'def_fr',   label: 'Fumble Recovery',   pointsPerUnit: 3 },
+    { stat: 'def_safety', label: 'Safety',          pointsPerUnit: 4 },
+    { stat: 'def_0',    label: 'Shutout (0 pts allowed)',  pointsPerUnit: 15 },
+    { stat: 'def_6',    label: '1-6 pts allowed',   pointsPerUnit: 10 },
+    { stat: 'def_13',   label: '7-13 pts allowed',  pointsPerUnit: 6 },
+    { stat: 'def_20',   label: '14-20 pts allowed', pointsPerUnit: 2 },
+    { stat: 'def_27',   label: '21-27 pts allowed', pointsPerUnit: 0 },
+    { stat: 'def_34',   label: '28-34 pts allowed', pointsPerUnit: -2 },
+    { stat: 'def_35',   label: '35+ pts allowed',   pointsPerUnit: -6 },
+    // Individual defensive player stats (heavy)
+    { stat: 'idp_tackle',     label: 'Solo Tackle',          pointsPerUnit: 1.5 },
+    { stat: 'idp_ast_tackle', label: 'Assisted Tackle',      pointsPerUnit: 0.75 },
+    { stat: 'idp_sack',       label: 'Sack',                 pointsPerUnit: 4 },
+    { stat: 'idp_tfl',        label: 'Tackle for Loss',      pointsPerUnit: 2 },
+    { stat: 'idp_int',        label: 'Interception',         pointsPerUnit: 6 },
+    { stat: 'idp_ff',         label: 'Forced Fumble',        pointsPerUnit: 4 },
+    { stat: 'idp_fr',         label: 'Fumble Recovery',      pointsPerUnit: 4 },
+    { stat: 'idp_pd',         label: 'Pass Defended',        pointsPerUnit: 2 },
+    { stat: 'idp_td',         label: 'Defensive TD',         pointsPerUnit: 8 },
+    { stat: 'idp_safety',     label: 'Safety (Individual)',  pointsPerUnit: 6 },
+  ],
+};
+
 // ──────────────────────────────────────────────
 // Preset Registry
 // ──────────────────────────────────────────────
@@ -389,6 +552,9 @@ export const NFL_ROSTER_PRESETS: Record<string, RosterConfig> = {
   standard: NFL_STANDARD_ROSTER,
   deep: NFL_DEEP_ROSTER,
   idp: NFL_IDP_ROSTER,
+  dynasty: NFL_DYNASTY_ROSTER,
+  idp_dynasty: NFL_IDP_DYNASTY_ROSTER,
+  defense_only: NFL_DEFENSE_ONLY_ROSTER,
 };
 
 export const MLB_SCORING_PRESETS: Record<string, ScoringConfig> = {
@@ -403,6 +569,9 @@ export const NFL_SCORING_PRESETS: Record<string, ScoringConfig> = {
   half_ppr: NFL_HALF_PPR,
   non_ppr: NFL_NON_PPR,
   qb_heavy: NFL_QB_HEAVY,
+  idp_standard: NFL_IDP_STANDARD,
+  idp_heavy: NFL_IDP_HEAVY,
+  defense_only: NFL_DEFENSE_ONLY,
 };
 
 // ──────────────────────────────────────────────
@@ -419,17 +588,28 @@ export function getScoringPreset(sport: Sport, key: string): ScoringConfig {
   return NFL_SCORING_PRESETS[key] ?? NFL_STANDARD_PPR;
 }
 
-export function listRosterPresets(sport: Sport): { key: string; name: string; totalRosterSize: number; totalStarters: number; qbCount: number; hasSuperflex: boolean; slotSummary: string }[] {
+export function listRosterPresets(sport: Sport): { key: string; name: string; totalRosterSize: number; totalStarters: number; qbCount: number; hasSuperflex: boolean; slotSummary: string; isIdp: boolean; isDynasty: boolean; isDefenseOnly: boolean; kickerCount: number }[] {
   const presets = sport === 'MLB' ? MLB_ROSTER_PRESETS : NFL_ROSTER_PRESETS;
   return Object.entries(presets).map(([key, p]) => {
     const qbSlot = p.slots.find((s) => s.slot === 'QB');
     const hasSuperflex = p.slots.some((s) => s.slot === 'SFLEX');
     const qbCount = qbSlot?.count ?? 0;
+    const kickerSlot = p.slots.find((s) => s.slot === 'K');
+    const kickerCount = kickerSlot?.count ?? 0;
     // Build a compact summary of starter slots
     const starterSlots = p.slots.filter((s) => s.isStarter);
     const slotSummary = starterSlots
       .map((s) => `${s.count > 1 ? s.count : ''}${s.slot}`)
       .join(' · ');
+    // Detect IDP (has DL/LB/DB starter slots)
+    const isIdp = p.slots.some((s) => ['DL', 'LB', 'DB', 'D_FLEX'].includes(s.slot) && s.isStarter);
+    // Detect dynasty (has TAXI squad slot or is the deep MLB roster)
+    const isDynasty = p.slots.some((s) => s.slot === 'TAXI') || (sport === 'MLB' && key === 'deep');
+    // Detect defense-only (no QB/RB/WR/TE starter slots, has IDP starters)
+    const hasOffensiveStarters = p.slots.some(
+      (s) => ['QB', 'RB', 'WR', 'TE', 'FLEX', 'SFLEX'].includes(s.slot) && s.isStarter
+    );
+    const isDefenseOnly = !hasOffensiveStarters && isIdp && kickerCount >= 2;
     return {
       key,
       name: p.name,
@@ -438,6 +618,10 @@ export function listRosterPresets(sport: Sport): { key: string; name: string; to
       qbCount,
       hasSuperflex,
       slotSummary,
+      isIdp,
+      isDynasty,
+      isDefenseOnly,
+      kickerCount,
     };
   });
 }
