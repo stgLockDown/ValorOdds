@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   Trophy, Crown, Users, Copy, Check, Play, Pause, Loader2,
   Target, Shield, Settings, ArrowLeft, Plus, Clock, UserPlus,
+  X, DollarSign, Timer, Save,
 } from 'lucide-react';
 
 interface League {
@@ -37,7 +38,7 @@ export default function LeagueHomeClient({
 }: {
   league: League;
   members: Member[];
-  membership: { id: string; isCommissioner: boolean; teamName: string; draftPosition: number | null; isCommissionerByLeague: boolean } | null;
+  membership: { id: string; isCommissioner: boolean; teamName: string; draftPosition: number | null; isCommissionerByLeague: boolean; faabBudget?: number } | null;
   draft: Draft | null;
   currentUserId: string;
   isCommissioner: boolean;
@@ -47,6 +48,16 @@ export default function LeagueHomeClient({
   const [startingDraft, setStartingDraft] = useState(false);
   const [error, setError] = useState('');
   const [leaving, setLeaving] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Extract settings from league.settings JSONB
+  const settings = league.settings ?? {};
+  const faabBudget = settings.faabBudget ?? membership?.faabBudget ?? 100;
+  const pickTimerSeconds = settings.pickTimerSeconds ?? 90;
+  const playoffWeeks = settings.playoffWeeks ?? 3;
+  const enforcePositionLimits = settings.enforcePositionLimits ?? true;
+
+  const isSettingsLocked = league.status !== 'recruiting' && league.status !== 'pre_draft' && league.status !== 'setup' && league.status !== 'predraft';
 
   const totalPicks = draft ? league.num_teams * draft.roundCount : 0;
   const memberCount = members.length;
@@ -295,10 +306,20 @@ export default function LeagueHomeClient({
 
           {/* League Settings Summary */}
           <div className="card">
-            <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
-              <Settings className="w-5 h-5 text-brand-primaryText" />
-              League Settings
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-brand-text flex items-center gap-2">
+                <Settings className="w-5 h-5 text-brand-primaryText" />
+                League Settings
+              </h3>
+              {isCommissioner && !isSettingsLocked && (
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  className="text-xs font-medium text-brand-primary hover:text-brand-primaryText flex items-center gap-1 transition-colors"
+                >
+                  <Settings className="w-3.5 h-3.5" /> Edit
+                </button>
+              )}
+            </div>
             <div className="space-y-2 text-sm">
               <SettingRow label="Sport" value={league.sport} />
               <SettingRow label="Format" value={league.format.replace(/_/g, ' ')} />
@@ -308,6 +329,11 @@ export default function LeagueHomeClient({
               <SettingRow label="Keeper" value={league.keeper_type} />
               <SettingRow label="Teams" value={String(league.num_teams)} />
               <SettingRow label="Season" value={String(league.season_year)} />
+              <div className="border-t border-brand-border my-2" />
+              <SettingRow label="FAAB Budget" value={`$${faabBudget}`} />
+              <SettingRow label="Pick Timer" value={`${pickTimerSeconds}s`} />
+              <SettingRow label="Playoff Teams" value={String(playoffWeeks)} />
+              <SettingRow label="Pos Enforcement" value={enforcePositionLimits ? 'On' : 'Off'} />
             </div>
           </div>
 
@@ -325,6 +351,23 @@ export default function LeagueHomeClient({
           </div>
         </div>
       </div>
+
+      {/* Settings Editor Modal */}
+      {showSettingsModal && (
+        <SettingsEditorModal
+          league={league}
+          currentFaab={faabBudget}
+          currentPickTimer={pickTimerSeconds}
+          currentPlayoffWeeks={playoffWeeks}
+          currentEnforcePos={enforcePositionLimits}
+          memberCount={members.length}
+          onClose={() => setShowSettingsModal(false)}
+          onSaved={() => {
+            setShowSettingsModal(false);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -334,6 +377,328 @@ function SettingRow({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between">
       <span className="text-brand-muted capitalize">{label}</span>
       <span className="font-medium text-brand-text capitalize">{value}</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SettingsEditorModal — Commissioner edits league settings (FAAB, timer, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+function SettingsEditorModal({
+  league,
+  currentFaab,
+  currentPickTimer,
+  currentPlayoffWeeks,
+  currentEnforcePos,
+  memberCount,
+  onClose,
+  onSaved,
+}: {
+  league: League;
+  currentFaab: number;
+  currentPickTimer: number;
+  currentPlayoffWeeks: number;
+  currentEnforcePos: boolean;
+  memberCount: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [leagueName, setLeagueName] = useState(league.name);
+  const [numTeams, setNumTeams] = useState(league.num_teams);
+  const [isPublic, setIsPublic] = useState(league.is_public);
+  const [faab, setFaab] = useState(currentFaab);
+  const [pickTimer, setPickTimer] = useState(currentPickTimer);
+  const [playoffTeams, setPlayoffTeams] = useState(currentPlayoffWeeks);
+  const [enforcePos, setEnforcePos] = useState(currentEnforcePos);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError('');
+    setSaveSuccess(false);
+    try {
+      // Build the updated settings object — merge with existing settings
+      const existingSettings = league.settings ?? {};
+      const updatedSettings = {
+        ...existingSettings,
+        faabBudget: faab,
+        pickTimerSeconds: pickTimer,
+        playoffWeeks: playoffTeams,
+        enforcePositionLimits: enforcePos,
+      };
+
+      const res = await fetch(`/api/dd/leagues/${league.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: leagueName,
+          num_teams: numTeams,
+          is_public: isPublic,
+          settings: updatedSettings,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveError(data.error || 'Failed to save settings');
+        setSaving(false);
+        return;
+      }
+
+      setSaveSuccess(true);
+      setTimeout(() => {
+        onSaved();
+      }, 800);
+    } catch {
+      setSaveError('Network error');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-brand-surface border border-brand-border rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-brand-border sticky top-0 bg-brand-surface z-10">
+          <div className="flex items-center gap-2">
+            <Settings className="w-5 h-5 text-brand-primaryText" />
+            <h2 className="text-lg font-bold text-brand-text">League Settings</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-brand-muted hover:text-brand-text transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-5">
+          {/* League Name */}
+          <div>
+            <label className="block text-sm font-medium text-brand-text mb-1.5">
+              League Name
+            </label>
+            <input
+              type="text"
+              value={leagueName}
+              onChange={(e) => setLeagueName(e.target.value)}
+              maxLength={50}
+              className="w-full bg-brand-elevated border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text focus:border-brand-primary focus:outline-none"
+            />
+          </div>
+
+          {/* Number of Teams */}
+          <div>
+            <label className="block text-sm font-medium text-brand-text mb-1.5">
+              Number of Teams: <span className="text-brand-primaryText">{numTeams}</span>
+            </label>
+            <div className="grid grid-cols-5 gap-2">
+              {[4, 6, 8, 10, 12, 14, 16, 18, 20].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setNumTeams(n)}
+                  disabled={n < memberCount}
+                  className={`p-2 rounded-lg border text-sm font-medium transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                    numTeams === n
+                      ? 'border-brand-primary bg-brand-primary/10 text-brand-primaryText'
+                      : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-brand-muted mt-1">
+              {memberCount} team{memberCount !== 1 ? 's' : ''} currently joined. Cannot go below current count.
+            </p>
+          </div>
+
+          {/* Visibility */}
+          <div>
+            <label className="block text-sm font-medium text-brand-text mb-1.5">
+              League Visibility
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPublic(true)}
+                className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition-all ${
+                  isPublic
+                    ? 'border-brand-primary bg-brand-primary/10 text-brand-primaryText'
+                    : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                }`}
+              >
+                Public
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsPublic(false)}
+                className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition-all ${
+                  !isPublic
+                    ? 'border-brand-primary bg-brand-primary/10 text-brand-primaryText'
+                    : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                }`}
+              >
+                Private
+              </button>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-brand-border" />
+
+          {/* FAAB Budget */}
+          <div>
+            <label className="block text-sm font-medium text-brand-text mb-1.5 flex items-center gap-1.5">
+              <DollarSign className="w-4 h-4 text-brand-accent" />
+              FAAB Budget: <span className="text-brand-primaryText">${faab}</span>
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={500}
+              step={25}
+              value={faab}
+              onChange={(e) => setFaab(parseInt(e.target.value, 10))}
+              className="w-full accent-brand-primary"
+            />
+            <div className="flex justify-between text-xs text-brand-muted mt-1">
+              <span>$0 (FCFS)</span>
+              <span>$100</span>
+              <span>$500</span>
+            </div>
+            <p className="text-xs text-brand-muted mt-1">
+              Blind bidding budget for waiver wire pickups. Set to $0 for first-come-first-served.
+              This applies to all teams in the league.
+            </p>
+          </div>
+
+          {/* Pick Timer */}
+          <div>
+            <label className="block text-sm font-medium text-brand-text mb-1.5 flex items-center gap-1.5">
+              <Timer className="w-4 h-4 text-brand-primaryText" />
+              Pick Timer: <span className="text-brand-primaryText">{pickTimer}s</span> per pick
+            </label>
+            <input
+              type="range"
+              min={30}
+              max={300}
+              step={15}
+              value={pickTimer}
+              onChange={(e) => setPickTimer(parseInt(e.target.value, 10))}
+              className="w-full accent-brand-primary"
+            />
+            <div className="flex justify-between text-xs text-brand-muted mt-1">
+              <span>30s</span>
+              <span>90s</span>
+              <span>5 min</span>
+            </div>
+          </div>
+
+          {/* Playoff Teams */}
+          <div>
+            <label className="block text-sm font-medium text-brand-text mb-1.5">
+              Playoff Teams: <span className="text-brand-primaryText">{playoffTeams}</span>
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {[2, 4, 6, 8].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setPlayoffTeams(n)}
+                  className={`p-2.5 rounded-lg border text-sm font-medium transition-all ${
+                    playoffTeams === n
+                      ? 'border-brand-primary bg-brand-primary/10 text-brand-primaryText'
+                      : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Position Enforcement */}
+          <div>
+            <label className="block text-sm font-medium text-brand-text mb-1.5">
+              Position Limit Enforcement
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEnforcePos(true)}
+                className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition-all ${
+                  enforcePos
+                    ? 'border-brand-success bg-brand-success/10 text-brand-success'
+                    : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                }`}
+              >
+                Enforce
+              </button>
+              <button
+                type="button"
+                onClick={() => setEnforcePos(false)}
+                className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition-all ${
+                  !enforcePos
+                    ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                    : 'border-brand-border bg-brand-elevated text-brand-muted hover:border-brand-primary/50'
+                }`}
+              >
+                Open
+              </button>
+            </div>
+            <p className="text-xs text-brand-muted mt-1">
+              When enforced, managers cannot draft more players at a position than the roster allows.
+            </p>
+          </div>
+
+          {/* Error / Success messages */}
+          {saveError && (
+            <div className="text-sm text-brand-danger bg-brand-danger/10 rounded-lg p-3">
+              {saveError}
+            </div>
+          )}
+          {saveSuccess && (
+            <div className="text-sm text-brand-success bg-brand-success/10 rounded-lg p-3 flex items-center gap-2">
+              <Check className="w-4 h-4" /> Settings saved successfully!
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 p-5 border-t border-brand-border sticky bottom-0 bg-brand-surface">
+          <button
+            onClick={onClose}
+            className="btn-secondary"
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || saveSuccess}
+            className="btn-primary"
+          >
+            {saving ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
+            ) : saveSuccess ? (
+              <><Check className="w-4 h-4" /> Saved</>
+            ) : (
+              <><Save className="w-4 h-4" /> Save Settings</>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

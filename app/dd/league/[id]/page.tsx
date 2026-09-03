@@ -145,6 +145,7 @@ export default async function LeagueHomePage({
           teamName: membership.team_name,
           draftPosition: membership.draft_position,
           isCommissionerByLeague: league.commissioner_id === String(session.user.id),
+          faabBudget: membership.faab_budget,
         } : null}
         draft={draft ? {
           id: draft.id,

@@ -178,6 +178,18 @@ export async function PATCH(
       `UPDATE dd_leagues SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`,
       values
     );
+
+    // If FAAB budget was changed in settings, update all members' faab_budget too
+    // (only makes sense pre-draft, which is already enforced by the status check above)
+    if (body.settings?.faabBudget !== undefined) {
+      const newFaab = Number(body.settings.faabBudget);
+      if (Number.isInteger(newFaab) && newFaab >= 0 && newFaab <= 500) {
+        await client.query(
+          `UPDATE dd_league_members SET faab_budget = $1 WHERE league_id = $2`,
+          [newFaab, leagueId]
+        );
+      }
+    }
   });
 
   return NextResponse.json({ success: true });
