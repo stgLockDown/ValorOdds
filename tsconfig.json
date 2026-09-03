@@ -20,5 +20,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "legacy-static", "valorodds-web-repo"]
+  "exclude": ["node_modules", "legacy-static", "valorodds-web-repo", "valorodds_frontend"]
 }

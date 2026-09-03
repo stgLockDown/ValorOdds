@@ -129,8 +129,11 @@ export default function DraftLayoutGrid({ draftId, children }: DraftLayoutGridPr
     }
   }, [storageKey]);
 
-  // The panels to render
-  const panelKeys = useMemo(() => Object.keys(PANEL_KEYS) as PanelKey[], []);
+  // The panels to render — use Object.values so the keys match the children
+  // object (which is keyed by panel VALUES e.g. 'draft-board', not NAMES).
+  // Using Object.keys here returns ['DRAFT_BOARD', ...] which never matches
+  // children['draft-board'], producing empty panels.
+  const panelKeys = useMemo(() => Object.values(PANEL_KEYS) as PanelKey[], []);
 
   if (!mounted) {
     // Avoid SSR hydration mismatch — render a static fallback
