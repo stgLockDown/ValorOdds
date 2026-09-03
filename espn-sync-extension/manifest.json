@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "ValorOdds Draft Bar",
+  "version": "1.0.0",
+  "description": "Live VOR analytics and AI draft assistant for ESPN fantasy drafts. Sign into ESPN, sync your draft, and get real-time pick grades, scarcity alerts, and AI advice.",
+  "permissions": ["cookies", "storage", "activeTab"],
+  "host_permissions": [
+    "*://*.espn.com/*",
+    "*://lm-api-reads.fantasy.espn.com/*",
+    "https://valorodds.com/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ValorOdds Draft Bar"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://fantasy.espn.com/football/draft*",
+        "https://lm-api-reads.fantasy.espn.com/*"
+      ],
+      "js": ["content.js"],
+      "css": [],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["bar.css", "icons/*"],
+      "matches": ["https://*.espn.com/*"]
+    }
+  ]
+}
