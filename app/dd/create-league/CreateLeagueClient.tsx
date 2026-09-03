@@ -55,6 +55,7 @@ export default function CreateLeagueClient() {
   const [lineupSetting, setLineupSetting] = useState<'daily' | 'weekly'>('daily');
   const [pickTimerSeconds, setPickTimerSeconds] = useState(90);
   const [faabBudget, setFaabBudget] = useState(100);
+  const [useRecommendedFaab, setUseRecommendedFaab] = useState(true);
   const [playoffWeeks, setPlayoffWeeks] = useState(3);
   const [showExitModal, setShowExitModal] = useState(false);
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
@@ -98,6 +99,7 @@ export default function CreateLeagueClient() {
       dynastyIRSLOTS,
       idpScoringTier,
       useIndividualDefenders,
+      useRecommendedFaab,
       savedAt: new Date().toISOString(),
     };
     try {
@@ -105,7 +107,7 @@ export default function CreateLeagueClient() {
     } catch {
       // localStorage might be full or unavailable -- non-fatal
     }
-  }, [hasRestoredDraft, step, sport, name, format, scoringPreset, rosterPreset, numTeams, draftType, keeperType, isPublic, teamName, lineupSetting, pickTimerSeconds, faabBudget, playoffWeeks, enforcePositionLimits, rookieDraftRounds, taxiSquadSize, dynastyIRSLOTS, idpScoringTier, useIndividualDefenders]);
+  }, [hasRestoredDraft, step, sport, name, format, scoringPreset, rosterPreset, numTeams, draftType, keeperType, isPublic, teamName, lineupSetting, pickTimerSeconds, faabBudget, playoffWeeks, enforcePositionLimits, rookieDraftRounds, taxiSquadSize, dynastyIRSLOTS, idpScoringTier, useIndividualDefenders, useRecommendedFaab]);
 
   // Restore wizard state from localStorage on mount
   useEffect(() => {
@@ -134,6 +136,7 @@ export default function CreateLeagueClient() {
         if (data.dynastyIRSLOTS) setDynastyIRSlots(data.dynastyIRSLOTS);
         if (data.idpScoringTier) setIdpScoringTier(data.idpScoringTier);
         if (typeof data.useIndividualDefenders === 'boolean') setUseIndividualDefenders(data.useIndividualDefenders);
+        if (typeof data.useRecommendedFaab === 'boolean') setUseRecommendedFaab(data.useRecommendedFaab);
       }
     } catch {
       // Corrupt or unavailable -- non-fatal
@@ -862,26 +865,61 @@ export default function CreateLeagueClient() {
 
             {/* FAAB Budget */}
             <div>
-              <label className="block text-sm font-medium text-brand-text mb-1.5">
-                FAAB Budget (Free Agent Acquisition Budget): <span className="text-brand-primaryText">${faabBudget}</span>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={500}
-                step={25}
-                value={faabBudget}
-                onChange={(e) => setFaabBudget(parseInt(e.target.value, 10))}
-                className="w-full accent-brand-primary"
-              />
-              <div className="flex justify-between text-xs text-brand-muted mt-1">
-                <span>$0</span>
-                <span>$100</span>
-                <span>$500</span>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-brand-text">
+                  FAAB Budget
+                  <span className="block text-xs font-normal text-brand-muted mt-0.5">
+                    Free Agent Acquisition Budget — blind bidding for waiver wire pickups
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!useRecommendedFaab) {
+                      setFaabBudget(100);
+                    }
+                    setUseRecommendedFaab(!useRecommendedFaab);
+                  }}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-all flex-shrink-0 ${
+                    useRecommendedFaab
+                      ? 'border-brand-primary bg-brand-primary/10 text-brand-primaryText'
+                      : 'border-brand-border bg-brand-elevated text-brand-muted hover:text-brand-text'
+                  }`}
+                >
+                  {useRecommendedFaab ? '✓ Recommended ($100)' : 'Custom'}
+                </button>
               </div>
-              <p className="text-xs text-brand-muted mt-1">
-                Blind bidding budget for waiver wire pickups. Set to $0 for first-come-first-served.
-              </p>
+              {useRecommendedFaab ? (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-brand-elevated/50 border border-brand-border">
+                  <span className="text-2xl font-bold text-brand-primaryText">$100</span>
+                  <span className="text-xs text-brand-muted">
+                    Standard budget used by most leagues. You can change this later from League Settings.
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <label className="block text-sm text-brand-muted mb-1">
+                    Budget amount: <span className="text-brand-primaryText font-medium">${faabBudget}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={500}
+                    step={25}
+                    value={faabBudget}
+                    onChange={(e) => setFaabBudget(parseInt(e.target.value, 10))}
+                    className="w-full accent-brand-primary"
+                  />
+                  <div className="flex justify-between text-xs text-brand-muted mt-1">
+                    <span>$0 (FCFS)</span>
+                    <span>$100</span>
+                    <span>$500</span>
+                  </div>
+                  <p className="text-xs text-brand-muted mt-1">
+                    Set to $0 for first-come-first-served waivers instead of bidding.
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Playoff Weeks (NFL only) */}
@@ -943,7 +981,7 @@ export default function CreateLeagueClient() {
               <ReviewRow label="Pos. Limits" value={enforcePositionLimits ? 'Enforced' : 'Off (advisory)'} />
               <ReviewRow label="Lineup" value={lineupSetting === 'daily' ? 'Daily' : 'Weekly'} />
               <ReviewRow label="Pick Timer" value={`${pickTimerSeconds}s per pick`} />
-              <ReviewRow label="FAAB Budget" value={`$${faabBudget}`} />
+              <ReviewRow label="FAAB Budget" value={useRecommendedFaab ? '$100 (recommended)' : `$${faabBudget}`} />
               {sport === 'NFL' && <ReviewRow label="Playoff Teams" value={String(playoffWeeks)} />}
               <ReviewRow label="Visibility" value={isPublic ? 'Public' : 'Private (invite code)'} />
             </div>
