@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ValorOdds Draft Bar</title>
+  <style>
+    /* ─── Reset & base ─── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      color: #e5e7eb;
+      background: #0a0e1a;
+    }
+
+    /* ─── Brand header ─── */
+    .vo-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px;
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+    }
+    .vo-logo {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: white;
+    }
+    .vo-header h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #e5e7eb;
+    }
+    .vo-header .vo-subtitle {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+
+    /* ─── Status cards ─── */
+    .vo-section {
+      padding: 12px 16px;
+      border-bottom: 1px solid #1f2937;
+    }
+    .vo-section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #9ca3af;
+      margin-bottom: 8px;
+    }
+
+    .vo-status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+    }
+    .vo-status-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .vo-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+    .vo-status-dot.connected {
+      background: #10b981;
+      box-shadow: 0 0 4px #10b981;
+    }
+    .vo-status-text {
+      font-size: 11px;
+      color: #9ca3af;
+    }
+    .vo-status-text.ok { color: #10b981; }
+    .vo-status-text.err { color: #ef4444; }
+
+    /* ─── Buttons ─── */
+    .vo-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s;
+      color: #e5e7eb;
+      background: #1f2937;
+      text-decoration: none;
+      width: 100%;
+    }
+    .vo-btn:hover { opacity: 0.85; }
+    .vo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .vo-btn-primary { background: #4f46e5; }
+    .vo-btn-accent { background: #f59e0b; color: #1a1a1a; }
+
+    .vo-btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    /* ─── League selector ─── */
+    .vo-field {
+      margin-bottom: 10px;
+    }
+    .vo-field label {
+      display: block;
+      font-size: 11px;
+      color: #9ca3af;
+      margin-bottom: 4px;
+    }
+    .vo-field input, .vo-field select {
+      width: 100%;
+      padding: 8px 10px;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      color: #e5e7eb;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .vo-field input:focus, .vo-field select:focus {
+      border-color: #4f46e5;
+    }
+    .vo-field select {
+      cursor: pointer;
+    }
+
+    /* ─── Footer ─── */
+    .vo-footer {
+      padding: 12px 16px;
+      font-size: 10px;
+      color: #6b7280;
+      text-align: center;
+    }
+    .vo-footer a {
+      color: #4f46e5;
+      text-decoration: none;
+    }
+    .vo-footer a:hover { text-decoration: underline; }
+
+    /* ─── Loading ─── */
+    .vo-loading {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #9ca3af;
+      font-size: 11px;
+    }
+    .vo-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid #374151;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: vo-spin 0.8s linear infinite;
+    }
+    @keyframes vo-spin { to { transform: rotate(360deg); } }
+
+    /* ─── Toggle ─── */
+    .vo-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .vo-toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background: #374151;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .vo-toggle.on { background: #4f46e5; }
+    .vo-toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .vo-toggle.on::after { transform: translateX(16px); }
+  </style>
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <div class="vo-header">
+    <div class="vo-logo">V</div>
+    <div>
+      <h1>ValorOdds Draft Bar</h1>
+      <div class="vo-subtitle">Live VOR analytics & AI draft assistant</div>
+    </div>
+  </div>
+
+  <!-- Connection status -->
+  <div class="vo-section">
+    <div class="vo-section-title">Connection Status</div>
+    <div class="vo-status-row">
+      <div class="vo-status-label">
+        <span class="vo-status-dot" id="espn-dot"></span>
+        ESPN Fantasy
+      </div>
+      <span class="vo-status-text" id="espn-status">Checking…</span>
+    </div>
+    <div class="vo-status-row">
+      <div class="vo-status-label">
+        <span class="vo-status-dot" id="vo-dot"></span>
+        ValorOdds Account
+      </div>
+      <span class="vo-status-text" id="vo-status">Checking…</span>
+    </div>
+    <div class="vo-btn-row">
+      <a class="vo-btn" id="espn-signin" href="https://www.espn.com/login/" target="_blank">
+        Sign in to ESPN
+      </a>
+    </div>
+    <div class="vo-btn-row">
+      <a class="vo-btn vo-btn-primary" id="vo-signin" href="https://valorodds.com/login" target="_blank">
+        Sign in to ValorOdds
+      </a>
+    </div>
+  </div>
+
+  <!-- League selector -->
+  <div class="vo-section" id="league-section">
+    <div class="vo-section-title">Draft League</div>
+    <div class="vo-field">
+      <label for="league-select">ESPN League</label>
+      <select id="league-select" disabled>
+        <option value="">Sign in to ESPN to load leagues…</option>
+      </select>
+    </div>
+    <div class="vo-field">
+      <label for="season-input">Season Year</label>
+      <input type="number" id="season-input" min="2018" max="2030" value="2024" />
+    </div>
+    <div class="vo-field">
+      <label for="team-select">My Team (optional)</label>
+      <select id="team-select" disabled>
+        <option value="">Auto-detect from draft room</option>
+      </select>
+    </div>
+    <div class="vo-toggle-row" style="margin-top: 8px;">
+      <span class="vo-status-label">Auto-sync during draft</span>
+      <div class="vo-toggle on" id="autosync-toggle"></div>
+    </div>
+    <div class="vo-btn-row">
+      <button class="vo-btn vo-btn-accent" id="save-config">Save & Sync</button>
+    </div>
+  </div>
+
+  <!-- Refresh -->
+  <div class="vo-section">
+    <div class="vo-btn-row" style="margin-top: 0;">
+      <button class="vo-btn" id="refresh-status">↻ Refresh Status</button>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="vo-footer">
+    Need help? Visit <a href="https://valorodds.com/help" target="_blank">valorodds.com/help</a><br />
+    Draft Bar v1.0.0 · <a href="https://valorodds.com/privacy" target="_blank">Privacy</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

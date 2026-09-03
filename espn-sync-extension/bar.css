@@ -1,0 +1,458 @@
+/**
+ * bar.css — Styles for the ValorOdds Draft Bar, injected into a Shadow DOM
+ * on the ESPN fantasy draft page.
+ *
+ * All selectors are scoped under the #valorodds-bar host element.
+ * Because this runs inside a Shadow DOM, there is no risk of ESPN's styles
+ * leaking in or our styles leaking out.
+ *
+ * Brand colors:
+ *   primary  #4f46e5   (indigo)
+ *   accent   #f59e0b   (amber)
+ *   success  #10b981   (emerald)
+ *   danger   #ef4444   (red)
+ *   bg       #0a0e1a   (near-black blue)
+ *   surface  #111827   (dark slate)
+ *   elevated #1f2937   (lighter slate)
+ */
+
+:host {
+  all: initial;
+  --vo-primary: #4f46e5;
+  --vo-accent: #f59e0b;
+  --vo-success: #10b981;
+  --vo-danger: #ef4444;
+  --vo-bg: #0a0e1a;
+  --vo-surface: #111827;
+  --vo-elevated: #1f2937;
+  --vo-text: #e5e7eb;
+  --vo-text-dim: #9ca3af;
+  --vo-border: #374151;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--vo-text);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.vo-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--vo-bg);
+  border-top: 2px solid var(--vo-primary);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  z-index: 2147483647;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  transition: height 0.2s ease;
+}
+
+.vo-bar.expanded {
+  height: 320px;
+}
+
+/* ─── Brand / logo ─────────────────────────────────────────── */
+
+.vo-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--vo-primary);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.vo-brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--vo-success);
+  box-shadow: 0 0 6px var(--vo-success);
+  animation: vo-pulse 2s infinite;
+}
+
+.vo-brand-dot.disconnected {
+  background: var(--vo-danger);
+  box-shadow: 0 0 6px var(--vo-danger);
+  animation: none;
+}
+
+@keyframes vo-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ─── Sync status ──────────────────────────────────────────── */
+
+.vo-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--vo-text-dim);
+  white-space: nowrap;
+}
+
+.vo-status .vo-pick-num {
+  color: var(--vo-accent);
+  font-weight: 600;
+}
+
+.vo-status .vo-on-clock {
+  color: var(--vo-success);
+  font-weight: 700;
+  animation: vo-pulse 1.5s infinite;
+}
+
+/* ─── VOR board preview ────────────────────────────────────── */
+
+.vo-board {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.vo-board-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vo-text-dim);
+  white-space: nowrap;
+}
+
+.vo-board-list {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.vo-board-list::-webkit-scrollbar {
+  height: 4px;
+}
+
+.vo-board-list::-webkit-scrollbar-thumb {
+  background: var(--vo-border);
+  border-radius: 2px;
+}
+
+.vo-player-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--vo-surface);
+  border: 1px solid var(--vo-border);
+  border-radius: 6px;
+  min-width: 64px;
+  cursor: default;
+  transition: border-color 0.15s;
+}
+
+.vo-player-chip:hover {
+  border-color: var(--vo-primary);
+}
+
+.vo-player-chip .vo-chip-name {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.vo-player-chip .vo-chip-pos {
+  font-size: 10px;
+  color: var(--vo-text-dim);
+}
+
+.vo-player-chip .vo-chip-vor {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--vo-accent);
+}
+
+/* ─── Pick grade badge ─────────────────────────────────────── */
+
+.vo-grade {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.vo-grade.a { background: rgba(16, 185, 129, 0.15); color: var(--vo-success); }
+.vo-grade.b { background: rgba(79, 70, 229, 0.15); color: var(--vo-primary); }
+.vo-grade.c { background: rgba(156, 163, 175, 0.15); color: var(--vo-text-dim); }
+.vo-grade.d { background: rgba(245, 158, 11, 0.15); color: var(--vo-accent); }
+.vo-grade.f { background: rgba(239, 68, 68, 0.15); color: var(--vo-danger); }
+
+/* ─── Scarcity alert ───────────────────────────────────────── */
+
+.vo-scarcity {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--vo-danger);
+  white-space: nowrap;
+}
+
+/* ─── Action buttons ───────────────────────────────────────── */
+
+.vo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.vo-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+  color: var(--vo-text);
+  background: var(--vo-elevated);
+}
+
+.vo-btn:hover {
+  opacity: 0.85;
+}
+
+.vo-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.vo-btn-primary {
+  background: var(--vo-primary);
+}
+
+.vo-btn-accent {
+  background: var(--vo-accent);
+  color: #1a1a1a;
+}
+
+.vo-btn-icon {
+  padding: 6px 10px;
+}
+
+/* ─── Expanded panel ───────────────────────────────────────── */
+
+.vo-panel {
+  display: none;
+  position: fixed;
+  bottom: 56px;
+  left: 0;
+  right: 0;
+  height: 264px;
+  background: var(--vo-surface);
+  border-top: 1px solid var(--vo-border);
+  padding: 16px;
+  overflow-y: auto;
+  z-index: 2147483646;
+}
+
+.vo-bar.expanded ~ .vo-panel {
+  display: block;
+}
+
+.vo-panel h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vo-text-dim);
+  margin-bottom: 8px;
+}
+
+/* ─── AI Chat ──────────────────────────────────────────────── */
+
+.vo-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+}
+
+.vo-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
+}
+
+.vo-chat-msg {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 85%;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.vo-chat-msg.user {
+  background: var(--vo-primary);
+  color: white;
+  align-self: flex-end;
+}
+
+.vo-chat-msg.ai {
+  background: var(--vo-elevated);
+  color: var(--vo-text);
+  align-self: flex-start;
+}
+
+.vo-chat-msg.error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--vo-danger);
+  align-self: center;
+  text-align: center;
+  font-style: italic;
+}
+
+.vo-chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.vo-chat-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--vo-bg);
+  border: 1px solid var(--vo-border);
+  border-radius: 6px;
+  color: var(--vo-text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.vo-chat-input:focus {
+  border-color: var(--vo-primary);
+}
+
+.vo-chat-input::placeholder {
+  color: var(--vo-text-dim);
+}
+
+/* ─── Loading / empty states ───────────────────────────────── */
+
+.vo-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--vo-text-dim);
+  font-size: 12px;
+}
+
+.vo-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--vo-border);
+  border-top-color: var(--vo-primary);
+  border-radius: 50%;
+  animation: vo-spin 0.8s linear infinite;
+}
+
+@keyframes vo-spin {
+  to { transform: rotate(360deg); }
+}
+
+.vo-empty {
+  color: var(--vo-text-dim);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* ─── Upgrade prompt ───────────────────────────────────────── */
+
+.vo-upgrade {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--vo-accent);
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.vo-upgrade:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+/* ─── Unfilled starters ────────────────────────────────────── */
+
+.vo-needs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.vo-need-chip {
+  padding: 2px 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--vo-danger);
+}
+
+.vo-need-chip.filled {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.2);
+  color: var(--vo-success);
+}
+
+/* ─── Divider ──────────────────────────────────────────────── */
+
+.vo-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--vo-border);
+}
+
+/* ─── Collapsed hint (shown when bar is collapsed) ─────────── */
+
+.vo-expand-hint {
+  font-size: 10px;
+  color: var(--vo-text-dim);
+  cursor: pointer;
+}
