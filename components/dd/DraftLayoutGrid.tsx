@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ResponsiveGridLayout,
-  useContainerWidth,
   type Layout,
   type LayoutItem,
   type ResponsiveLayouts,
   type DefaultBreakpoints,
   DEFAULT_BREAKPOINTS,
+  useContainerWidth,
+  verticalCompactor,
 } from 'react-grid-layout';
 import { Lock, Unlock, RotateCcw, Maximize2 } from 'lucide-react';
 
@@ -17,7 +18,6 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
 // ── Layout item keys ──
-// These correspond to the panels in the draft room.
 export const PANEL_KEYS = {
   DRAFT_BOARD: 'draft-board',
   MY_ROSTER: 'my-roster',
@@ -25,16 +25,20 @@ export const PANEL_KEYS = {
   RECENT_PICKS: 'recent-picks',
 } as const;
 
-export type PanelKey = typeof PANEL_KEYS[keyof typeof PANEL_KEYS];
+export type PanelKey = (typeof PANEL_KEYS)[keyof typeof PANEL_KEYS];
 
 // Helper to create a layout item with min sizes
-const li = (i: string, x: number, y: number, w: number, h: number, minW = 1, minH = 3): LayoutItem => ({
-  i, x, y, w, h, minW, minH,
-});
+const li = (
+  i: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  minW = 1,
+  minH = 3
+): LayoutItem => ({ i, x, y, w, h, minW, minH });
 
 // ── Default layouts ──
-// Matches the original 3-column grid: board (2 cols) + roster on the left,
-// players + recent picks on the right.
 const DEFAULT_LAYOUTS: ResponsiveLayouts<DefaultBreakpoints> = {
   lg: [
     li(PANEL_KEYS.DRAFT_BOARD, 0, 0, 2, 12, 1, 6),
@@ -60,6 +64,12 @@ const DEFAULT_LAYOUTS: ResponsiveLayouts<DefaultBreakpoints> = {
     li(PANEL_KEYS.AVAILABLE_PLAYERS, 0, 17, 1, 12, 1, 6),
     li(PANEL_KEYS.RECENT_PICKS, 0, 29, 1, 5, 1, 3),
   ],
+  xxs: [
+    li(PANEL_KEYS.DRAFT_BOARD, 0, 0, 1, 10, 1, 6),
+    li(PANEL_KEYS.MY_ROSTER, 0, 10, 1, 7, 1, 4),
+    li(PANEL_KEYS.AVAILABLE_PLAYERS, 0, 17, 1, 12, 1, 6),
+    li(PANEL_KEYS.RECENT_PICKS, 0, 29, 1, 5, 1, 3),
+  ],
 };
 
 const BREAKPOINT_COLS: Record<DefaultBreakpoints, number> = {
@@ -73,16 +83,25 @@ const BREAKPOINT_COLS: Record<DefaultBreakpoints, number> = {
 const STORAGE_KEY_PREFIX = 'dd_draft_layout_';
 
 interface DraftLayoutGridProps {
-  /** Unique key for this draft (for per-draft layout persistence) */
   draftId: string;
-  /** Panel content — key = panel key, value = React node */
   children: Record<PanelKey, React.ReactNode>;
 }
 
-export default function DraftLayoutGrid({ draftId, children }: DraftLayoutGridProps) {
-  const [layouts, setLayouts] = useState<ResponsiveLayouts<DefaultBreakpoints>>(DEFAULT_LAYOUTS);
+export default function DraftLayoutGrid({
+  draftId,
+  children,
+}: DraftLayoutGridProps) {
+  const [layouts, setLayouts] = useState<ResponsiveLayouts<DefaultBreakpoints>>(
+    DEFAULT_LAYOUTS
+  );
   const [isEditing, setIsEditing] = useState(false);
-  const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true });
+
+  // useContainerWidth provides a containerRef and reactive width via ResizeObserver.
+  // We do NOT use measureBeforeMount so `mounted` starts true — the grid renders
+  // immediately with the initial width (1280) and corrects on first measure.
+  const { width, containerRef, mounted } = useContainerWidth({
+    initialWidth: 1280,
+  });
 
   const storageKey = `${STORAGE_KEY_PREFIX}${draftId}`;
 
@@ -91,13 +110,15 @@ export default function DraftLayoutGrid({ draftId, children }: DraftLayoutGridPr
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
-        const parsed = JSON.parse(saved) as ResponsiveLayouts<DefaultBreakpoints>;
-        // Merge with defaults to handle new panels added later
+        const parsed = JSON.parse(
+          saved
+        ) as ResponsiveLayouts<DefaultBreakpoints>;
         setLayouts({
           lg: mergeLayouts(DEFAULT_LAYOUTS.lg, parsed.lg),
           md: mergeLayouts(DEFAULT_LAYOUTS.md, parsed.md),
           sm: mergeLayouts(DEFAULT_LAYOUTS.sm, parsed.sm),
           xs: mergeLayouts(DEFAULT_LAYOUTS.xs, parsed.xs),
+          xxs: mergeLayouts(DEFAULT_LAYOUTS.xxs, parsed.xxs),
         });
       }
     } catch {
@@ -129,31 +150,14 @@ export default function DraftLayoutGrid({ draftId, children }: DraftLayoutGridPr
     }
   }, [storageKey]);
 
-  // The panels to render — use Object.values so the keys match the children
-  // object (which is keyed by panel VALUES e.g. 'draft-board', not NAMES).
-  // Using Object.keys here returns ['DRAFT_BOARD', ...] which never matches
-  // children['draft-board'], producing empty panels.
-  const panelKeys = useMemo(() => Object.values(PANEL_KEYS) as PanelKey[], []);
-
-  if (!mounted) {
-    // Avoid SSR hydration mismatch — render a static fallback
-    return (
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {panelKeys.map((key) => (
-          <div
-            key={key}
-            className={key === PANEL_KEYS.DRAFT_BOARD || key === PANEL_KEYS.MY_ROSTER ? 'xl:col-span-2' : ''}
-          >
-            {children[key]}
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const panelKeys = useMemo(
+    () => Object.values(PANEL_KEYS) as PanelKey[],
+    []
+  );
 
   return (
     <div>
-      {/* Layout toolbar */}
+      {/* Layout toolbar — always visible so users know they can customize */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <button
@@ -164,7 +168,11 @@ export default function DraftLayoutGrid({ draftId, children }: DraftLayoutGridPr
                 : 'bg-brand-elevated text-brand-muted hover:text-brand-text'
             }`}
           >
-            {isEditing ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+            {isEditing ? (
+              <Unlock className="w-3.5 h-3.5" />
+            ) : (
+              <Lock className="w-3.5 h-3.5" />
+            )}
             {isEditing ? 'Done Editing' : 'Customize Layout'}
           </button>
           {isEditing && (
@@ -186,49 +194,72 @@ export default function DraftLayoutGrid({ draftId, children }: DraftLayoutGridPr
       </div>
 
       <div
-        ref={containerRef as React.RefObject<HTMLDivElement>}
-        className={`dd-layout-container ${isEditing ? 'dd-layout-editing' : ''}`}
-        style={{ position: 'relative' }}
+        ref={containerRef}
+        className={`dd-layout-container ${
+          isEditing ? 'dd-layout-editing' : ''
+        }`}
+        style={{ position: 'relative', minHeight: '200px' }}
       >
-        <ResponsiveGridLayout
-          width={width}
-          className="layout"
-          layouts={layouts}
-          breakpoints={DEFAULT_BREAKPOINTS}
-          cols={BREAKPOINT_COLS}
-          rowHeight={42}
-          margin={[12, 12]}
-          containerPadding={[0, 0]}
-          dragConfig={{
-            enabled: isEditing,
-            bounded: false,
-            handle: '.dd-drag-handle',
-            threshold: 3,
-          }}
-          resizeConfig={{
-            enabled: isEditing,
-            handles: ['se'],
-          }}
-          onLayoutChange={handleLayoutChange}
-          compactor={'vertical' as never}
-        >
-          {panelKeys.map((key) => (
-            <div
-              key={key}
-              className={`dd-layout-item ${isEditing ? 'dd-layout-item-editing' : ''}`}
-            >
-              {isEditing && (
-                <div className="dd-drag-handle absolute top-1 right-1 z-50 cursor-move bg-brand-primary/80 text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1">
-                  <Maximize2 className="w-3 h-3" />
-                  Drag
-                </div>
-              )}
-              <div className="h-full overflow-hidden">
+        {!mounted || width === 0 ? (
+          /* Pre-measurement fallback: static grid so content is visible
+             immediately. useContainerWidth sets mounted=true on first
+             ResizeObserver callback and swaps in the interactive grid. */
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            {panelKeys.map((key) => (
+              <div
+                key={key}
+                className={
+                  key === PANEL_KEYS.DRAFT_BOARD ||
+                  key === PANEL_KEYS.MY_ROSTER
+                    ? 'xl:col-span-2'
+                    : ''
+                }
+              >
                 {children[key]}
               </div>
-            </div>
-          ))}
-        </ResponsiveGridLayout>
+            ))}
+          </div>
+        ) : (
+          <ResponsiveGridLayout
+            width={width}
+            className="layout"
+            layouts={layouts}
+            breakpoints={DEFAULT_BREAKPOINTS}
+            cols={BREAKPOINT_COLS}
+            rowHeight={42}
+            margin={[12, 12]}
+            containerPadding={[0, 0]}
+            dragConfig={{
+              enabled: isEditing,
+              bounded: false,
+              handle: '.dd-drag-handle',
+              threshold: 3,
+            }}
+            resizeConfig={{
+              enabled: isEditing,
+              handles: ['se'],
+            }}
+            onLayoutChange={handleLayoutChange}
+            compactor={verticalCompactor}
+          >
+            {panelKeys.map((key) => (
+              <div
+                key={key}
+                className={`dd-layout-item ${
+                  isEditing ? 'dd-layout-item-editing' : ''
+                }`}
+              >
+                {isEditing && (
+                  <div className="dd-drag-handle absolute top-1 right-1 z-50 cursor-move bg-brand-primary/80 text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                    <Maximize2 className="w-3 h-3" />
+                    Drag
+                  </div>
+                )}
+                <div className="h-full overflow-hidden">{children[key]}</div>
+              </div>
+            ))}
+          </ResponsiveGridLayout>
+        )}
       </div>
     </div>
   );
@@ -245,7 +276,7 @@ function mergeLayouts(
   return defaults.map((d) => {
     const s = savedMap.get(d.i);
     if (s) {
-      return { ...d, ...s, i: d.i }; // preserve minW/minH from defaults
+      return { ...d, ...s, i: d.i };
     }
     return d;
   });
