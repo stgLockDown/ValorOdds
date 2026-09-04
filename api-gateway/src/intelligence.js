@@ -28,6 +28,62 @@ const {
 const router = express.Router();
 
 // ---------------------------------------------------------------------------
+// Sportsbook-name normalization — ported from lib/sportsbooks.ts so the
+// gateway's arbitrage route de-duplicates "same-book" feeds (e.g. Pinnacle
+// vs Pinnacle (Guest) vs pinnacle_v3) the same way the internal dashboard
+// route does. Without this, the customer API leaks fake arbitrage that the
+// internal dashboard already filters out — a data-parity gap.
+// ---------------------------------------------------------------------------
+function normalizeBookName(bookName) {
+  if (!bookName) return '';
+  let k = String(bookName).toLowerCase().trim();
+  if (!k) return '';
+  k = k
+    .replace(/\(\s*guest\s*\)/g, ' ')
+    .replace(/[_\s]+v\d+\b/g, ' ')
+    .replace(/[\s_]+/g, ' ')
+    .trim();
+  const aliases = {
+    pinnacle: 'pinnacle',
+    'pinnacle guest': 'pinnacle',
+    betonline: 'betonline',
+    betonlineag: 'betonline',
+    mybookie: 'mybookie',
+    mybookieag: 'mybookie',
+    unibet: 'unibet',
+    'unibet us': 'unibet',
+    pointsbet: 'pointsbet',
+    pointsbetus: 'pointsbet',
+    'betrivers an': 'betrivers',
+    'betrivers ny': 'betrivers',
+  };
+  return aliases[k] ?? k;
+}
+
+function isSameBook(book1, book2) {
+  const a = normalizeBookName(book1);
+  const b = normalizeBookName(book2);
+  return !!a && a === b;
+}
+
+// Injury-status aliases — ported from app/api/dashboard/injuries/route.ts.
+// The provider only writes a handful of distinct statuses; mapping common
+// aliases means a customer filtering by "Doubtful" still gets meaningful
+// results instead of zero rows.
+const STATUS_ALIASES = {
+  out: ['Out', 'Injured Reserve', 'IR', 'Suspended'],
+  'day-to-day': [
+    'Day-To-Day',
+    'Day to Day',
+    'DTD',
+    'Questionable',
+    'Doubtful',
+    'Probable',
+    'Game-Time Decision',
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Shared middleware: authenticate + entitlement check + ping consumption.
 // Returns { plan, weight } on success, or sends an error response and returns
 // null on failure.
@@ -165,7 +221,17 @@ router.get('/arbitrage', async (req, res) => {
       params
     );
 
-    const data = result.rows.map((r) => {
+    // Drop "same-book" arbitrage BEFORE shaping the response. These rows are
+    // duplicate feeds of the SAME underlying sportsbook (e.g. Pinnacle vs
+    // Pinnacle (Guest) / pinnacle_v3) and are NOT real arbitrage — they are
+    // a data artifact. The internal dashboard route filters these via
+    // isSameBook(); we do the same here so customer data matches internal
+    // quality. Without this, the API leaks fake arbitrage opportunities.
+    const cleanRows = result.rows.filter(
+      (r) => !isSameBook(r.best_home_book, r.best_away_book)
+    );
+
+    const data = cleanRows.map((r) => {
       const raw =
         typeof r.raw_data === 'string' ? safeJson(r.raw_data) : r.raw_data;
       const stakes = computeStakes(
@@ -213,7 +279,10 @@ router.get('/arbitrage', async (req, res) => {
 //     market    — market type e.g. 'spreads', 'totals' (optional)
 //     min_books — minimum books_moved (default 1)
 //     limit     — max results (default 50, max 200)
-//     window    — lookback in minutes (default 60, max 1440)
+//     window    — lookback in minutes (default 1440 = 24h, max 1440).
+//       The internal dashboard /api/dashboard/steam-moves route uses a 24-hour
+//       default (its `hours` param defaults to 24). We match that here so
+//       customers see the same breadth of line-movement alerts.
 // ===========================================================================
 router.get('/steam-moves', async (req, res) => {
   const g = await gate(req, res, 'steam_moves');
@@ -224,7 +293,7 @@ router.get('/steam-moves', async (req, res) => {
   const market = (req.query.market || '').trim();
   const minBooks = posInt(req, 'min_books', 1, 100);
   const limit = posInt(req, 'limit', 50, 200);
-  const windowMin = Math.min(Math.max(1, posInt(req, 'window', 60, 1440)), 1440);
+  const windowMin = Math.min(Math.max(1, posInt(req, 'window', 1440, 1440)), 1440);
 
   const params = [minBooks, limit, windowMin];
   const filters = [`books_moved >= $1`, `detected_at > NOW() - ($3 || ' minutes')::interval`];
@@ -303,10 +372,12 @@ router.get('/injuries', async (req, res) => {
   const team = (req.query.team || '').trim();
   const status = (req.query.status || '').trim();
   const limit = posInt(req, 'limit', 50, 200);
-  const windowHours = Math.min(Math.max(1, posInt(req, 'window', 48, 720)), 720);
+  // Internal dashboard uses a 72-hour window. Match it so customers see the
+  // same breadth of injury reports as the internal system.
+  const windowHours = Math.min(Math.max(1, posInt(req, 'window', 72, 720)), 720);
 
-  const params = [limit, windowHours];
-  const filters = [`fetched_at > NOW() - ($2 || ' hours')::interval`];
+  const params = [windowHours];
+  const filters = [`fetched_at > NOW() - ($1 || ' hours')::interval`];
   if (sport) {
     params.push(sport);
     filters.push(`UPPER(sport) = UPPER($${params.length})`);
@@ -315,19 +386,31 @@ router.get('/injuries', async (req, res) => {
     params.push(`%${team}%`);
     filters.push(`team ILIKE $${params.length}`);
   }
+  let statusParamIdx = null;
   if (status) {
-    params.push(status);
-    filters.push(`UPPER(status) = UPPER($${params.length})`);
+    const key = status.trim().toLowerCase();
+    const variants = STATUS_ALIASES[key] || [status];
+    params.push(variants);
+    statusParamIdx = params.length;
+    filters.push(`status = ANY($${statusParamIdx})`);
   }
+
+  // DISTINCT ON (player_name, team, sport) collapses duplicate reports for
+  // the same player/team/sport, keeping only the most recent fetched_at per
+  // group. This mirrors the internal dashboard route and prevents customers
+  // from receiving a wall of duplicate injury entries for the same player.
+  params.push(limit);
+  const limitIdx = params.length;
 
   try {
     const result = await query(
-      `SELECT id, sport, player_name, team, position, status,
+      `SELECT DISTINCT ON (player_name, team, sport)
+              id, sport, player_name, team, position, status,
               injury_type, description, source, reported_date, fetched_at
        FROM injuries
        WHERE ${filters.join(' AND ')}
-       ORDER BY fetched_at DESC, reported_date DESC NULLS LAST
-       LIMIT $1`,
+       ORDER BY player_name, team, sport, fetched_at DESC, reported_date DESC NULLS LAST
+       LIMIT $${limitIdx}`,
       params
     );
 
@@ -355,7 +438,15 @@ router.get('/injuries', async (req, res) => {
 // ===========================================================================
 // GET /v1/intelligence/ai-analysis
 //   Query params:
-//     analysis_type — filter (default 'depthAnalysis')
+//     analysis_type — filter (default 'bestBets'). The internal dashboard
+//       defaults to surfacing fresh bestBets; depthAnalysis is a deeper,
+//       less-frequently-generated feed. We match the internal default so
+//       customers get the freshest actionable analysis, not stale depth
+//       reports.
+//     sport         — filter by sport via sports_data->>'sport' (case-
+//       insensitive). Without this the feed mixes every sport together,
+//       so a card generated for one sport could reference an unrelated
+//       matchup from another sport (the same leak the internal route fixes).
 //     model         — filter by model (e.g. 'gpt-4o')
 //     limit         — max results (default 20, max 100)
 //     include_content — 'true' to include full markdown content (default true)
@@ -365,7 +456,9 @@ router.get('/ai-analysis', async (req, res) => {
   const g = await gate(req, res, 'ai_analysis');
   if (!g) return;
 
-  const analysisType = (req.query.analysis_type || 'depthAnalysis').trim();
+  // Default to bestBets (fresh, actionable) instead of depthAnalysis (stale).
+  const analysisType = (req.query.analysis_type || 'bestBets').trim();
+  const sport = (req.query.sport || '').trim().toUpperCase();
   const model = (req.query.model || '').trim();
   const limit = posInt(req, 'limit', 20, 100);
   const includeContent = (req.query.include_content || 'true').toLowerCase() !== 'false';
@@ -377,8 +470,18 @@ router.get('/ai-analysis', async (req, res) => {
     params.push(model);
     filters.push(`model = $${params.length}`);
   }
+  // Sport filter: each row's sports_data JSONB carries the sport it's
+  // actually about (e.g. {"sport": "SOCCER"}). Filter on it so a
+  // single-sport request doesn't leak analysis from other sports —
+  // parity with the internal /api/dashboard/best-bets route.
+  if (sport) {
+    params.push(sport);
+    filters.push(`UPPER(sports_data->>'sport') = $${params.length}`);
+  }
 
   const contentSelect = includeContent ? 'content' : 'NULL as content';
+  // Always select sports_data column so the sport filter works; gate the
+  // exposure to the customer via the include_sports_data flag.
   const sportsDataSelect = includeSportsData ? 'sports_data' : 'NULL as sports_data';
 
   try {
