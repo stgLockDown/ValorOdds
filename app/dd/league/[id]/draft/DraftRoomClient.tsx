@@ -1186,7 +1186,7 @@ export default function DraftRoomClient({
                         <button
                           onClick={() => makePick(player)}
                           disabled={picking !== null}
-                          className="opacity-0 group-hover:opacity-100 btn-primary text-xs px-2.5 py-1.5 transition-opacity"
+                          className="btn-primary text-xs px-2.5 py-1.5 transition-opacity"
                         >
                           {picking === player.playerName ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
