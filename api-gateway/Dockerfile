@@ -10,4 +10,7 @@ COPY src ./src
 ENV NODE_ENV=production
 EXPOSE 8081
 
+RUN chown -R 1000:1000 /app
+USER 1000
+
 CMD ["node", "src/server.js"]
