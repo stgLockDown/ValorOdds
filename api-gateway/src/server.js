@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const helmet = require('helmet');
 const fetch = require('node-fetch');
 const { query, queryOne } = require('./db');
 const { PRODUCT_BACKENDS, SPORT_PRODUCT_CODES } = require('./productMap');
@@ -12,6 +13,7 @@ const {
 const intelligenceRouter = require('./intelligence');
 
 const app = express();
+app.use(helmet());
 app.disable('x-powered-by');
 app.use(express.json({ limit: '2mb' }));
 
