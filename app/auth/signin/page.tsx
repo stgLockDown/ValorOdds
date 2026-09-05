@@ -7,6 +7,21 @@ import SignInForm from './SignInForm';
 import { buildMetadata } from '@/lib/seo';
 import { auth } from '@/lib/auth';
 
+const RELATIVE_BASE_A = 'https://a.invalid';
+const RELATIVE_BASE_B = 'https://b.invalid';
+function isSafeRedirectPath(url?: string): boolean {
+  if (!url) return false;
+  try {
+    const s = String(url);
+    return (
+      new URL(s, RELATIVE_BASE_A).origin === RELATIVE_BASE_A &&
+      new URL(s, RELATIVE_BASE_B).origin === RELATIVE_BASE_B
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const metadata: Metadata = buildMetadata({
   title: 'Sign in',
   description:
@@ -18,8 +33,11 @@ export default async function SignInPage({ searchParams }: { searchParams: { cal
   // Already-authenticated users have no reason to see the signin form again
   // — send them straight to wherever they were headed (or the dashboard).
   const session = await auth();
+  const safeCallbackUrl = isSafeRedirectPath(searchParams.callbackUrl)
+    ? (searchParams.callbackUrl as string)
+    : '/dashboard';
   if (session?.user) {
-    redirect(searchParams.callbackUrl ?? '/dashboard');
+    redirect(safeCallbackUrl);
   }
 
   return (
@@ -32,7 +50,7 @@ export default async function SignInPage({ searchParams }: { searchParams: { cal
             Welcome back! Sign in to access your dashboard.
           </p>
           <div className="mt-6">
-            <SignInForm callbackUrl={searchParams.callbackUrl ?? '/dashboard'} initialError={searchParams.error} />
+            <SignInForm callbackUrl={safeCallbackUrl} initialError={searchParams.error} />
           </div>
           <p className="mt-6 text-sm text-center text-brand-muted">
             Don't have an account?{' '}
