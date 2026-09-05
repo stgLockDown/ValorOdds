@@ -14,6 +14,7 @@ import BoxScore from '@/components/BoxScore';
 import { formatOddsByPref, oddsColorClass } from '@/lib/format-odds';
 import { useOddsFormat, setOddsFormatCache } from '@/lib/use-odds-format';
 import { canUseArbitrage } from '@/lib/entitlements';
+import DOMPurify from 'dompurify';
 
 // Dynamically load markdown parser
 declare global {
@@ -32,6 +33,15 @@ function renderMarkdown(src: string): string {
     ALLOWED_TAGS: ['p','br','strong','em','code','pre','ul','ol','li','a','h1','h2','h3','h4','blockquote','table','thead','tbody','tr','th','td','hr','span'],
     ALLOWED_ATTR: ['href','target','rel','class'],
   });
+}
+
+function sanitizeHtml(html: string | null | undefined): string {
+  return html
+    ? DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['span', 'p'],
+        ALLOWED_ATTR: ['class'],
+      })
+    : '';
 }
 
 type Tab = 'command-center' | 'overview' | 'best-bets' | 'odds' | 'arbitrage' | 'steam' | 'injuries' | 'players' | 'trends' | 'sportsbooks' | 'chat' | 'preferences';
@@ -196,7 +206,7 @@ function BestBetsTab() {
               </div>
               <div
                 className="prose prose-invert prose-sm max-w-none text-brand-text text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: markedLoaded ? renderMarkdown(item.content || '') : item.content }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(markedLoaded ? renderMarkdown(item.content || '') : item.content) }}
               />
             </div>
           ))}
