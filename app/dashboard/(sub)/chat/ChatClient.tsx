@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Send, Loader2, Mic, MicOff, Plus, MessageSquare, Trash2, Menu, X, Sparkles } from 'lucide-react';
 import type { Tier } from '@/lib/env';
+import DOMPurify from 'dompurify';
 
 type Msg = { role: 'user' | 'assistant' | 'system'; content: string; pending?: boolean };
 
@@ -19,6 +20,15 @@ declare global {
     marked?: { parse: (s: string) => string };
     DOMPurify?: { sanitize: (s: string, o?: any) => string };
   }
+}
+
+function sanitizeHtml(html: string | null | undefined): string {
+  return html
+    ? DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['span', 'p'],
+        ALLOWED_ATTR: ['class'],
+      })
+    : '';
 }
 
 function renderMarkdown(src: string): string {
@@ -558,7 +568,7 @@ export default function ChatClient({
                       <div
                         className="prose-chat prose-invert prose-sm max-w-none"
                         dangerouslySetInnerHTML={{
-                          __html: renderMarkdown(m.content || (m.pending ? '…' : '')),
+                          __html: sanitizeHtml(renderMarkdown(m.content || (m.pending ? '…' : ''))),
                         }}
                       />
                     ) : (
