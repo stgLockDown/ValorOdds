@@ -62,12 +62,43 @@ export default function BoxScore({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'home' | 'away'>('away');
 
+  const buildValidatedUrl = (
+    baseUrl: string,
+    sport: string,
+    home: string,
+    away: string,
+    event?: string
+  ): string => {
+    try {
+      // Minimal path validation
+      if (baseUrl.includes('/../') || /\/%2e%2e\//i.test(baseUrl)) {
+        throw new Error('Invalid path');
+      }
+      
+      const url = new URL(baseUrl);
+      
+      // Protocol + host checks
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('Invalid protocol');
+      }
+      
+      // Add query parameters
+      url.searchParams.set('sport', sport);
+      url.searchParams.set('home', home);
+      url.searchParams.set('away', away);
+      if (event) url.searchParams.set('event', event);
+      
+      return url.href;
+    } catch {
+      throw new Error('Invalid URL');
+    }
+  };
+
   const load = useCallback(async () => {
     try {
-      const qs = new URLSearchParams({ sport, home: homeTeam, away: awayTeam });
-      if (espnEventId) qs.set('event', espnEventId);
       const base = apiBase ?? `/api/games/${encodeURIComponent(gameId)}/boxscore`;
-      const res = await fetch(`${base}?${qs.toString()}`);
+      const validatedUrl = buildValidatedUrl(base, sport, homeTeam, awayTeam, espnEventId || undefined);
+      const res = await fetch(validatedUrl);
       if (!res.ok) throw new Error('unavailable');
       const j = await res.json();
       setData(j.data);
