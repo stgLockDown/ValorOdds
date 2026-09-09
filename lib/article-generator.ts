@@ -22,6 +22,7 @@
 
 import { query, queryOne } from './db';
 import { teamLogoUrl as espnTeamLogo } from './team-logos';
+import { mapPlaceholderCitations } from './citations';
 
 // ---------- types ----------
 
@@ -381,7 +382,7 @@ Hard rules:
 - 550-800 words in the body, structured with ## section headings.
 - First paragraph is a strong lede — no throat-clearing, no "In the world of sports".
 - Only state facts that appear in the supplied RECENT HEADLINES. If you are unsure of a fact, leave it out. NEVER invent statistics, quotes, or injury statuses.
-- Where a headline supports a claim, cite it inline as markdown links using the supplied source URLs.
+- Where a headline supports a claim, cite it inline as a markdown link using the exact URL shown after "source:". NEVER write placeholder links such as source-2, [2], or [source 4] — if a headline has no source URL, state the fact without a citation.
 - End with a short "What to watch" section (2-3 bullets, ## heading).
 - Tone: professional sports desk, confident, no hype-slop, no emojis.
 - No gambling advice or odds picks — this is news coverage, not betting tips.
@@ -513,10 +514,16 @@ Requirements: 550-800 words. Cover why ${subject.name} is trending this week, wh
     throw new Error('AI returned an incomplete article (missing title or body too short) — try generating again.');
   }
 
+  // 7. Citation hygiene: models sometimes cite the numbered context entries
+  // as [source 3](source-3) placeholders even when told not to. Map them to
+  // the real source URLs (1-ordered, matching the prompt block), or drop
+  // the ones with no URL behind them.
+  const bodyMd = mapPlaceholderCitations(parsed.body_md, headlines.map((h) => ({ url: h.url, name: 'ESPN' })));
+
   return {
     title: parsed.title.slice(0, 200),
     subtitle: parsed.subtitle?.slice(0, 300) ?? null,
-    body_md: parsed.body_md,
+    body_md: bodyMd,
     tags: (parsed.tags ?? [subject.sport.toLowerCase(), mode]).slice(0, 8),
     cover_image_url: coverImage,
     image_credit: coverCredit,
