@@ -15,6 +15,7 @@ import GameBoxScoreTab from '@/components/games/GameBoxScoreTab';
 import GameStandingsTab from '@/components/games/GameStandingsTab';
 import GameInjuriesTab from '@/components/games/GameInjuriesTab';
 import GameFuturesTab from '@/components/games/GameFuturesTab';
+import GameNewsTab from '@/components/games/GameNewsTab';
 
 /**
  * Dashboard per-game tabbed detail page: /dashboard/games/[sport]/[gameSlug]/[tab]
@@ -56,6 +57,8 @@ function TabContent({ tab, game }: { tab: GameTabSlug; game: GameCard }) {
       return <GameStandingsTab game={game} />;
     case 'injuries':
       return <GameInjuriesTab game={game} />;
+    case 'news':
+      return <GameNewsTab game={game} />;
     case 'futures':
       return <GameFuturesTab />;
     default:

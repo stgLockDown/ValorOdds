@@ -46,7 +46,7 @@ const CSP_DIRECTIVES = [
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://*.stripe.com https://www.googletagmanager.com https://www.google-analytics.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  "img-src 'self' data: blob: https://cdn.discordapp.com https://images.unsplash.com https://www.google-analytics.com",
+  "img-src 'self' data: blob: https://cdn.discordapp.com https://images.unsplash.com https://www.google-analytics.com https://*.espncdn.com https://espnmedia-cdn.akamaized.net",
   // Push services (Google FCM, Mozilla autopush, Apple, Windows WNS) are the
   // endpoints browsers POST to for Web Push; the SW also fetches our own API.
   "connect-src 'self' https://*.stripe.com https://www.google-analytics.com https://region1.google-analytics.com https://fcm.googleapis.com https://*.push.apple.com https://*.notify.windows.com https://*.push.services.mozilla.com",
@@ -108,6 +108,9 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'cdn.discordapp.com' },
       { protocol: 'https', hostname: 'images.unsplash.com' },
+      // ESPN article images (news reels + player articles).
+      { protocol: 'https', hostname: '**.espncdn.com' },
+      { protocol: 'https', hostname: 'espnmedia-cdn.akamaized.net' },
     ],
   },
 
@@ -148,13 +151,22 @@ const nextConfig = {
         ],
       },
 
-      // Static assets — filenames are content-hashed so `immutable` is safe.
-      {
-        source: '/_next/static/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
-      },
+      // Static assets — filenames are content-hashed so `immutable` is safe
+      // in production builds. In dev, chunk filenames are stable (e.g.
+      // app/page.js) while content changes on every recompile, so a
+      // year-long immutable cache makes warm browsers serve stale chunks
+      // after code edits (webpack "Cannot read properties of undefined
+      // (reading 'call')" + hydration failures). Production only.
+      ...(process.env.NODE_ENV === 'production'
+        ? [
+            {
+              source: '/_next/static/:path*',
+              headers: [
+                { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+              ],
+            },
+          ]
+        : []),
       // Fonts in /public (if any). These are not content-hashed, so we use a
       // moderately long TTL without `immutable`.
       {

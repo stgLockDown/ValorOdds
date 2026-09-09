@@ -7,6 +7,8 @@ import Footer from '@/components/Footer';
 import Breadcrumbs from '@/components/Breadcrumbs';
 import { buildMetadata, canonical, SPORTS } from '@/lib/seo';
 import { getGamesGrid, isGamesHubSport, fmtAmerican, type GameCard } from '@/lib/games-data';
+import { getSportNews } from '@/lib/espn-news';
+import NewsReel from '@/components/NewsReel';
 
 /**
  * Games Hub grid page: /games/[sport]
@@ -178,6 +180,8 @@ export default async function GamesHubPage({ params }: Params) {
   const live = games.filter((g) => g.status === 'live');
   const upcoming = games.filter((g) => g.status === 'scheduled');
   const final = games.filter((g) => g.status === 'final');
+  // Sport news reel — soft-fails to [] (section hidden when empty).
+  const newsArticles = await getSportNews(sport.code, 6);
 
   return (
     <>
@@ -248,6 +252,17 @@ export default async function GamesHubPage({ params }: Params) {
               </section>
             )}
           </div>
+        )}
+
+        {/* Latest sport news — live reel from ESPN */}
+        {newsArticles.length > 0 && (
+          <section className="mt-16">
+            <NewsReel
+              articles={newsArticles}
+              title={`${sport.name} News`}
+              subtitle={`Latest ${sport.fullName} headlines from ESPN`}
+            />
+          </section>
         )}
 
         <section className="mt-16 flex flex-wrap gap-3 text-sm">

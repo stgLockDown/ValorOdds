@@ -3,12 +3,26 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Loader2, AlertCircle, TrendingUp, Shield, Target, Zap, Activity,
-  GraduationCap, MapPin, Calendar, Award, AlertTriangle,
+  GraduationCap, MapPin, Calendar, Award, AlertTriangle, Newspaper,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types — mirror the PlayerInfo interface from lib/dd/player-info.ts
 // ─────────────────────────────────────────────────────────────────────────────
+
+interface PlayerNewsArticle {
+  id: string;
+  headline: string;
+  description: string;
+  url: string;
+  imageUrl: string | null;
+  publishedAt: string | null;
+  premium: boolean;
+}
+
+// Module-level client cache for player news — mirrors playerInfoCache so
+// re-hovering the same player doesn't refetch.
+const playerNewsCache = new Map<string, PlayerNewsArticle[]>();
 
 interface SeasonStat {
   value: string;
@@ -180,10 +194,29 @@ export function PlayerInfoCard({
   const [info, setInfo] = useState<PlayerInfo | null>(() => playerInfoCache.get(poolId) ?? null);
   const [loading, setLoading] = useState(() => !playerInfoCache.has(poolId));
   const [error, setError] = useState<string | null>(null);
+  const [news, setNews] = useState<PlayerNewsArticle[]>([]);
   const fetchedRef = useRef<string | null>(null);
 
   // Client-side cache: persists across mount/unmount cycles so re-hovering
   // the same player shows data instantly without another API round-trip.
+  // Fetch relevant ESPN news for this player — independent of the info fetch
+  // so news renders even when stats fail. Cached module-level.
+  const fetchPlayerNews = useCallback(async () => {
+    if (playerNewsCache.has(poolId)) {
+      setNews(playerNewsCache.get(poolId)!);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/dd/players/${poolId}/news`);
+      const data = await res.json();
+      const articles: PlayerNewsArticle[] = Array.isArray(data.articles) ? data.articles : [];
+      playerNewsCache.set(poolId, articles);
+      setNews(articles);
+    } catch {
+      // News is a nice-to-have — silently skip on failure.
+    }
+  }, [poolId]);
+
   const fetchInfo = useCallback(async () => {
     // Avoid duplicate fetches for the same player
     if (fetchedRef.current === poolId) return;
@@ -214,21 +247,25 @@ export function PlayerInfoCard({
     } finally {
       setLoading(false);
     }
-  }, [poolId]);
+  }, [poolId, fetchPlayerNews]);
 
   // Reset fetch tracking when poolId changes
   useEffect(() => {
     if (fetchedRef.current !== poolId) {
       setInfo(null);
       setError(null);
+      setNews([]);
       fetchedRef.current = null; // reset so fetchInfo will re-fetch
     }
   }, [poolId]);
 
-  // Trigger fetch when poolId changes
+  // Trigger fetch when poolId changes — restores from cache instantly
   useEffect(() => {
+    const cachedNews = playerNewsCache.get(poolId);
+    if (cachedNews) setNews(cachedNews);
+    else void fetchPlayerNews(); // retry news even when info is cached
     fetchInfo();
-  }, [fetchInfo]);
+  }, [fetchInfo, fetchPlayerNews]);
 
   // Render loading state
   if (loading) {
@@ -532,6 +569,51 @@ export function PlayerInfoCard({
           </div>
         )}
       </div>
+
+      {/* ── Relevant News ── */}
+      {news.length > 0 && (
+        <div className="p-4 border-t border-brand-border">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Newspaper className="w-4 h-4 text-brand-primaryText" />
+            <h4 className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Relevant News</h4>
+          </div>
+          <ul className="space-y-1.5">
+            {news.map((a) => (
+              <li key={a.id}>
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex gap-2 rounded-lg p-1.5 -ml-1.5 text-xs text-brand-text/90 hover:bg-brand-elevated transition-colors"
+                >
+                  <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-brand-primaryText/50 group-hover:bg-brand-primaryText" />
+                  <span className="min-w-0">
+                    <span className="font-medium leading-snug group-hover:text-brand-primaryText line-clamp-2">
+                      {a.premium && (
+                        <span className="mr-1 font-bold text-amber-400">[ESPN+]</span>
+                      )}
+                      {a.headline}
+                    </span>
+                    {a.publishedAt && (
+                      <span className="mt-0.5 block text-[10px] text-brand-muted">
+                        {new Date(a.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {' · '}
+                        {(() => {
+                          const diff = Date.now() - Date.parse(a.publishedAt);
+                          const hrs = Math.floor(Math.abs(diff) / 3600000);
+                          if (hrs < 1) return 'just now';
+                          if (hrs < 24) return `${hrs}h ago`;
+                          return `${Math.floor(hrs / 24)}d ago`;
+                        })()}
+                      </span>
+                    )}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

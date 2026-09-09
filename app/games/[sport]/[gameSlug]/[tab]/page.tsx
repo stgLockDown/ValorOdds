@@ -17,6 +17,7 @@ import GameBoxScoreTab from '@/components/games/GameBoxScoreTab';
 import GameStandingsTab from '@/components/games/GameStandingsTab';
 import GameInjuriesTab from '@/components/games/GameInjuriesTab';
 import GameFuturesTab from '@/components/games/GameFuturesTab';
+import GameNewsTab from '@/components/games/GameNewsTab';
 
 /**
  * Public per-game tabbed detail page: /games/[sport]/[gameSlug]/[tab]
@@ -120,3 +121,4 @@ export default async function GameTabPage({ params }: Params) {
     </>
   );
 }
+

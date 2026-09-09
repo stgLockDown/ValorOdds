@@ -8,6 +8,8 @@ import { JsonLd } from '@/components/JsonLd';
 import CommunityPolls from '@/components/CommunityPolls';
 import { getTopOpportunities } from '@/lib/public-data';
 import { formatTeamName } from '@/lib/espn-scores';
+import { getTopNews } from '@/lib/espn-news';
+import NewsReel from '@/components/NewsReel';
 
 export const metadata: Metadata = buildMetadata({
   title: 'Valor Odds — AI-Powered Sports Arbitrage & Player Props',
@@ -78,8 +80,16 @@ const HOME_FAQS = [
   },
 ];
 
+// ISR: re-render the homepage every 5 minutes so the news reel and arbitrage
+// stats stay fresh without paying a per-request render cost.
+export const revalidate = 300;
+
 export default async function HomePage() {
-  const topOpportunities = await getTopOpportunities(6);
+  const [topOpportunities, newsArticles] = await Promise.all([
+    getTopOpportunities(6),
+    // Soft-fails to [] — homepage renders without the reel if ESPN is down.
+    getTopNews(6),
+  ]);
   return (
     <>
       <JsonLd
@@ -130,6 +140,19 @@ export default async function HomePage() {
 
       {/* Community Poll — Who will win today? */}
       <CommunityPolls />
+
+      {/* Latest sports news — live reel from ESPN */}
+      {newsArticles.length > 0 && (
+        <section className="container-px mx-auto max-w-7xl py-10 sm:py-16">
+          <NewsReel
+            articles={newsArticles}
+            title="Latest Sports News"
+            subtitle="Live headlines from around the sports world"
+            moreHref="/games"
+            moreLabel="Sports hubs"
+          />
+        </section>
+      )}
 
       {/* Features */}
       <section id="features" className="container-px mx-auto max-w-7xl py-10 sm:py-16">

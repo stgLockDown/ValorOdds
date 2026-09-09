@@ -6,6 +6,7 @@ export const GAME_TABS = [
   { slug: 'box-score', label: 'Box Score' },
   { slug: 'standings', label: 'Standings' },
   { slug: 'injuries', label: 'Injuries' },
+  { slug: 'news', label: 'News' },
   { slug: 'futures', label: 'Futures' },
 ] as const;
 
