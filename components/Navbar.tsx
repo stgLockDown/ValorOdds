@@ -1,56 +1,104 @@
 import Link from 'next/link';
 import { auth, signOut } from '@/lib/auth';
-import { LogOut, LayoutDashboard, User as UserIcon, KeyRound } from 'lucide-react';
+import { LayoutDashboard, Trophy, CalendarDays } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
+import UserMenu from '@/components/nav/UserMenu';
+import MobileNav from '@/components/nav/MobileNav';
+import CommandPalette from '@/components/nav/CommandPalette';
 
+/**
+ * Authenticated top navigation.
+ *
+ * Previously this exposed only a handful of marketing links plus a small,
+ * easy-to-miss account icon — which is why the profile felt unreachable from
+ * the dashboard and DiamondDraft was effectively hidden. Now it provides:
+ *   - direct links to the highest-traffic destinations (Dashboard, Games,
+ *     DiamondDraft),
+ *   - a full profile dropdown (`UserMenu`) reachable from every page,
+ *   - a mobile drawer (`MobileNav`) so phones get real navigation,
+ *   - a Cmd/Ctrl+K command palette to jump to any of the 50+ pages.
+ */
 export default async function Navbar() {
   const session = await auth();
   const user = session?.user;
 
-  return (
-    <header className="sticky top-0 z-40 backdrop-blur-md bg-brand-bg/80 border-b border-brand-border">
-      <nav className="container-px mx-auto max-w-7xl flex h-16 items-center justify-between">
-        <BrandLogo />
+  async function handleSignOut() {
+    'use server';
+    await signOut({ redirectTo: '/' });
+  }
 
-        <div className="hidden md:flex items-center gap-6 text-sm text-brand-muted">
-          <Link href="/#features" className="hover:text-brand-text transition-colors">Features</Link>
-          <Link href="/#examples" className="hover:text-brand-text transition-colors">Live Examples</Link>
-          <Link href="/pricing" className="hover:text-brand-text transition-colors">Pricing</Link>
-          <Link href="/api-access" className="hover:text-brand-text transition-colors">API Access</Link>
-          <Link href="/docs" className="hover:text-brand-text transition-colors">Docs</Link>
+  return (
+    <header className="sticky top-0 z-40 border-b border-brand-border bg-brand-bg/80 backdrop-blur-md">
+      <nav className="container-px mx-auto flex h-16 max-w-7xl items-center justify-between gap-4">
+        <div className="flex items-center gap-6">
+          <BrandLogo />
+
+          {user && (
+            <div className="hidden items-center gap-1 text-sm md:flex">
+              <Link
+                href="/dashboard"
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-brand-muted transition-colors hover:bg-brand-surface hover:text-brand-text"
+              >
+                <LayoutDashboard className="h-4 w-4" /> Dashboard
+              </Link>
+              <Link
+                href="/dashboard/games/mlb"
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-brand-muted transition-colors hover:bg-brand-surface hover:text-brand-text"
+              >
+                <CalendarDays className="h-4 w-4" /> Games
+              </Link>
+              <Link
+                href="/dd"
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-brand-muted transition-colors hover:bg-brand-surface hover:text-brand-text"
+              >
+                <Trophy className="h-4 w-4" /> DiamondDraft
+              </Link>
+            </div>
+          )}
+
+          {!user && (
+            <div className="hidden items-center gap-6 text-sm text-brand-muted md:flex">
+              <Link href="/#features" className="transition-colors hover:text-brand-text">
+                Features
+              </Link>
+              <Link href="/pricing" className="transition-colors hover:text-brand-text">
+                Pricing
+              </Link>
+              <Link href="/api-access" className="transition-colors hover:text-brand-text">
+                API Access
+              </Link>
+              <Link href="/docs" className="transition-colors hover:text-brand-text">
+                Docs
+              </Link>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          {user && <CommandPalette isAdmin={user.isAdmin ?? false} />}
+
           {user ? (
             <>
-              <Link href="/dashboard" className="btn-ghost hidden sm:inline-flex">
-                <LayoutDashboard className="h-4 w-4" /> Dashboard
-              </Link>
-              <Link href="/api-access/manage" className="btn-ghost hidden sm:inline-flex" title="API Dashboard — manage your API keys and usage">
-                <KeyRound className="h-4 w-4" /> API Keys
-              </Link>
-              <Link href="/account" className="btn-ghost">
-                <UserIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">{user.name || user.email}</span>
-                {user.tier && user.tier !== 'free' && (
-                  <span className="badge-primary ml-1">{user.tier.toUpperCase()}</span>
-                )}
-              </Link>
-              <form
-                action={async () => {
-                  'use server';
-                  await signOut({ redirectTo: '/' });
+              <UserMenu
+                user={{
+                  name: user.name,
+                  email: user.email,
+                  tier: user.tier,
+                  isAdmin: user.isAdmin ?? false,
                 }}
-              >
-                <button className="btn-ghost" type="submit" aria-label="Sign out">
-                  <LogOut className="h-4 w-4" />
-                </button>
-              </form>
+                signOutAction={handleSignOut}
+              />
+              <MobileNav isAdmin={user.isAdmin ?? false} isAuthed signOutAction={handleSignOut} />
             </>
           ) : (
             <>
-              <Link href="/auth/signin" className="btn-ghost">Sign in</Link>
-              <Link href="/auth/signup" className="btn-primary">Get started</Link>
+              <Link href="/auth/signin" className="btn-ghost">
+                Sign in
+              </Link>
+              <Link href="/auth/signup" className="btn-primary">
+                Get started
+              </Link>
+              <MobileNav />
             </>
           )}
         </div>

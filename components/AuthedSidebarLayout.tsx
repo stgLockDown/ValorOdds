@@ -2,10 +2,7 @@ import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import FloatingSupportButton from '@/components/FloatingSupportButton';
-import {
-  LayoutDashboard, MessageSquare, BarChart3, User as UserIcon, Shield,
-  Link as LinkIcon, LifeBuoy, Headphones, Code2, Trophy, CalendarDays,
-} from 'lucide-react';
+import { getNavSections } from '@/lib/nav-links';
 
 export interface AuthedSidebarUser {
   name?: string | null;
@@ -15,25 +12,15 @@ export interface AuthedSidebarUser {
   isAdmin?: boolean;
 }
 
-const NAV = [
-  { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/games/mlb', label: 'Games', icon: CalendarDays },
-  { href: '/dd', label: 'DiamondDraft', icon: Trophy },
-  { href: '/dashboard/chat', label: 'AI Chat', icon: MessageSquare },
-  { href: '/dashboard/stats', label: 'Your stats', icon: BarChart3 },
-  { href: '/account', label: 'Account', icon: UserIcon },
-  { href: '/account/link-discord', label: 'Link Discord', icon: LinkIcon },
-  { href: '/dashboard/support', label: 'Support', icon: LifeBuoy },
-  { href: '/api-access/manage', label: 'API Dashboard', icon: Code2 },
-];
-
 /**
  * Shared authenticated-area layout (navbar + left sidebar + footer). Used by
  * every logged-in page outside the main dashboard overview (Account, Link
  * Discord, dashboard sub-pages, etc.) so the navigation is identical no
- * matter which authenticated page a user lands on — fixes the audit finding
- * that /account used a different header/nav than the rest of the logged-in
- * product.
+ * matter which authenticated page a user lands on.
+ *
+ * The sidebar renders from `lib/nav-links`, the single source of truth shared
+ * with the navbar dropdown, mobile drawer and command palette — so a new
+ * destination only has to be added in one place.
  */
 export default function AuthedSidebarLayout({
   user,
@@ -42,17 +29,17 @@ export default function AuthedSidebarLayout({
   user: AuthedSidebarUser | null | undefined;
   children: React.ReactNode;
 }) {
+  const sections = getNavSections(user?.isAdmin ?? false);
+
   return (
     <>
       <Navbar />
-      <div className="container-px mx-auto max-w-7xl py-8 grid gap-6 lg:grid-cols-[240px,1fr]">
+      <div className="container-px mx-auto grid max-w-7xl gap-6 py-8 lg:grid-cols-[240px,1fr]">
         <aside className="lg:sticky lg:top-20 lg:self-start">
           <div className="card p-4">
-            <div className="text-xs text-brand-muted uppercase tracking-wider mb-2">
-              Signed in
-            </div>
-            <div className="font-semibold truncate">{user?.name || user?.email}</div>
-            <div className="mt-2 flex gap-2 flex-wrap">
+            <div className="mb-2 text-xs uppercase tracking-wider text-brand-muted">Signed in</div>
+            <div className="truncate font-semibold">{user?.name || user?.email}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
               {user?.tier && user.tier !== 'free' ? (
                 <span className="badge-primary">{user.tier.toUpperCase()}</span>
               ) : (
@@ -62,47 +49,35 @@ export default function AuthedSidebarLayout({
               {user?.isAdmin && <span className="badge-warning">ADMIN</span>}
             </div>
           </div>
-          <nav className="mt-4 space-y-1">
-            {NAV.map((n) => {
-              const Icon = n.icon;
-              return (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-brand-muted hover:text-brand-text hover:bg-brand-surface transition-colors"
-                >
-                  <Icon className="h-4 w-4" />
-                  {n.label}
-                </Link>
-              );
-            })}
-            {user?.isAdmin && (
-              <Link
-                href="/admin"
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors"
-              >
-                <Shield className="h-4 w-4" />
-                Admin
-              </Link>
-            )}
-            {user?.isAdmin && (
-              <Link
-                href="/admin/support"
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors"
-              >
-                <Headphones className="h-4 w-4" />
-                Support Tickets
-              </Link>
-            )}
-            {user?.isAdmin && (
-              <Link
-                href="/admin/api-access"
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-amber-300 hover:bg-brand-surface transition-colors"
-              >
-                <Code2 className="h-4 w-4" />
-                API Monetization
-              </Link>
-            )}
+
+          <nav className="mt-4 space-y-4">
+            {sections.map((section) => (
+              <div key={section.title}>
+                <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-brand-muted">
+                  {section.title}
+                </p>
+                <div className="space-y-1">
+                  {section.links.map((link) => {
+                    const Icon = link.icon;
+                    const isAdminLink = section.title === 'Admin';
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-brand-surface ${
+                          isAdminLink
+                            ? 'text-amber-300'
+                            : 'text-brand-muted hover:text-brand-text'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{link.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
         </aside>
         <main className="min-w-0">{children}</main>

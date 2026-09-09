@@ -194,7 +194,7 @@ export default function DraftLayoutGrid({
       </div>
 
       <div
-        ref={containerRef}
+        ref={containerRef as React.RefObject<HTMLDivElement>}
         className={`dd-layout-container ${
           isEditing ? 'dd-layout-editing' : ''
         }`}

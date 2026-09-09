@@ -3,6 +3,8 @@ import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { SPORTS } from '@/lib/seo';
 import { getGamesGrid, isGamesHubSport, fmtAmerican, type GameCard } from '@/lib/games-data';
+import { getSportNews } from '@/lib/espn-news';
+import NewsReel from '@/components/NewsReel';
 
 /**
  * Dashboard Games Hub: /dashboard/games/[sport]
@@ -113,6 +115,8 @@ export default async function DashboardGamesHub({ params }: Params) {
   const live = games.filter((g) => g.status === 'live');
   const upcoming = games.filter((g) => g.status === 'scheduled');
   const final = games.filter((g) => g.status === 'final');
+  // Sport news reel — soft-fails to [] (section hidden when empty).
+  const newsArticles = await getSportNews(sport.code, 6);
 
   return (
     <div className="space-y-6">
@@ -179,6 +183,17 @@ export default async function DashboardGamesHub({ params }: Params) {
             </section>
           )}
         </div>
+      )}
+
+      {/* Latest sport news — live reel from ESPN */}
+      {newsArticles.length > 0 && (
+        <section>
+          <NewsReel
+            articles={newsArticles}
+            title={`${sport.name} News`}
+            subtitle={`Latest ${sport.fullName} headlines from ESPN`}
+          />
+        </section>
       )}
     </div>
   );

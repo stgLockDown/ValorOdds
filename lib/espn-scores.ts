@@ -489,6 +489,103 @@ export async function buildEspnScoreIndex(sports: string[]): Promise<EspnScoreIn
   return promise;
 }
 
+// ---------------------------------------------------------------------------
+// Upcoming-games enumeration (used by the community poll seeder as a
+// fallback when odds_snapshots has no eligible games — e.g. during an
+// odds-ingestion outage). Same scoreboard endpoints as the score index,
+// but returns a flat list of games tagged with their sport code instead
+// of a match-by-team-pair index.
+// ---------------------------------------------------------------------------
+
+export type EspnGame = {
+  /** ESPN event id (prefixed by callers when used as a synthetic game key). */
+  eventId: string | null;
+  /** Public sport code (NFL, MLB, NBA, NHL, SOCCER, MMA, ...). */
+  sport: string;
+  /** Home team display name. */
+  homeTeam: string;
+  /** Away team display name. */
+  awayTeam: string;
+  /** ISO start time, or null. */
+  startTime: string | null;
+  /** pre / in / post. */
+  state: 'pre' | 'in' | 'post';
+};
+
+/** Inverse of SPORT_PATHS: ESPN path segment -> sport code. */
+const PATH_TO_SPORT: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const [code, paths] of Object.entries(SPORT_PATHS)) {
+    for (const p of paths) if (!m[p]) m[p] = code;
+  }
+  return m;
+})();
+
+const ESPN_GAMES_CACHE = new Map<string, { games: EspnGame[]; expiresAt: number }>();
+const ESPN_GAMES_TTL_MS = 30_000;
+
+/**
+ * List upcoming/recent games across the given sports from ESPN's public
+ * scoreboard API (today + tomorrow UTC, with ESPN's default-slate fallback
+ * for off-season dates). Memoized 30s per sport-set. Never throws — returns
+ * [] on network failure so callers can treat it as a soft fallback.
+ */
+export async function listEspnGames(sports: string[]): Promise<EspnGame[]> {
+  const codes = [...new Set(sports.map((s) => (s || '').toUpperCase()).filter(Boolean))];
+  const cacheKey = codes.slice().sort().join(',');
+  if (!cacheKey) return [];
+
+  const cached = ESPN_GAMES_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.games;
+
+  const paths = new Set<string>();
+  for (const code of codes) {
+    const list = SPORT_PATHS[code];
+    if (list) list.forEach((p) => paths.add(p));
+  }
+
+  const dates = [
+    scoreboardDateParam(new Date()),
+    scoreboardDateParam(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+  ];
+
+  const jobs: Promise<{ sport: string; events: EspnScore[] }>[] = [];
+  for (const path of paths) {
+    const sport = PATH_TO_SPORT[path] || path.toUpperCase();
+    for (const d of dates) {
+      jobs.push(
+        fetchScoreboard(path, d).then((events) => ({ sport, events })),
+      );
+    }
+  }
+
+  let games: EspnGame[] = [];
+  try {
+    const results = await Promise.all(jobs);
+    const seen = new Set<string>();
+    for (const { sport, events } of results) {
+      for (const e of events) {
+        const key = `${sport}|${normalizeTeam(e.homeTeam)}|${normalizeTeam(e.awayTeam)}|${e.startTime || ''}`;
+        if (seen.has(key)) continue; // same slate from the two date windows
+        seen.add(key);
+        games.push({
+          eventId: e.eventId,
+          sport,
+          homeTeam: e.homeTeam,
+          awayTeam: e.awayTeam,
+          startTime: e.startTime,
+          state: e.state,
+        });
+      }
+    }
+  } catch {
+    games = [];
+  }
+
+  ESPN_GAMES_CACHE.set(cacheKey, { games, expiresAt: Date.now() + ESPN_GAMES_TTL_MS });
+  return games;
+}
+
 async function buildEspnScoreIndexUncached(sports: string[]): Promise<EspnScoreIndex> {
   const now = new Date();
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);

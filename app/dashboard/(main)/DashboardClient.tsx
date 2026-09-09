@@ -5,7 +5,7 @@ import {
   TrendingUp, Zap, Activity, AlertTriangle, BarChart2,
   Star, Settings, MessageSquare, RefreshCw, ChevronRight, ChevronLeft,
   Shield, Users, Trophy, Target, Flame, DollarSign, KeyRound, Headphones,
-  CalendarDays,
+  CalendarDays, BarChart3, Brain, GraduationCap, LifeBuoy, User as UserIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import ChatClient from '../(sub)/chat/ChatClient';
@@ -56,6 +56,23 @@ const TABS: { id: Tab; label: string; icon: any; premium?: boolean; href?: strin
 // navigation to the target page.
 const LINK_TABS: { id: string; label: string; icon: any; href: string }[] = [
   { id: 'games', label: 'Games', icon: CalendarDays, href: '/dashboard/games/mlb' },
+];
+
+// Full-page destinations that previously had NO entry point from the dashboard.
+// The dashboard uses its own chrome (no shared AuthedSidebarLayout), so without
+// these the only route to your profile or DiamondDraft was the small account
+// icon in the navbar — which is exactly why they felt impossible to find.
+const PRODUCT_LINKS: { id: string; label: string; icon: any; href: string }[] = [
+  { id: 'dd', label: 'DiamondDraft', icon: Trophy, href: '/dd' },
+  { id: 'stats', label: 'Your Stats', icon: BarChart3, href: '/dashboard/stats' },
+  { id: 'market', label: 'Market Intel', icon: Brain, href: '/market-intelligence' },
+  { id: 'learn', label: 'Learn', icon: GraduationCap, href: '/learn' },
+];
+
+const ACCOUNT_QUICK_LINKS: { id: string; label: string; icon: any; href: string }[] = [
+  { id: 'account', label: 'Profile & Account', icon: UserIcon, href: '/account' },
+  { id: 'apikeys', label: 'API Keys', icon: KeyRound, href: '/api-access/manage' },
+  { id: 'support', label: 'Support', icon: LifeBuoy, href: '/dashboard/support' },
 ];
 
 const SPORTS = ['All', 'NBA', 'NFL', 'MLB', 'NHL', 'SOCCER', 'MMA', 'BOXING', 'TENNIS'];
@@ -1617,6 +1634,23 @@ export default function DashboardClient({ user }: { user: any }) {
             {LINK_TABS.map(({ id, label, icon, href }) => (
               <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
             ))}
+
+            {/* Other product areas — these are separate pages, not dashboard tabs. */}
+            <div className="pt-3 mt-3 border-t border-brand-border">
+              <p className="px-3.5 pb-2 text-xs text-brand-muted uppercase tracking-wider font-semibold">Explore</p>
+              {PRODUCT_LINKS.map(({ id, label, icon, href }) => (
+                <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
+              ))}
+            </div>
+
+            {/* Account area — previously unreachable from the dashboard. */}
+            <div className="pt-3 mt-3 border-t border-brand-border">
+              <p className="px-3.5 pb-2 text-xs text-brand-muted uppercase tracking-wider font-semibold">Account</p>
+              {ACCOUNT_QUICK_LINKS.map(({ id, label, icon, href }) => (
+                <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
+              ))}
+            </div>
+
             {user.isAdmin && (
               <div className="pt-3 mt-3 border-t border-brand-border">
                 <p className="px-3.5 pb-2 text-xs text-amber-300/80 uppercase tracking-wider font-semibold">Admin Tools</p>
@@ -1647,6 +1681,12 @@ export default function DashboardClient({ user }: { user: any }) {
               <TabButton key={id} id={id} label={label} icon={icon} premium={premium} />
             ))}
             {LINK_TABS.map(({ id, label, icon, href }) => (
+              <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
+            ))}
+            {PRODUCT_LINKS.map(({ id, label, icon, href }) => (
+              <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
+            ))}
+            {ACCOUNT_QUICK_LINKS.map(({ id, label, icon, href }) => (
               <LinkTabButton key={id} id={id} label={label} icon={icon} href={href} />
             ))}
             {user.isAdmin && (
