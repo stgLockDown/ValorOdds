@@ -30,6 +30,7 @@ import {
   KeyRound,
   FileText,
   PenLine,
+  Megaphone,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -208,6 +209,14 @@ export const ADMIN_LINKS: NavLink[] = [
     description: 'Generate, review and publish articles',
     adminOnly: true,
     keywords: ['articles', 'news', 'generate', 'ai', 'writers', 'editorial'],
+  },
+  {
+    href: '/admin/marketing',
+    label: 'Marketing Studio',
+    icon: Megaphone,
+    description: 'Generate and ship marketing posts',
+    adminOnly: true,
+    keywords: ['marketing', 'posts', 'campaign', 'promo', 'discord', 'social'],
   },
   {
     href: '/admin/support',

@@ -3,7 +3,7 @@ import Footer from '@/components/Footer';
 import { query } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import Link from 'next/link';
-import { Headphones, Code2, FlaskConical, Bell, FileText } from 'lucide-react';
+import { Headphones, Code2, FlaskConical, Bell, FileText, Megaphone } from 'lucide-react';
 
 export default async function AdminPage() {
   const session = await auth();
@@ -88,6 +88,17 @@ export default async function AdminPage() {
             <div>
               <div className="font-semibold group-hover:text-brand-primary transition-colors">News Studio</div>
               <div className="text-sm text-brand-muted">Generate AI articles, review writer submissions &amp; manage the newsroom</div>
+            </div>
+          </div>
+          <span className="text-brand-primary text-sm font-semibold">Open →</span>
+        </Link>
+
+        <Link href="/admin/marketing" className="card p-5 flex items-center justify-between hover:border-brand-primary/40 transition-colors group">
+          <div className="flex items-center gap-3">
+            <Megaphone className="h-6 w-6 text-brand-primary" />
+            <div>
+              <div className="font-semibold group-hover:text-brand-primary transition-colors">Marketing Studio</div>
+              <div className="text-sm text-brand-muted">Generate marketing posts from live platform data &amp; ship them to Discord</div>
             </div>
           </div>
           <span className="text-brand-primary text-sm font-semibold">Open →</span>
