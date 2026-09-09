@@ -125,8 +125,16 @@ export default function CommunityPolls() {
   }
 
   if (polls.length === 0) {
-    // No games today — don't render the section at all
-    return null;
+    // No games today — show a quiet note instead of vanishing, so the
+    // section is never silently missing from the homepage.
+    return (
+      <section className="container-px mx-auto max-w-7xl py-12 sm:py-16">
+        <div className="card p-6 text-center text-brand-muted">
+          <Trophy className="h-5 w-5 mx-auto mb-2 text-brand-accent" />
+          <p className="text-sm">No matchups on today&apos;s slate — check back tomorrow for new polls.</p>
+        </div>
+      </section>
+    );
   }
 
   const totalAllVotes = polls.reduce((sum, p) => sum + p.totalVotes, 0);

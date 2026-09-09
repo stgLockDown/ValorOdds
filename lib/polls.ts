@@ -15,6 +15,7 @@
 
 import { query } from '@/lib/db';
 import type { Poll, PollDTO } from '@/lib/polls-types';
+import { listEspnGames, type EspnGame } from '@/lib/espn-scores';
 
 // Re-export types and display helpers so API routes can import
 // everything from '@/lib/polls' without pulling in the client-safe
@@ -61,12 +62,150 @@ export function getClientIp(req: Request): string {
   return '0.0.0.0';
 }
 
+type SeedGame = {
+  game_id: string;
+  sport: string;
+  home_team: string;
+  away_team: string;
+  commence_time: Date;
+};
+
 /**
- * Seed today's polls from the freshest game data in odds_snapshots.
+ * Insert seeded games as today's polls (idempotent via ON CONFLICT).
+ * `startOrder` preserves call-site ordering: odds-sourced rows are inserted
+ * first, ESPN fallback rows continue from where that list ended.
+ */
+async function insertPolls(games: SeedGame[], startOrder = 0): Promise<number> {
+  if (games.length === 0) return 0;
+
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const values: string[] = [];
+  const params: unknown[] = [];
+  games.forEach((g, i) => {
+    const base = i * 7;
+    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`);
+    params.push(today, g.sport, g.game_id, g.home_team, g.away_team, g.commence_time, startOrder + i);
+  });
+
+  await query(
+    `INSERT INTO community_polls (poll_date, sport, game_id, home_team, away_team, commence_time, display_order)
+     VALUES ${values.join(', ')}
+     ON CONFLICT (poll_date, game_id) DO NOTHING`,
+    params,
+  );
+  return games.length;
+}
+
+// Throttle ESPN fallback attempts so a persistent outage doesn't turn every
+// 30s poll refresh into a scoreboard fetch storm. One attempt per 5 min.
+const ESPN_FALLBACK_THROTTLE_MS = 5 * 60 * 1000;
+let espnFallbackLastAttempt = 0;
+
+/** Local mirror of the SQL-side name normalization (strips [ .'-]). */
+function normalizeName(name: string): string {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[ .'-]/g, '');
+}
+
+/**
+ * Top up today's poll slate from ESPN's public scoreboard API.
  *
- * Picks up to MAX_POLLS games commencing in the next LOOKAHEAD_HOURS,
- * deduplicated by normalized team names, with quality scoring that
- * prefers real professional teams (no esports usernames) and major sports.
+ * Used when odds_snapshots can't fill the slate (ingestion outage, or an
+ * off-night with no eligible odds). Mirrors the odds path's selection model:
+ * same quality scoring, dedup by normalized team names, MAX_PER_SPORT cap,
+ * and skips games already seeded from odds so we never double-list a matchup.
+ */
+async function topUpFromEspn(alreadySeeded: SeedGame[]): Promise<number> {
+  // Throttle: at most one ESPN attempt per window.
+  if (Date.now() - espnFallbackLastAttempt < ESPN_FALLBACK_THROTTLE_MS) return 0;
+  espnFallbackLastAttempt = Date.now();
+
+  // Same sport preference order as the odds query's quality scoring:
+  // major US sports (50), soccer (20). MMA/UFC events are fights not team
+  // matchups, and fight cards churn constantly — skip them for polls.
+  const sports = ['NFL', 'MLB', 'NBA', 'NHL', 'SOCCER'];
+  const all = await listEspnGames(sports);
+  if (all.length === 0) return 0;
+
+  const seededKeys = new Set(
+    alreadySeeded.map((g) => {
+      const a = normalizeName(g.home_team);
+      const b = normalizeName(g.away_team);
+      return [a, b].sort().join('|');
+    }),
+  );
+
+  const scored = all
+    .filter((g) => {
+      if (!g.homeTeam || !g.awayTeam) return false;
+      if (g.state !== 'pre') return false; // only not-yet-started games
+      const t = g.startTime ? new Date(g.startTime).getTime() : NaN;
+      if (!Number.isFinite(t)) return false;
+      // Same window as the odds path: started <1h ago .. starts within 30h.
+      if (t < Date.now() - 60 * 60 * 1000) return false;
+      if (t > Date.now() + LOOKAHEAD_HOURS * 60 * 60 * 1000) return false;
+      const a = normalizeName(g.homeTeam);
+      const b = normalizeName(g.awayTeam);
+      if (!a || !b) return false;
+      return !seededKeys.has([a, b].sort().join('|'));
+    })
+    .map((g) => {
+      const quality = g.sport === 'SOCCER' ? 20 : 50; // majors 50, soccer 20 (same as odds)
+      return { g, quality };
+    });
+
+  // Rank within each sport (soonest first), cap MAX_PER_SPORT per sport.
+  const perSport = new Map<string, { g: EspnGame; quality: number }[]>();
+  for (const item of scored) {
+    const list = perSport.get(item.g.sport) || [];
+    list.push(item);
+    perSport.set(item.g.sport, list);
+  }
+
+  const picks: { g: EspnGame; quality: number }[] = [];
+  for (const [, list] of perSport) {
+    list.sort((x, y) => {
+      const tx = new Date(x.g.startTime || 0).getTime();
+      const ty = new Date(y.g.startTime || 0).getTime();
+      if (ty !== tx) return tx - ty; // soonest first
+      return y.quality - x.quality;
+    });
+    picks.push(...list.slice(0, MAX_PER_SPORT));
+  }
+
+  if (picks.length === 0) return 0;
+
+  // Final ordering matches the odds path (quality DESC, soonest ASC) and
+  // the total is capped at the remaining slate slots.
+  picks.sort((x, y) => {
+    if (y.quality !== x.quality) return y.quality - x.quality;
+    return new Date(x.g.startTime || 0).getTime() - new Date(y.g.startTime || 0).getTime();
+  });
+  const remaining = Math.max(0, MAX_POLLS - alreadySeeded.length);
+  const chosen = picks.slice(0, remaining);
+
+  const toInsert: SeedGame[] = chosen.map((p) => ({
+    game_id: p.g.eventId ? `espn-${p.g.eventId}` : `espn-${normalizeName(p.g.homeTeam)}-${normalizeName(p.g.awayTeam)}`,
+    sport: p.g.sport,
+    home_team: p.g.homeTeam,
+    away_team: p.g.awayTeam,
+    commence_time: new Date(p.g.startTime as string),
+  }));
+
+  return insertPolls(toInsert, alreadySeeded.length);
+}
+
+/**
+ * Seed today's polls from the freshest game data in odds_snapshots,
+ * topping up from ESPN's public scoreboard API when odds can't fill
+ * the slate (e.g. odds-ingestion outage).
+ *
+ * The odds path picks up to MAX_POLLS games commencing in the next
+ * LOOKAHEAD_HOURS, deduplicated by normalized team names, with quality
+ * scoring that prefers real professional teams and major sports. The
+ * ESPN fallback mirrors that model so poll output looks identical
+ * regardless of source.
  *
  * Idempotent — safe to call on every request (uses ON CONFLICT DO NOTHING).
  */
@@ -133,25 +272,25 @@ async function seedTodaysPolls(): Promise<void> {
     commence_time: Date;
   }>(selectSQL);
 
-  if (games.rows.length === 0) return;
+  const oddsGames: SeedGame[] = games.rows.map((g) => ({
+    game_id: g.game_id,
+    sport: g.sport,
+    home_team: g.home_team,
+    away_team: g.away_team,
+    commence_time: g.commence_time,
+  }));
 
-  // Insert with ON CONFLICT DO NOTHING (idempotent — if polls already
-  // exist for today, this is a no-op).
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const values: string[] = [];
-  const params: unknown[] = [];
-  games.rows.forEach((g, i) => {
-    const base = i * 7;
-    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`);
-    params.push(today, g.sport, g.game_id, g.home_team, g.away_team, g.commence_time, i);
-  });
+  // Insert odds-sourced polls first (preferred source, first pick of
+  // display_order). Only top up from ESPN if odds couldn't fill the slate.
+  await insertPolls(oddsGames, 0);
 
-  await query(
-    `INSERT INTO community_polls (poll_date, sport, game_id, home_team, away_team, commence_time, display_order)
-     VALUES ${values.join(', ')}
-     ON CONFLICT (poll_date, game_id) DO NOTHING`,
-    params,
-  );
+  if (oddsGames.length < MAX_POLLS) {
+    try {
+      await topUpFromEspn(oddsGames);
+    } catch (err) {
+      console.error('[polls] ESPN fallback seeding failed:', err);
+    }
+  }
 }
 
 /**
