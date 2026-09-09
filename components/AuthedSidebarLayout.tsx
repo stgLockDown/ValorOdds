@@ -10,6 +10,7 @@ export interface AuthedSidebarUser {
   tier?: string;
   discordId?: string | null;
   isAdmin?: boolean;
+  isWriter?: boolean;
 }
 
 /**
@@ -29,7 +30,7 @@ export default function AuthedSidebarLayout({
   user: AuthedSidebarUser | null | undefined;
   children: React.ReactNode;
 }) {
-  const sections = getNavSections(user?.isAdmin ?? false);
+  const sections = getNavSections(user?.isAdmin ?? false, user?.isWriter ?? false);
 
   return (
     <>
@@ -47,6 +48,7 @@ export default function AuthedSidebarLayout({
               )}
               {user?.discordId && <span className="badge-success">Discord linked</span>}
               {user?.isAdmin && <span className="badge-warning">ADMIN</span>}
+              {user?.isWriter && !user?.isAdmin && <span className="badge-secondary">WRITER</span>}
             </div>
           </div>
 

@@ -25,6 +25,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE.url}/market-intelligence`, lastModified: now, changeFrequency: 'hourly', priority: 0.9 },
     { url: `${SITE.url}/pricing`, lastModified: now, changeFrequency: 'weekly', priority: 0.9 },
     { url: `${SITE.url}/sports`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },
+    { url: `${SITE.url}/games`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },
+    { url: `${SITE.url}/news`, lastModified: now, changeFrequency: 'hourly', priority: 0.9 },
     { url: `${SITE.url}/arbitrage`, lastModified: now, changeFrequency: 'hourly', priority: 0.9 },
     { url: `${SITE.url}/api-access`, lastModified: now, changeFrequency: 'weekly', priority: 0.8 },
     { url: `${SITE.url}/docs`, lastModified: now, changeFrequency: 'weekly', priority: 0.7 },

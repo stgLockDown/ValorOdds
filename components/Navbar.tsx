@@ -75,7 +75,9 @@ export default async function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
-          {user && <CommandPalette isAdmin={user.isAdmin ?? false} />}
+          {user && (
+            <CommandPalette isAdmin={user.isAdmin ?? false} isWriter={user.isWriter ?? false} />
+          )}
 
           {user ? (
             <>
@@ -88,7 +90,12 @@ export default async function Navbar() {
                 }}
                 signOutAction={handleSignOut}
               />
-              <MobileNav isAdmin={user.isAdmin ?? false} isAuthed signOutAction={handleSignOut} />
+              <MobileNav
+                isAdmin={user.isAdmin ?? false}
+                isWriter={user.isWriter ?? false}
+                isAuthed
+                signOutAction={handleSignOut}
+              />
             </>
           ) : (
             <>

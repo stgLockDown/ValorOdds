@@ -16,10 +16,12 @@ import { getNavSections } from '@/lib/nav-links';
 
 export default function MobileNav({
   isAdmin = false,
+  isWriter = false,
   isAuthed = false,
   signOutAction,
 }: {
   isAdmin?: boolean;
+  isWriter?: boolean;
   isAuthed?: boolean;
   signOutAction?: () => Promise<void>;
 }) {
@@ -47,7 +49,7 @@ export default function MobileNav({
     };
   }, [open]);
 
-  const sections = getNavSections(isAdmin);
+  const sections = getNavSections(isAdmin, isWriter);
   const q = query.trim().toLowerCase();
   const filtered = q
     ? sections

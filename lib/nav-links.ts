@@ -28,6 +28,8 @@ import {
   Tags,
   Brain,
   KeyRound,
+  FileText,
+  PenLine,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -39,6 +41,8 @@ export interface NavLink {
   description?: string;
   /** Only render for admins. */
   adminOnly?: boolean;
+  /** Only render for users with the writer role (admins always qualify). */
+  writerOnly?: boolean;
   /** Extra search terms for the command palette. */
   keywords?: string[];
 }
@@ -131,10 +135,25 @@ export const ACCOUNT_LINKS: NavLink[] = [
     description: 'Get help from the team',
     keywords: ['help', 'contact', 'ticket', 'issue'],
   },
+  {
+    href: '/dashboard/news',
+    label: 'My Articles',
+    icon: PenLine,
+    description: 'Write and submit articles for ValorOdds',
+    keywords: ['write', 'writer', 'drafts', 'articles', 'newsroom'],
+    writerOnly: true,
+  },
 ];
 
 /** Research / learning destinations. */
 export const EXPLORE_LINKS: NavLink[] = [
+  {
+    href: '/news',
+    label: 'News',
+    icon: FileText,
+    description: 'ValorOdds originals and live headlines',
+    keywords: ['articles', 'stories', 'newsroom', 'originals', 'spotlight'],
+  },
   {
     href: '/sports',
     label: 'Sports Hub',
@@ -183,6 +202,14 @@ export const ADMIN_LINKS: NavLink[] = [
     keywords: ['admin', 'manage'],
   },
   {
+    href: '/admin/news',
+    label: 'News Studio',
+    icon: FileText,
+    description: 'Generate, review and publish articles',
+    adminOnly: true,
+    keywords: ['articles', 'news', 'generate', 'ai', 'writers', 'editorial'],
+  },
+  {
     href: '/admin/support',
     label: 'Support Tickets',
     icon: Headphones,
@@ -218,19 +245,25 @@ export const ADMIN_LINKS: NavLink[] = [
 
 /**
  * Grouped sections used by the mobile drawer and command palette.
- * Admin section is filtered out for non-admins by `getNavSections`.
+/**
+ * Grouped sections used by the mobile drawer and command palette.
+ * Admin section is filtered out for non-admins; writer-only links are
+ * filtered out for non-writers. Admins always qualify as writers.
  */
-export function getNavSections(isAdmin: boolean): NavSection[] {
+export function getNavSections(isAdmin: boolean, isWriter = false): NavSection[] {
+  const writer = isWriter || isAdmin;
+  const filterLinks = (links: NavLink[]) =>
+    links.filter((l) => (l.adminOnly ? isAdmin : true) && (l.writerOnly ? writer : true));
   const sections: NavSection[] = [
-    { title: 'Product', links: PRIMARY_LINKS },
-    { title: 'Explore', links: EXPLORE_LINKS },
-    { title: 'Account', links: ACCOUNT_LINKS },
+    { title: 'Product', links: filterLinks(PRIMARY_LINKS) },
+    { title: 'Explore', links: filterLinks(EXPLORE_LINKS) },
+    { title: 'Account', links: filterLinks(ACCOUNT_LINKS) },
   ];
-  if (isAdmin) sections.push({ title: 'Admin', links: ADMIN_LINKS });
+  if (isAdmin) sections.push({ title: 'Admin', links: filterLinks(ADMIN_LINKS) });
   return sections;
 }
 
 /** Flat list of every destination — used to power command-palette search. */
-export function getAllNavLinks(isAdmin: boolean): NavLink[] {
-  return getNavSections(isAdmin).flatMap((s) => s.links);
+export function getAllNavLinks(isAdmin: boolean, isWriter = false): NavLink[] {
+  return getNavSections(isAdmin, isWriter).flatMap((s) => s.links);
 }

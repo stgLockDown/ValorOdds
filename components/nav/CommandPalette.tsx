@@ -14,7 +14,13 @@ import { useRouter } from 'next/navigation';
 import { Search, CornerDownLeft } from 'lucide-react';
 import { getAllNavLinks, type NavLink } from '@/lib/nav-links';
 
-export default function CommandPalette({ isAdmin = false }: { isAdmin?: boolean }) {
+export default function CommandPalette({
+  isAdmin = false,
+  isWriter = false,
+}: {
+  isAdmin?: boolean;
+  isWriter?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
@@ -22,7 +28,7 @@ export default function CommandPalette({ isAdmin = false }: { isAdmin?: boolean 
   const listRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  const links = useMemo(() => getAllNavLinks(isAdmin), [isAdmin]);
+  const links = useMemo(() => getAllNavLinks(isAdmin, isWriter), [isAdmin, isWriter]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();

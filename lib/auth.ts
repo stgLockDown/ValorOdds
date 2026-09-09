@@ -24,6 +24,8 @@ declare module 'next-auth' {
       discordId?: string | null;
       tier: Tier;
       isAdmin: boolean;
+      /** Writer role (admins always count as writers; checked against DB in API routes). */
+      isWriter?: boolean;
     } & DefaultSession['user'];
   }
 }
@@ -35,6 +37,7 @@ type AppJWT = {
   discordId?: string | null;
   tier?: Tier;
   isAdmin?: boolean;
+  isWriter?: boolean;
 };
 export type { AppJWT };
 
@@ -255,13 +258,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // app — it just degrades the session to default (free/non-admin).
       if (token.userId) {
         try {
-          const row = await queryOne<{ email: string; discord_id: string | null; is_admin: boolean }>(
-            `SELECT email, discord_id, is_admin FROM web_users WHERE id = $1::bigint`,
+          const row = await queryOne<{ email: string; discord_id: string | null; is_admin: boolean; is_writer: boolean }>(
+            `SELECT email, discord_id, is_admin, is_writer FROM web_users WHERE id = $1::bigint`,
             [token.userId]
           );
           if (row) {
             token.discordId = row.discord_id;
             token.isAdmin = row.is_admin || isAdmin(row.email);
+            token.isWriter = row.is_writer || row.is_admin || isAdmin(row.email);
             token.tier = await getCurrentTier(String(token.userId), row.discord_id);
           }
         } catch (err) {
@@ -283,6 +287,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.discordId = (token.discordId as string | null | undefined) ?? null;
         session.user.tier = (token.tier as Tier | undefined) ?? 'free';
         session.user.isAdmin = Boolean(token.isAdmin);
+        session.user.isWriter = Boolean(token.isWriter ?? token.isAdmin);
       }
       return session;
     },
