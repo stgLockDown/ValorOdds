@@ -275,9 +275,10 @@ export async function playerHeadshot(name: string, sport: string): Promise<{ url
 }
 
 // ---------- AI provider chain ----------
+// (Exported so other generators — e.g. Marketing Studio — can reuse the
+// exact same OpenAI→DeepSeek fallback ladder instead of duplicating it.)
 
-type PayloadStyle = 'gpt5' | 'legacy';
-interface Provider {
+export interface Provider {
   name: string;
   baseUrl: string;
   apiKey: string;
@@ -285,7 +286,9 @@ interface Provider {
   style: PayloadStyle;
 }
 
-function buildProviderLadder(): Provider[] {
+type PayloadStyle = 'gpt5' | 'legacy';
+
+export function buildProviderLadder(): Provider[] {
   const providers: Provider[] = [];
   const openaiKey = process.env.OPENAI_API_KEY;
   const deepseekKey = process.env.DEEPSEEK_API_KEY;
@@ -320,7 +323,7 @@ function buildProviderLadder(): Provider[] {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function callProvider(
+export async function callProvider(
   provider: Provider,
   systemPrompt: string,
   userPrompt: string,

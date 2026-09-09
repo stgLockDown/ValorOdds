@@ -70,3 +70,35 @@ export async function confirmAccountLink(token: string, userId: string) {
     body: { token, webUserId: userId },
   });
 }
+
+// ---------- Marketing Studio ----------
+
+/**
+ * Channels the bot exposes for marketing posts (allowlisted from its
+ * config.channels map). Empty when the bot is unreachable — the studio
+ * still works offline, posting is just disabled.
+ */
+export async function getMarketingChannels(): Promise<MarketingChannelDTO[]> {
+  const r = await botFetch<{ channels: MarketingChannelDTO[] }>('/api/internal/marketing/channels', { timeoutMs: 8_000 });
+  return r?.channels ?? [];
+}
+
+/** Sends one approved marketing variant to a Discord channel via the bot. */
+export async function postMarketingToDiscord(opts: {
+  channelId: string;
+  content: string;
+  variantId?: string;
+}): Promise<{ messageId: string; channelId: string; messageUrl?: string }> {
+  return botFetch('/api/internal/marketing/post', {
+    method: 'POST',
+    body: { channelId: opts.channelId, content: opts.content, variantId: opts.variantId },
+    timeoutMs: 20_000,
+  });
+}
+
+export interface MarketingChannelDTO {
+  key: string;
+  label: string;
+  desc: string;
+  channelId: string;
+}
