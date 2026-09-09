@@ -128,13 +128,22 @@ export async function getPublishedFeed(opts: FeedOptions = {}): Promise<Article[
     params.push(opts.sport.toUpperCase());
     where += ` AND a.sport = $${params.length}`;
   }
-  const rows = await query<any>(
-    `${ARTICLE_SELECT} ${where}
-     ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    params
-  );
-  return rows.rows.map(rowToArticle);
+  // Graceful degradation: during \`next build\` (static export) the DB is often
+  // unreachable (e.g. Railway's build container can't see postgres.railway.internal).
+  // Failures here must not break the build — ISR re-fetches at runtime and the
+  // page renders its empty state. Mirrors getTopOpportunities' try/catch.
+  try {
+    const rows = await query<any>(
+      `${ARTICLE_SELECT} ${where}
+       ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      params
+    );
+    return rows.rows.map(rowToArticle);
+  } catch (err) {
+    console.error('[getPublishedFeed] query failed:', err);
+    return [];
+  }
 }
 
 export async function getPublishedArticleBySlug(slug: string): Promise<Article | null> {
@@ -152,11 +161,17 @@ export async function countPublished(sport?: string | null): Promise<number> {
     params.push(sport.toUpperCase());
     where += ` AND sport = $${params.length}`;
   }
-  const row = await queryOne<{ c: string }>(
-    `SELECT COUNT(*)::text AS c FROM web_articles ${where}`,
-    params
-  );
-  return row ? Number(row.c) : 0;
+  // Same build-time graceful degradation as getPublishedFeed.
+  try {
+    const row = await queryOne<{ c: string }>(
+      `SELECT COUNT(*)::text AS c FROM web_articles ${where}`,
+      params
+    );
+    return row ? Number(row.c) : 0;
+  } catch (err) {
+    console.error('[countPublished] query failed:', err);
+    return 0;
+  }
 }
 
 // ---------- role checks ----------
