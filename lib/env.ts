@@ -50,7 +50,17 @@ const PLACEHOLDER_SECRET =
 export const env = {
   NODE_ENV: (process.env.NODE_ENV ?? 'development') as 'development' | 'production' | 'test',
   isProd: process.env.NODE_ENV === 'production',
-  appUrl: optional('NEXT_PUBLIC_APP_URL', 'http://localhost:3000'),
+  // App URL used in Stripe redirects/emails. Prefer the explicit
+  // NEXT_PUBLIC_APP_URL, then NEXTAUTH_URL/AUTH_URL (which Railway prod sets
+  // to https://valorodds.com), and only then localhost — otherwise checkout
+  // return/success/cancel URLs silently point at localhost in production.
+  appUrl: (() => {
+    const explicit = process.env.NEXT_PUBLIC_APP_URL;
+    if (explicit && explicit !== '') return explicit;
+    const nextAuth = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL;
+    if (nextAuth && nextAuth !== '') return nextAuth;
+    return 'http://localhost:3000';
+  })(),
   appName: optional('NEXT_PUBLIC_APP_NAME', 'Valor Odds'),
 
   // Database — lenient: queries fail with their own clear error if unset.
