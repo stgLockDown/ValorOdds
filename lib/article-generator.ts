@@ -22,7 +22,11 @@
 
 import { query, queryOne } from './db';
 import { teamLogoUrl as espnTeamLogo } from './team-logos';
-import { normalizeInlineImages, type InlineImage } from './article-images';
+import {
+  inlinePoolExcludingCover,
+  normalizeInlineImages,
+  type InlineImage,
+} from './article-images';
 import { mapPlaceholderCitations } from './citations';
 
 // ---------- types ----------
@@ -515,8 +519,9 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
     .join('\n');
 
   // Inline image pool: distinct real photos from the harvested context, in
-  // context order. The cover may reuse one of them (fine — hero + inline
-  // duplicates read naturally) but pool order is what the prompt shows.
+  // context order, EXCLUDING whichever photo was chosen as the hero/cover.
+  // The hero already renders at the top of the article page, so embedding
+  // the same photo again inline would show readers the same image twice.
   const imagePool: InlineImage[] = headlines
     .filter((h) => h.image && /^https?:\/\//i.test(h.image.trim()))
     .reduce<InlineImage[]>((acc, h) => {
@@ -531,8 +536,10 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
       return acc;
     }, [])
     .slice(0, 4);
-  const imagePoolBlock = imagePool.length
-    ? imagePool
+  const inlinePool = inlinePoolExcludingCover(imagePool, coverImage);
+  // Only photos distinct from the hero are offered for inline embedding.
+  const imagePoolBlock = inlinePool.length
+    ? inlinePool
         .map((p, i) => `[image ${i + 1}] ${p.url} (photo of/about ${subject.name}; credit: ${p.credit ?? 'the outlet'})`)
         .join('\n')
     : '';
@@ -549,7 +556,7 @@ ${imagePoolBlock ? `
 AVAILABLE PHOTOS (real images you may embed — use the exact URL):
 ${imagePoolBlock}
 ` : ''}
-Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]).${imagePoolBlock ? ` Embed ${imagePool.length >= 2 ? 'exactly two photos' : 'the one photo'} from AVAILABLE PHOTOS at natural points mid-article as markdown images: ![short caption — photo credit](exact URL). Never invent image URLs; never write image-2 placeholders.` : ' Do not embed any images.'} End with "## What to watch". Return STRICT JSON.`;
+Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]).${imagePoolBlock ? ` Embed ${inlinePool.length >= 2 ? 'exactly two photos' : 'the one photo'} from AVAILABLE PHOTOS at natural points mid-article as markdown images: ![short caption — photo credit](exact URL). Never invent image URLs; never write image-2 placeholders; never embed the hero/cover photo inline.` : ' Do not embed any images.'} End with "## What to watch". Return STRICT JSON.`;
 
   // 5. Run the provider ladder.
   const providers = buildProviderLadder();
@@ -594,7 +601,7 @@ Requirements: 550-800 words. Cover why ${subject.name} is trending this week, wh
   // Inline image hygiene: map invented/placeholder image links to real pool
   // photos, cap at 2, strip everything else. Runs after citation mapping so
   // image alt text is never mistaken for a citation.
-  bodyMd = normalizeInlineImages(bodyMd, imagePool, 2);
+  bodyMd = normalizeInlineImages(bodyMd, inlinePool, 2, coverImage ? [coverImage] : []);
 
   return {
     title: parsed.title.slice(0, 200),
