@@ -142,6 +142,16 @@
 .prose-learn blockquote {
   @apply my-4 border-l-4 border-brand-accent pl-4 italic text-slate-300;
 }
+/* Inline article photos (generator-embedded harvested images). */
+.prose-learn figure.article-figure {
+  @apply my-8 overflow-hidden rounded-xl border border-brand-border bg-brand-surface;
+}
+.prose-learn figure.article-figure img {
+  @apply block w-full object-cover;
+}
+.prose-learn figure.article-figure figcaption {
+  @apply border-t border-brand-border bg-brand-surface px-3 py-2 text-xs text-brand-muted;
+}
 
 /* ======================== Documentation page ======================== */
 .docs-inline-code {
