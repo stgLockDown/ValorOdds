@@ -35,7 +35,8 @@ export interface GeneratedArticleDraft {
   cover_image_url: string | null;
   image_credit: string | null;
   sport: string | null;
-  subject_type: 'player' | 'team';
+  /** What the article is about. 'game' is used by lib/game-article-generator. */
+  subject_type: 'player' | 'team' | 'game';
   subject_name: string;
   source_links: string[];
   /** Structured refs { url, name (outlet), headline } for the Sources footer. */

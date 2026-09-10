@@ -33,7 +33,7 @@ export interface Article {
   cover_image_url: string | null;
   image_credit: string | null;
   sport: string | null;
-  subject_type: 'player' | 'team' | 'general' | null;
+  subject_type: 'player' | 'team' | 'general' | 'game' | null;
   subject_name: string | null;
   tags: string[];
   status: ArticleStatus;
@@ -256,7 +256,7 @@ export interface CreateArticleInput {
   cover_image_url?: string | null;
   image_credit?: string | null;
   sport?: string | null;
-  subject_type?: 'player' | 'team' | 'general' | null;
+  subject_type?: 'player' | 'team' | 'general' | 'game' | null;
   subject_name?: string | null;
   tags?: string[];
   status?: ArticleStatus;

@@ -639,3 +639,85 @@ async function buildEspnScoreIndexUncached(sports: string[]): Promise<EspnScoreI
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Game-article listing (News Studio "Game Coverage" picker)
+// ---------------------------------------------------------------------------
+
+/**
+ * Full EspnScore list across a multi-day window for one sport, ordered for
+ * editorial selection. Used by the game-article generator to offer live,
+ * upcoming, and recently completed games. Same fetch/memoization layers as
+ * the rest of the module (30s fetch cache + 60s list memo) and safe on
+ * failure (returns []).
+ */
+export type EspnGameWindowEntry = EspnScore & {
+  /** True when the game is from the "recent finals" window (state post). */
+  isRecentFinal: boolean;
+  /** Public sport code (NFL, MLB, NBA, NHL, SOCCER, ...). */
+  sport: string;
+};
+
+const ESPN_WINDOW_CACHE = new Map<string, { entries: EspnGameWindowEntry[]; expiresAt: number }>();
+const ESPN_WINDOW_TTL_MS = 60_000;
+
+export async function listEspnScoreWindow(
+  sport: string,
+  daysBack = 3,
+  daysForward = 10,
+): Promise<EspnGameWindowEntry[]> {
+  const code = (sport || '').toUpperCase();
+  const paths = SPORT_PATHS[code];
+  if (!paths || paths.length === 0) return [];
+
+  const cacheKey = `${code}|${daysBack}|${daysForward}`;
+  const cached = ESPN_WINDOW_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.entries;
+
+  const now = new Date();
+  const dateParams: string[] = [];
+  for (let i = -daysBack; i <= daysForward; i++) {
+    dateParams.push(scoreboardDateParam(new Date(now.getTime() + i * 86400000)));
+  }
+
+  const jobs: Promise<{ sport: string; events: EspnScore[] }>[] = [];
+  for (const path of paths) {
+    for (const d of dateParams) {
+      const sport = PATH_TO_SPORT[path] || code;
+      jobs.push(fetchScoreboard(path, d).then((events) => ({ sport, events })));
+    }
+  }
+
+  let entries: EspnGameWindowEntry[] = [];
+  try {
+    const results = await Promise.all(jobs);
+    const seen = new Set<string>();
+    for (const { sport, events } of results) {
+      for (const e of events) {
+        if (!e.eventId) continue;
+        if (seen.has(e.eventId)) continue;
+        seen.add(e.eventId);
+        entries.push({ ...e, isRecentFinal: e.state === 'post', sport });
+      }
+    }
+  } catch {
+    entries = [];
+  }
+
+  // Editorial ordering: live first, then soonest-upcoming, then most recent
+  // finals. Within each band, ties broken by start time.
+  const band = (e: EspnGameWindowEntry) =>
+    e.isLive ? 0 : e.state === 'pre' ? 1 : 2;
+  entries.sort((a, b) => {
+    const ba = band(a);
+    const bb = band(b);
+    if (ba !== bb) return ba - bb;
+    const ta = a.startTime ? Date.parse(a.startTime) : 0;
+    const tb = b.startTime ? Date.parse(b.startTime) : 0;
+    if (ba === 2) return tb - ta; // finals: newest first
+    return ta - tb; // live/upcoming: soonest first
+  });
+
+  ESPN_WINDOW_CACHE.set(cacheKey, { entries, expiresAt: Date.now() + ESPN_WINDOW_TTL_MS });
+  return entries;
+}

@@ -46,7 +46,7 @@ const CreateSchema = z.object({
   cover_image_url: z.string().url().max(1000).nullable().optional(),
   image_credit: z.string().max(200).nullable().optional(),
   sport: z.string().max(50).nullable().optional(),
-  subject_type: z.enum(['player', 'team', 'general']).optional(),
+  subject_type: z.enum(['player', 'team', 'general', 'game']).optional(),
   subject_name: z.string().max(120).nullable().optional(),
   tags: z.array(z.string().max(40)).max(8).optional(),
   // writers may only ever start drafts from this endpoint
