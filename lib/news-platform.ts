@@ -43,6 +43,8 @@ export interface Article {
   generator_model: string | null;
   generator_prompt_subject: string | null;
   source_links: string[];
+  /** Structured source refs { url, name, headline } (migration 014). */
+  sources: { url: string; name: string; headline: string }[];
   review_notes: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
@@ -96,7 +98,7 @@ const ARTICLE_SELECT = `
   SELECT a.id::text, a.slug, a.title, a.subtitle, a.body_md, a.cover_image_url,
          a.image_credit, a.sport, a.subject_type, a.subject_name, a.tags, a.status,
          a.author_id::text, a.byline, a.is_ai_generated, a.generator_model,
-         a.generator_prompt_subject, a.source_links, a.review_notes,
+         a.generator_prompt_subject, a.source_links, a.sources, a.review_notes,
          a.reviewed_by::text, a.reviewed_at, a.published_at, a.created_at, a.updated_at,
          u.display_name AS author_name, u.avatar_url AS author_avatar
   FROM web_articles a
@@ -107,6 +109,7 @@ function rowToArticle(r: any): Article {
     ...r,
     tags: r.tags ?? [],
     source_links: r.source_links ?? [],
+    sources: Array.isArray(r.sources) ? r.sources : [],
     is_ai_generated: Boolean(r.is_ai_generated),
   };
 }
@@ -263,6 +266,8 @@ export interface CreateArticleInput {
   generator_model?: string | null;
   generator_prompt_subject?: string | null;
   source_links?: string[];
+  /** Structured source refs { url, name, headline } (migration 014). */
+  sources?: { url: string; name: string; headline: string }[];
 }
 
 export async function createArticle(input: CreateArticleInput): Promise<Article> {
@@ -271,8 +276,8 @@ export async function createArticle(input: CreateArticleInput): Promise<Article>
     `INSERT INTO web_articles
        (slug, title, subtitle, body_md, cover_image_url, image_credit, sport,
         subject_type, subject_name, tags, status, author_id, byline,
-        is_ai_generated, generator_model, generator_prompt_subject, source_links)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::bigint,$13,$14,$15,$16,$17)
+        is_ai_generated, generator_model, generator_prompt_subject, source_links, sources)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::bigint,$13,$14,$15,$16,$17,$18::jsonb)
      RETURNING id::text`,
     [
       slug,
@@ -292,6 +297,7 @@ export async function createArticle(input: CreateArticleInput): Promise<Article>
       input.generator_model ?? null,
       input.generator_prompt_subject ?? null,
       input.source_links ?? [],
+      JSON.stringify(input.sources ?? []),
     ]
   );
   return (await getArticleById(row.id))!;
