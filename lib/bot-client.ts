@@ -83,15 +83,27 @@ export async function getMarketingChannels(): Promise<MarketingChannelDTO[]> {
   return r?.channels ?? [];
 }
 
-/** Sends one approved marketing variant to a Discord channel via the bot. */
+/**
+ * Sends one approved marketing variant to a Discord channel via the bot.
+ * `imageUrl` (optional) rides along as a Discord embed image; `imageCredit`
+ * becomes the embed footer. Older bots ignore both — the post still ships.
+ */
 export async function postMarketingToDiscord(opts: {
   channelId: string;
   content: string;
   variantId?: string;
+  imageUrl?: string | null;
+  imageCredit?: string | null;
 }): Promise<{ messageId: string; channelId: string; messageUrl?: string }> {
   return botFetch('/api/internal/marketing/post', {
     method: 'POST',
-    body: { channelId: opts.channelId, content: opts.content, variantId: opts.variantId },
+    body: {
+      channelId: opts.channelId,
+      content: opts.content,
+      variantId: opts.variantId,
+      imageUrl: opts.imageUrl ?? undefined,
+      imageCredit: opts.imageCredit ?? undefined,
+    },
     timeoutMs: 20_000,
   });
 }

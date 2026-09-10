@@ -63,6 +63,8 @@ export async function POST(
       channelId: input.channelId,
       content,
       variantId: variant.id,
+      imageUrl: variant.image_url ?? null,
+      imageCredit: variant.image_credit ?? null,
     });
     const updated = await recordPostedVariant(id, {
       variantId: variant.id,
