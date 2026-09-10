@@ -27,6 +27,9 @@ export default function MarketingNavbar() {
           <Link href="/sports" className="hover:text-brand-text transition-colors">
             Sports
           </Link>
+          <Link href="/news" className="hover:text-brand-text transition-colors">
+            News
+          </Link>
           <Link href="/arbitrage" className="hover:text-brand-text transition-colors">
             Arbitrage
           </Link>

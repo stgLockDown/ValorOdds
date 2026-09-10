@@ -148,8 +148,8 @@ export default async function HomePage() {
             articles={newsArticles}
             title="Latest Sports News"
             subtitle="Live headlines from around the sports world"
-            moreHref="/games"
-            moreLabel="Sports hubs"
+            moreHref="/news"
+            moreLabel="View all news"
           />
         </section>
       )}
