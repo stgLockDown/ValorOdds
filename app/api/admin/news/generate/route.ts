@@ -82,6 +82,7 @@ export async function POST(req: Request) {
       generator_model: draft.generator_model,
       generator_prompt_subject: `${draft.subject_type}: ${draft.subject_name}`,
       source_links: draft.source_links,
+      sources: draft.sources,
     });
 
     console.error(

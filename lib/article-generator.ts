@@ -37,6 +37,8 @@ export interface GeneratedArticleDraft {
   subject_type: 'player' | 'team';
   subject_name: string;
   source_links: string[];
+  /** Structured refs { url, name (outlet), headline } for the Sources footer. */
+  sources: { url: string; name: string; headline: string }[];
   generator_model: string;
 }
 
@@ -89,11 +91,12 @@ export async function getSubjectCandidates(mode: 'player' | 'team'): Promise<Sub
     headline: string;
     description: string | null;
     url: string | null;
+    source: string | null;
     image_url: string | null;
     author: string | null;
     published_at: string | null;
   }>(
-    `SELECT sport, headline, description, url, image_url, author, published_at
+    `SELECT sport, headline, description, url, source, image_url, author, published_at
      FROM news
      WHERE published_at >= NOW() - INTERVAL '7 days'
      ORDER BY published_at DESC
@@ -382,7 +385,7 @@ Hard rules:
 - 550-800 words in the body, structured with ## section headings.
 - First paragraph is a strong lede — no throat-clearing, no "In the world of sports".
 - Only state facts that appear in the supplied RECENT HEADLINES. If you are unsure of a fact, leave it out. NEVER invent statistics, quotes, or injury statuses.
-- Where a headline supports a claim, cite it inline as a markdown link using the exact URL shown after "source:". NEVER write placeholder links such as source-2, [2], or [source 4] — if a headline has no source URL, state the fact without a citation.
+- Where a headline supports a claim, cite it inline as a markdown link labeled by outlet name (e.g. [CBS Sports](url) or [ESPN](url)) using the exact URL shown after "source:". NEVER write placeholder links such as source-2, [2], or [source 4] — if a headline has no source URL, state the fact without a citation.
 - End with a short "What to watch" section (2-3 bullets, ## heading).
 - Tone: professional sports desk, confident, no hype-slop, no emojis.
 - No gambling advice or odds picks — this is news coverage, not betting tips.
@@ -419,8 +422,8 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
   }
 
   // 2. Harvest context: full recent headlines about this subject.
-  const context = await query<{ sport: string; headline: string; description: string | null; url: string | null; published_at: string | null; image_url: string | null; author: string | null }>(
-    `SELECT sport, headline, description, url, published_at, image_url, author
+  const context = await query<{ sport: string; headline: string; description: string | null; url: string | null; source: string | null; published_at: string | null; image_url: string | null; author: string | null }>(
+    `SELECT sport, headline, description, url, source, published_at, image_url, author
      FROM news
      WHERE published_at >= NOW() - INTERVAL '10 days'
        AND (headline ILIKE '%' || $1 || '%' OR COALESCE(description,'') ILIKE '%' || $1 || '%')
@@ -432,6 +435,7 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
     headline: r.headline,
     description: r.description,
     url: r.url,
+    outlet: (r.source || 'ESPN').trim() || 'ESPN',
     publishedAt: r.published_at,
     image: r.image_url,
     author: r.author,
@@ -462,11 +466,21 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
 
   // 4. Build the prompt.
   const sourceLinks = [...new Set(headlines.map((h) => h.url).filter((u): u is string => Boolean(u)))].slice(0, 8);
+  // Structured source refs: { url, name (outlet), headline } — deduped by URL,
+  // outlet-prefixed ordering (stable per generation). This is what the article
+  // page renders as the "Sources" footer.
+  const sources = headlines
+    .filter((h) => Boolean(h.url))
+    .reduce<{ url: string; name: string; headline: string }[]>((acc, h) => {
+      if (!acc.some((s) => s.url === h.url)) acc.push({ url: h.url!, name: h.outlet, headline: h.headline });
+      return acc;
+    }, [])
+    .slice(0, 8);
   const contextBlock = headlines
     .map(
       (h, i) =>
         `[${i + 1}] ${h.headline}${h.description ? ` — ${h.description.slice(0, 200)}` : ''}${
-          h.url ? ` (source: ${h.url})` : ''
+          h.url ? ` (source: ${h.outlet}: ${h.url})` : ''
         }`
     )
     .join('\n');
@@ -480,7 +494,7 @@ SUBJECT TYPE: ${mode}
 RECENT HEADLINES (your only factual sources — cite them):
 ${contextBlock}
 
-Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links. End with "## What to watch". Return STRICT JSON.`;
+Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]). End with "## What to watch". Return STRICT JSON.`;
 
   // 5. Run the provider ladder.
   const providers = buildProviderLadder();
@@ -516,9 +530,12 @@ Requirements: 550-800 words. Cover why ${subject.name} is trending this week, wh
 
   // 7. Citation hygiene: models sometimes cite the numbered context entries
   // as [source 3](source-3) placeholders even when told not to. Map them to
-  // the real source URLs (1-ordered, matching the prompt block), or drop
-  // the ones with no URL behind them.
-  const bodyMd = mapPlaceholderCitations(parsed.body_md, headlines.map((h) => ({ url: h.url, name: 'ESPN' })));
+  // the real source URL (1-ordered, matching the prompt block) labeled with
+  // the outlet that published the headline, or drop them when no URL exists.
+  const bodyMd = mapPlaceholderCitations(
+    parsed.body_md,
+    headlines.map((h) => ({ url: h.url, name: h.outlet }))
+  );
 
   return {
     title: parsed.title.slice(0, 200),
@@ -531,6 +548,7 @@ Requirements: 550-800 words. Cover why ${subject.name} is trending this week, wh
     subject_type: mode,
     subject_name: subject.name,
     source_links: sourceLinks,
+    sources,
     generator_model: usedModel,
   };
 }

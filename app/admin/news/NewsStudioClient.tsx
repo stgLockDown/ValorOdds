@@ -25,6 +25,7 @@ interface Article {
   is_ai_generated: boolean;
   generator_model: string | null;
   source_links: string[];
+  sources?: { url: string; name: string; headline: string }[];
   review_notes: string | null;
   published_at: string | null;
   created_at: string;
@@ -732,9 +733,13 @@ function EditorTab({ article, flash, onSaved }: { article: Article; flash: Flash
       <div className="mt-4">
         <div className="flex items-center justify-between">
           <label className={labelCls}>Body (markdown)</label>
-          {draft.source_links.length > 0 && (
+          {draft.sources && draft.sources.length > 0 ? (
+            <span className="text-[11px] text-brand-muted">
+              {draft.sources.length} sources · {new Set(draft.sources.map((s) => s.name)).size} outlets
+            </span>
+          ) : draft.source_links.length > 0 ? (
             <span className="text-[11px] text-brand-muted">{draft.source_links.length} sources</span>
-          )}
+          ) : null}
         </div>
         {mode === 'write' ? (
           <textarea
@@ -766,6 +771,21 @@ function EditorTab({ article, flash, onSaved }: { article: Article; flash: Flash
                 </p>
               );
             })}
+          </div>
+        )}
+        {draft.sources && draft.sources.length > 0 && (
+          <div className="mt-3 rounded-lg border border-brand-border bg-brand-surface/60 p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
+              Cited sources ({new Set(draft.sources.map((s) => s.name)).size} outlets)
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {draft.sources.map((s, i) => (
+                <li key={`${s.url}-${i}`} className="text-xs text-brand-muted">
+                  <span className="font-semibold text-brand-primary">{s.name}</span>
+                  {s.headline && <> — {s.headline}</>}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

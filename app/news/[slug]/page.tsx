@@ -159,28 +159,56 @@ export default async function ArticlePage({ params }: Params) {
             </div>
           )}
 
-          {article.source_links.length > 0 && (
-            <section className="mt-8 rounded-xl border border-brand-border bg-brand-surface p-4">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-brand-muted">
-                Sources
-              </h2>
-              <ul className="mt-2 space-y-1">
-                {article.source_links.map((u, i) => (
-                  <li key={u} className="text-sm">
-                    <a
-                      href={u}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-brand-primary hover:underline"
-                    >
-                      {new URL(u, SITE.url).hostname.replace(/^www\./, '')}
-                      {new URL(u, SITE.url).pathname.length > 1 ? ` — story #${i + 1}` : ''}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {(() => {
+            // Sources footer: prefer structured refs (outlet + headline per
+            // link, recorded by the generator since migration 014); fall back
+            // to the plain source_links URL list for legacy articles.
+            const refs =
+              article.sources && article.sources.length > 0
+                ? article.sources
+                : article.source_links.map((u) => ({
+                    url: u,
+                    name: (() => {
+                      try {
+                        return new URL(u, SITE.url).hostname.replace(/^www\./, '');
+                      } catch {
+                        return 'source';
+                      }
+                    })(),
+                    headline: '' as string,
+                  }));
+            if (refs.length === 0) return null;
+            return (
+              <section
+                className="mt-10 rounded-xl border border-brand-border bg-brand-surface p-5"
+                aria-label="Sources"
+              >
+                <h2 className="text-sm font-bold uppercase tracking-wide text-brand-muted">
+                  Sources
+                </h2>
+                <ul className="mt-3 space-y-2.5">
+                  {refs.map((s, i) => (
+                    <li key={`${s.url}-${i}`} className="text-sm leading-snug">
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-brand-primary hover:underline"
+                      >
+                        {s.name || 'source'}
+                      </a>
+                      {s.headline && (
+                        <span className="text-brand-muted"> — {s.headline}</span>
+                      )}
+                      <div className="mt-0.5 text-[11px] text-brand-muted/70 break-all">
+                        {s.url}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })()}
         </article>
 
         {related.length > 0 && (
