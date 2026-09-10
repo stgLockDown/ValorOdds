@@ -29,7 +29,11 @@
 import { query } from './db';
 import { listEspnScoreWindow, type EspnGameWindowEntry } from './espn-scores';
 import { fetchGameSummary, type GameSummary } from './espn-summary';
-import { normalizeInlineImages, type InlineImage } from './article-images';
+import {
+  inlinePoolExcludingCover,
+  normalizeInlineImages,
+  type InlineImage,
+} from './article-images';
 import { mapPlaceholderCitations } from './citations';
 import {
   buildProviderLadder,
@@ -391,6 +395,12 @@ export async function generateGameArticleDraft(
     coverCredit = 'Team logo';
   }
 
+  // Inline pool: everything EXCEPT the cover photo. The hero already renders
+  // at the top of the article page, so the photos offered for mid-article
+  // embedding must differ from it — otherwise readers see the exact same
+  // image twice (hero + first inline image).
+  const inlinePool = inlinePoolExcludingCover(imagePool, coverImage);
+
   // 4. Build the prompt.
   const matchup = `${game.awayTeam} @ ${game.homeTeam}`;
   const kickoff = game.startTime
@@ -444,8 +454,9 @@ export async function generateGameArticleDraft(
         .filter(Boolean)
         .join('\n');
 
-  const imagePoolBlock = imagePool.length
-    ? imagePool
+  // Only photos distinct from the hero are offered for inline embedding.
+  const imagePoolBlock = inlinePool.length
+    ? inlinePool
         .map((p, i) => `[image ${i + 1}] ${p.url} (photo related to ${matchup}; credit: ${p.credit ?? 'the outlet'})`)
         .join('\n')
     : '';
@@ -470,7 +481,7 @@ Requirements: 550-800 words. ${
       : 'Lead with the stakes and the matchup angle — records, venue, and the market view. Frame the odds as market coverage, never as advice.'
   } Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]).${
     imagePoolBlock
-      ? ` Embed ${imagePool.length >= 2 ? 'exactly two photos' : 'the one photo'} from AVAILABLE PHOTOS at natural points mid-article as markdown images: ![short caption — photo credit](exact URL). Never invent image URLs; never write image-2 placeholders.`
+      ? ` Embed ${inlinePool.length >= 2 ? 'exactly two photos' : 'the one photo'} from AVAILABLE PHOTOS at natural points mid-article as markdown images: ![short caption — photo credit](exact URL). Never invent image URLs; never write image-2 placeholders; never embed the hero/cover photo inline.`
       : ' Do not embed any images.'
   } End with "## What to watch". Return STRICT JSON.`;
 
@@ -517,7 +528,7 @@ Requirements: 550-800 words. ${
     parsed.body_md,
     headlines.map((h) => ({ url: h.url, name: h.outlet })),
   );
-  bodyMd = normalizeInlineImages(bodyMd, imagePool, 2);
+  bodyMd = normalizeInlineImages(bodyMd, inlinePool, 2, coverImage ? [coverImage] : []);
 
   // 8. Sources list (dedup by URL, cap 8).
   const sources = headlines
