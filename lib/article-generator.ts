@@ -142,7 +142,8 @@ export async function getSubjectCandidates(mode: 'player' | 'team'): Promise<Sub
         headlineCount: 1,
         score: 1,
         image: r.image_url,
-        imageCredit: r.author ?? 'ESPN',
+        // Photo credit, not the article author — same rule as the update branch.
+        imageCredit: r.image_url ? photoCredit(r.image_credit, r.source) : '',
         sourceLinks: r.url ? [r.url] : [],
       });
     }
@@ -547,7 +548,7 @@ ${imagePoolBlock ? `
 AVAILABLE PHOTOS (real images you may embed — use the exact URL):
 ${imagePoolBlock}
 ` : ''}
-Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]).${imagePoolBlock ? " Embed exactly two photos from AVAILABLE PHOTOS at natural points mid-article as markdown images: ![short caption — photo credit](exact URL). Never invent image URLs; never write image-2 placeholders." : " Do not embed any images."} End with "## What to watch". Return STRICT JSON.`;
+Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]).${imagePoolBlock ? ` Embed ${imagePool.length >= 2 ? 'exactly two photos' : 'the one photo'} from AVAILABLE PHOTOS at natural points mid-article as markdown images: ![short caption — photo credit](exact URL). Never invent image URLs; never write image-2 placeholders.` : ' Do not embed any images.'} End with "## What to watch". Return STRICT JSON.`;
 
   // 5. Run the provider ladder.
   const providers = buildProviderLadder();

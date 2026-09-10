@@ -77,9 +77,15 @@ export function normalizeInlineImages(body: string, pool: InlineImage[], maxImag
     if (!img || used.has(img.url)) return '';
     used.add(img.url);
     kept += 1;
-    const caption = (alt || img.caption || '').trim().replace(/\s+/g, ' ').slice(0, 140);
-    const credit = img.credit ? ` — ${img.credit}` : '';
-    return `![${caption}${credit}](${img.url})`;
+    let caption = (alt || img.caption || '').trim().replace(/\s+/g, ' ').slice(0, 140);
+    // The prompt tells the model to append the credit itself; if it did,
+    // strip the trailing duplicate before re-adding the canonical one.
+    const credit = (img.credit ?? '').trim();
+    if (credit && caption.toLowerCase().endsWith(credit.toLowerCase())) {
+      caption = caption.slice(0, caption.length - credit.length).replace(/\s*[—–-]\s*$/, '').trim();
+    }
+    const creditSuffix = credit ? ` — ${credit}` : '';
+    return `![${caption}${creditSuffix}](${img.url})`;
   });
 
   // Tidy any doubled blank lines left by dropped images.
