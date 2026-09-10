@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Loader2, Sparkles, RefreshCw, XCircle, Pencil, Trash2,
-  UserPlus, UserMinus, ExternalLink, ListChecks, Users, Save, Globe,
+  UserPlus, UserMinus, ExternalLink, ListChecks, Users, Save, Globe, Trophy,
 } from 'lucide-react';
 
 // ---------- Types (mirrors lib/news-platform + lib/article-generator) ----------
@@ -56,6 +56,24 @@ interface WeeklyPreview {
   week: number;
   mode: 'player' | 'team';
   candidates: SubjectCandidate[];
+}
+
+/** Mirrors ArticleGameOption from lib/game-article-generator. */
+interface GameOption {
+  eventId: string;
+  sport: string;
+  homeTeam: string;
+  awayTeam: string;
+  startTime: string | null;
+  state: 'pre' | 'in' | 'post';
+  statusDetail: string | null;
+  isLive: boolean;
+  isFinal: boolean;
+  homeScore: number;
+  awayScore: number;
+  homeRecord: string | null;
+  awayRecord: string | null;
+  books: number;
 }
 
 type Tab = 'generate' | 'queue' | 'edit' | 'writers';
@@ -205,6 +223,13 @@ function GeneratorTab({ flash, onCreated }: { flash: Flash; onCreated: () => voi
   const [customMode, setCustomMode] = useState(false);
   const [generating, setGenerating] = useState(false);
 
+  // Game coverage mode
+  const [mode, setMode] = useState<'weekly' | 'game'>('weekly');
+  const [games, setGames] = useState<GameOption[]>([]);
+  const [loadingGames, setLoadingGames] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<GameOption | null>(null);
+  const [gamesLoaded, setGamesLoaded] = useState(false);
+
   const loadPreview = useCallback(async () => {
     setLoadingPreview(true);
     try {
@@ -223,14 +248,47 @@ function GeneratorTab({ flash, onCreated }: { flash: Flash; onCreated: () => voi
     }
   }, [flash]);
 
+  const loadGames = useCallback(async () => {
+    setLoadingGames(true);
+    try {
+      const r = await fetch('/api/admin/news/generate/games');
+      const data = await r.json();
+      if (r.ok) {
+        setGames(data.games ?? []);
+        setGamesLoaded(true);
+      } else {
+        flash('err', `Could not load games: ${data?.error ?? r.status}`);
+      }
+    } catch (e) {
+      flash('err', `Games failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoadingGames(false);
+    }
+  }, [flash]);
+
+  // Load games lazily the first time the editor switches to Game Coverage.
   useEffect(() => {
-    loadPreview();
-  }, [loadPreview]);
+    if (mode === 'game' && !gamesLoaded && !loadingGames) {
+      loadGames();
+    }
+  }, [mode, gamesLoaded, loadingGames, loadGames]);
+
+  // Weekly preview already loads on mount via this effect.
+  useEffect(() => {
+    if (mode === 'weekly') {
+      loadPreview();
+    }
+  }, [mode, loadPreview]);
 
   async function generate() {
     setGenerating(true);
     try {
-      const body = customMode && subjectName.trim() ? { subjectName: subjectName.trim(), subjectType } : {};
+      const body =
+        mode === 'game' && selectedGame
+          ? { gameId: selectedGame.eventId, gameSport: selectedGame.sport }
+          : customMode && subjectName.trim()
+            ? { subjectName: subjectName.trim(), subjectType }
+            : {};
       const r = await fetch('/api/admin/news/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -250,13 +308,23 @@ function GeneratorTab({ flash, onCreated }: { flash: Flash; onCreated: () => voi
     }
   }
 
+  const gameTime = (g: GameOption) => {
+    if (g.isLive) return 'LIVE';
+    if (g.isFinal) return 'Final';
+    return g.startTime
+      ? new Date(g.startTime).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+      : 'TBD';
+  };
+
+  const matchup = (g: GameOption) => `${g.awayTeam} @ ${g.homeTeam}`;
+
   return (
     <section className="card p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold">Weekly Spotlight Generator</h2>
+          <h2 className="text-lg font-bold">Article Generator</h2>
           <p className="mt-1 text-sm text-brand-muted">
-            One click: the AI picks this week&apos;s trending subject, harvests real photos, and drafts the article.
+            The AI drafts a weekly player/team spotlight — or coverage of a specific game, live or upcoming.
           </p>
         </div>
         <button onClick={loadPreview} disabled={loadingPreview} className="btn-secondary inline-flex items-center gap-2">
@@ -265,6 +333,28 @@ function GeneratorTab({ flash, onCreated }: { flash: Flash; onCreated: () => voi
         </button>
       </div>
 
+      {/* Mode toggle: weekly spotlight vs game coverage */}
+      <div className="mt-5 flex gap-2">
+        {(['weekly', 'game'] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => {
+              setMode(m);
+              setSelectedGame(null);
+            }}
+            className={`rounded-lg border px-4 py-2 text-sm font-semibold ${
+              mode === m
+                ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                : 'border-brand-border bg-brand-surface text-brand-muted'
+            }`}
+          >
+            {m === 'weekly' ? 'Weekly Spotlight' : 'Game Coverage'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'weekly' ? (
+        <>
       {preview && (
         <div className="mt-4 rounded-lg border border-brand-border bg-brand-elevated/50 p-4">
           <p className="text-sm">
@@ -370,22 +460,115 @@ function GeneratorTab({ flash, onCreated }: { flash: Flash; onCreated: () => voi
           <p className="mt-2 text-xs text-brand-muted">Click a row to select that subject.</p>
         </div>
       )}
+        </>
+      ) : (
+        <>
+      <div className="mt-4 rounded-lg border border-brand-border bg-brand-elevated/50 p-4">
+        <p className="text-sm">
+          <span className="font-semibold text-brand-heading">Game coverage</span>
+          <span className="text-brand-muted">
+            {' '}— previews for upcoming and live games, recaps for finals. Betting lines come
+            straight from the odds feed; team photos from recent headlines.
+          </span>
+        </p>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <span className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Games</span>
+        <button onClick={loadGames} disabled={loadingGames} className="btn-secondary inline-flex items-center gap-2">
+          {loadingGames ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Refresh games
+        </button>
+      </div>
+
+      {loadingGames && !gamesLoaded && (
+        <p className="mt-4 flex items-center gap-2 text-sm text-brand-muted">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading the scoreboard window…
+        </p>
+      )}
+
+      {!loadingGames && gamesLoaded && games.length === 0 && (
+        <p className="mt-4 text-sm text-amber-400">
+          No games found in the window (last 3 days through the next 10). Try again later.
+        </p>
+      )}
+
+      {gamesLoaded && games.length > 0 && (
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="border-b border-brand-border text-left text-xs uppercase tracking-wide text-brand-muted">
+                <th className="py-2 pr-4">Matchup</th>
+                <th className="py-2 pr-4">Sport</th>
+                <th className="py-2 pr-4">When</th>
+                <th className="py-2 pr-4">Score / Records</th>
+                <th className="py-2">Books</th>
+              </tr>
+            </thead>
+            <tbody>
+              {games.map((g) => (
+                <tr
+                  key={g.eventId}
+                  className={`cursor-pointer border-b border-brand-border/60 hover:bg-brand-elevated/40 ${
+                    selectedGame?.eventId === g.eventId ? 'bg-brand-primary/10' : ''
+                  }`}
+                  onClick={() => setSelectedGame(g)}
+                >
+                  <td className="py-2 pr-4 font-medium text-brand-heading">
+                    {matchup(g)}
+                    {selectedGame?.eventId === g.eventId && (
+                      <span className="ml-2 text-xs font-semibold text-brand-primary">selected</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-brand-muted">{g.sport}</td>
+                  <td className="py-2 pr-4 text-brand-muted">
+                    {g.isLive ? (
+                      <span className="font-semibold text-red-400">
+                        LIVE{g.statusDetail ? ` · ${g.statusDetail}` : ''}
+                      </span>
+                    ) : (
+                      gameTime(g)
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-brand-muted">
+                    {g.state === 'post' && (g.homeScore > 0 || g.awayScore > 0)
+                      ? `${g.awayScore}–${g.homeScore}`
+                      : `${g.awayRecord ?? '—'} at ${g.homeRecord ?? '—'}`}
+                  </td>
+                  <td className="py-2 text-brand-muted">{g.books > 0 ? g.books : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-xs text-brand-muted">
+            Live games first, then soonest upcoming, then recent finals. Click a row to select the game to cover.
+          </p>
+        </div>
+      )}
+        </>
+      )}
 
       <button
         onClick={generate}
-        disabled={generating || (customMode && !subjectName.trim())}
+        disabled={generating || (mode === 'weekly' && customMode && !subjectName.trim()) || (mode === 'game' && !selectedGame)}
         className="btn-primary mt-6 inline-flex items-center gap-2"
       >
         {generating ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" /> Generating… (may take up to a minute)
-          </>
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : mode === 'game' ? (
+          <Trophy className="h-4 w-4" />
         ) : (
-          <>
-            <Sparkles className="h-4 w-4" />{' '}
-            Generate {customMode && subjectName.trim() ? `about ${subjectName.trim()}` : 'this week\u2019s spotlight'}
-          </>
-        )}
+          <Sparkles className="h-4 w-4" />
+        )}{' '}
+        {generating
+          ? 'Generating… (may take up to a minute)'
+          : mode === 'game' && selectedGame
+            ? `Generate ${selectedGame.isFinal ? 'recap' : 'preview'} for ${matchup(selectedGame)}`
+            : mode === 'game'
+              ? 'Select a game above'
+              : customMode && subjectName.trim()
+                ? `Generate about ${subjectName.trim()}`
+                : `Generate this week's spotlight`}
       </button>
 
       <p className="mt-3 text-xs text-brand-muted">
@@ -530,7 +713,7 @@ function QueueTab({
                   <div className="truncate font-medium text-brand-heading">{a.title}</div>
                   <div className="mt-0.5 text-[11px] text-brand-muted">
                     {a.subject_name
-                      ? `${a.subject_type === 'player' ? 'Player' : 'Team'}: ${a.subject_name}`
+                      ? `${a.subject_type === 'player' ? 'Player' : a.subject_type === 'game' ? 'Game' : 'Team'}: ${a.subject_name}`
                       : a.byline}
                   </div>
                 </td>

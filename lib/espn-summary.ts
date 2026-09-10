@@ -424,7 +424,7 @@ export async function fetchGameSummary(sport: string, eventId: string): Promise<
     name: c?.team?.displayName ?? 'Unknown',
     score: num(c?.score, 0),
     record: c?.record?.[0]?.summary ?? null,
-    logo: c?.team?.logo ?? null,
+    logo: c?.team?.logos?.[0]?.href ?? c?.team?.logo ?? null,
   });
 
   const boxscore = data?.boxscore ?? {};

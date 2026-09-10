@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { generateArticleDraft, previewWeeklySubjects } from '@/lib/article-generator';
+import { generateGameArticleDraft } from '@/lib/game-article-generator';
 import { createArticle, setAuthorByline } from '@/lib/news-platform';
 
 export const runtime = 'nodejs';
@@ -16,7 +17,10 @@ export const maxDuration = 300; // AI generation can take a couple minutes
  *        trending subject candidates with mention counts + images.
  *
  * POST /api/admin/news/generate
- *      { subjectName?, subjectType? }
+ *      { subjectName?, subjectType? }  → weekly player/team spotlight
+ *      { gameId, gameSport? }          → game coverage: preview for pre/live
+ *        events, recap for finals. gameId is the ESPN event id from
+ *        GET /api/admin/news/generate/games.
  *      → runs the full generate pipeline (subject → context harvest → AI →
  *        image harvest) and stores the draft with status 'pending_review'.
  *        Nothing is published — approval is a separate explicit action.
@@ -40,6 +44,10 @@ export async function GET() {
 const Body = z.object({
   subjectName: z.string().trim().min(2).max(120).optional().nullable(),
   subjectType: z.enum(['player', 'team']).optional(),
+  /** ESPN event id — when present, generate a game preview/recap instead of a spotlight. */
+  gameId: z.string().trim().min(1).max(40).optional().nullable(),
+  /** Optional sport hint for faster event lookup (NFL/NBA/MLB/NHL/SOCCER). */
+  gameSport: z.string().trim().min(2).max(12).optional(),
 });
 
 export async function POST(req: Request) {
@@ -59,10 +67,15 @@ export async function POST(req: Request) {
   }
 
   try {
-    const draft = await generateArticleDraft({
-      subjectName: input.subjectName ?? null,
-      subjectType: input.subjectType,
-    });
+    // Game coverage mode (preview for pre/live, recap for final) takes
+    // priority when an ESPN event id is supplied.
+    const draft =
+      input.gameId != null && input.gameId !== ''
+        ? await generateGameArticleDraft({ eventId: input.gameId, sport: input.gameSport })
+        : await generateArticleDraft({
+            subjectName: input.subjectName ?? null,
+            subjectType: input.subjectType,
+          });
 
     const byline = await setAuthorByline(session.user.id);
     const article = await createArticle({
@@ -80,7 +93,10 @@ export async function POST(req: Request) {
       byline,
       is_ai_generated: true,
       generator_model: draft.generator_model,
-      generator_prompt_subject: `${draft.subject_type}: ${draft.subject_name}`,
+      generator_prompt_subject:
+        input.gameId != null && input.gameId !== ''
+          ? `game: ${draft.subject_name} (ESPN event ${input.gameId})`
+          : `${draft.subject_type}: ${draft.subject_name}`,
       source_links: draft.source_links,
       sources: draft.sources,
     });
