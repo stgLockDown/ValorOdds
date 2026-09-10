@@ -709,6 +709,21 @@ function EditorTab({ article, flash, onSaved }: { article: Article; flash: Flash
             className={inputCls}
             placeholder="https://…"
           />
+          {draft.cover_image_url && (
+            <div className="mt-2 overflow-hidden rounded-lg border border-brand-border">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={draft.cover_image_url}
+                alt="Cover preview"
+                className="aspect-[16/9] w-full object-cover"
+              />
+              {draft.image_credit && (
+                <div className="border-t border-brand-border px-2 py-1 text-[11px] text-brand-muted">
+                  {draft.image_credit}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="sm:col-span-2">
           <label className={labelCls}>Image credit</label>
@@ -733,13 +748,21 @@ function EditorTab({ article, flash, onSaved }: { article: Article; flash: Flash
       <div className="mt-4">
         <div className="flex items-center justify-between">
           <label className={labelCls}>Body (markdown)</label>
-          {draft.sources && draft.sources.length > 0 ? (
-            <span className="text-[11px] text-brand-muted">
-              {draft.sources.length} sources · {new Set(draft.sources.map((s) => s.name)).size} outlets
-            </span>
-          ) : draft.source_links.length > 0 ? (
-            <span className="text-[11px] text-brand-muted">{draft.source_links.length} sources</span>
-          ) : null}
+          <span className="flex items-center gap-3">
+            {(draft.body_md.match(/!\[[^\]]*\]\([^)]*\)/g) || []).length > 0 && (
+              <span className="text-[11px] text-brand-muted">
+                {(draft.body_md.match(/!\[[^\]]*\]\([^)]*\)/g) || []).length} inline image
+                {(draft.body_md.match(/!\[[^\]]*\]\([^)]*\)/g) || []).length === 1 ? '' : 's'}
+              </span>
+            )}
+            {draft.sources && draft.sources.length > 0 ? (
+              <span className="text-[11px] text-brand-muted">
+                {draft.sources.length} sources · {new Set(draft.sources.map((s) => s.name)).size} outlets
+              </span>
+            ) : draft.source_links.length > 0 ? (
+              <span className="text-[11px] text-brand-muted">{draft.source_links.length} sources</span>
+            ) : null}
+          </span>
         </div>
         {mode === 'write' ? (
           <textarea
@@ -751,6 +774,20 @@ function EditorTab({ article, flash, onSaved }: { article: Article; flash: Flash
         ) : (
           <div className="mt-1 min-h-[300px] rounded-lg border border-brand-border bg-brand-elevated/40 p-4 text-sm">
             {draft.body_md.split('\n').map((line, i) => {
+              const imgMatch = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(line.trim());
+              if (imgMatch) {
+                return (
+                  <div key={i} className="my-2 overflow-hidden rounded-lg border border-brand-border">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imgMatch[2]} alt={imgMatch[1]} className="aspect-[16/9] w-full object-cover" />
+                    {imgMatch[1] && (
+                      <div className="border-t border-brand-border px-2 py-1 text-[11px] text-brand-muted">
+                        {imgMatch[1]}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
               if (line.startsWith('## ')) {
                 return (
                   <h2 key={i} className="mt-4 text-lg font-bold text-brand-heading">

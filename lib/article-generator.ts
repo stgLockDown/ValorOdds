@@ -22,6 +22,7 @@
 
 import { query, queryOne } from './db';
 import { teamLogoUrl as espnTeamLogo } from './team-logos';
+import { normalizeInlineImages, type InlineImage } from './article-images';
 import { mapPlaceholderCitations } from './citations';
 
 // ---------- types ----------
@@ -93,10 +94,11 @@ export async function getSubjectCandidates(mode: 'player' | 'team'): Promise<Sub
     url: string | null;
     source: string | null;
     image_url: string | null;
+    image_credit: string | null;
     author: string | null;
     published_at: string | null;
   }>(
-    `SELECT sport, headline, description, url, source, image_url, author, published_at
+    `SELECT sport, headline, description, url, source, image_url, image_credit, author, published_at
      FROM news
      WHERE published_at >= NOW() - INTERVAL '7 days'
      ORDER BY published_at DESC
@@ -128,7 +130,7 @@ export async function getSubjectCandidates(mode: 'player' | 'team'): Promise<Sub
       existing.score += 1;
       if (!existing.image && r.image_url) {
         existing.image = r.image_url;
-        existing.imageCredit = r.author ?? 'ESPN';
+        existing.imageCredit = photoCredit(r.image_credit, r.source);
         if (r.url) existing.sourceLinks.push(r.url);
       } else if (r.image_url && existing.sourceLinks.length < 6 && r.url) {
         existing.sourceLinks.push(r.url);
@@ -140,7 +142,8 @@ export async function getSubjectCandidates(mode: 'player' | 'team'): Promise<Sub
         headlineCount: 1,
         score: 1,
         image: r.image_url,
-        imageCredit: r.author ?? 'ESPN',
+        // Photo credit, not the article author — same rule as the update branch.
+        imageCredit: r.image_url ? photoCredit(r.image_credit, r.source) : '',
         sourceLinks: r.url ? [r.url] : [],
       });
     }
@@ -276,6 +279,19 @@ export async function playerHeadshot(name: string, sport: string): Promise<{ url
   );
   if (row?.image_url) return { url: row.image_url, credit: row.author ?? 'ESPN' };
   return { url: null, credit: null };
+}
+
+/**
+ * Photo-credit resolver: the agency/photographer who owns the image
+ * (news.image_credit, e.g. "Getty Images") when present; otherwise the
+ * outlet that published the photo (news.source). Never the article author —
+ * the byline credits the writer, not the photographer.
+ */
+function photoCredit(credit: string | null | undefined, outlet: string | null | undefined): string | null {
+  const c = (credit ?? '').trim();
+  if (c) return c.slice(0, 200);
+  const o = (outlet ?? '').trim();
+  return o ? `Photo: ${o}` : null;
 }
 
 // ---------- AI provider chain ----------
@@ -422,8 +438,8 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
   }
 
   // 2. Harvest context: full recent headlines about this subject.
-  const context = await query<{ sport: string; headline: string; description: string | null; url: string | null; source: string | null; published_at: string | null; image_url: string | null; author: string | null }>(
-    `SELECT sport, headline, description, url, source, published_at, image_url, author
+  const context = await query<{ sport: string; headline: string; description: string | null; url: string | null; source: string | null; published_at: string | null; image_url: string | null; image_credit: string | null; author: string | null }>(
+    `SELECT sport, headline, description, url, source, published_at, image_url, image_credit, author
      FROM news
      WHERE published_at >= NOW() - INTERVAL '10 days'
        AND (headline ILIKE '%' || $1 || '%' OR COALESCE(description,'') ILIKE '%' || $1 || '%')
@@ -438,6 +454,7 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
     outlet: (r.source || 'ESPN').trim() || 'ESPN',
     publishedAt: r.published_at,
     image: r.image_url,
+    imageCredit: r.image_credit,
     author: r.author,
   }));
 
@@ -446,8 +463,18 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
   }
 
   // 3. Image harvest: best real photo attached to a story about the subject.
-  let coverImage = subject.image;
-  let coverCredit = subject.imageCredit;
+  // Cover preference order (all real photos from the harvested context):
+  //   a) newest context photo that carries a photo credit,
+  //   b) newest context photo with outlet fallback credit,
+  //   c) subject candidate image, d) player headshot / team logo fallbacks.
+  const isRealImage = (u: string | null | undefined): u is string => {
+    if (!u) return false;
+    return /^https?:\/\//i.test(String(u).trim());
+  };
+  const photosWithCredit = headlines.find((h) => isRealImage(h.image) && (h.imageCredit ?? '').trim());
+  const withPhoto = headlines.find((h) => isRealImage(h.image));
+  let coverImage: string | null = subject.image && isRealImage(subject.image) ? subject.image : null;
+  let coverCredit: string | null = subject.imageCredit;
   if (!coverImage && mode === 'player') {
     const shot = await playerHeadshot(subject.name, subject.sport);
     coverImage = shot.url;
@@ -457,11 +484,12 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
     coverImage = teamLogoUrl(subject.name);
     coverCredit = coverImage ? 'Team logo' : null;
   }
-  // Prefer the newest real article photo over anything else.
-  const withPhoto = headlines.find((h) => h.image);
-  if (withPhoto) {
+  if (photosWithCredit) {
+    coverImage = photosWithCredit.image;
+    coverCredit = photoCredit(photosWithCredit.imageCredit, photosWithCredit.outlet);
+  } else if (withPhoto) {
     coverImage = withPhoto.image;
-    coverCredit = withPhoto.author ?? 'ESPN';
+    coverCredit = photoCredit(withPhoto.imageCredit, withPhoto.outlet);
   }
 
   // 4. Build the prompt.
@@ -485,6 +513,29 @@ export async function generateArticleDraft(opts: GenerateOptions = {}): Promise<
     )
     .join('\n');
 
+  // Inline image pool: distinct real photos from the harvested context, in
+  // context order. The cover may reuse one of them (fine — hero + inline
+  // duplicates read naturally) but pool order is what the prompt shows.
+  const imagePool: InlineImage[] = headlines
+    .filter((h) => h.image && /^https?:\/\//i.test(h.image.trim()))
+    .reduce<InlineImage[]>((acc, h) => {
+      const u = h.image!.trim();
+      if (!acc.some((p) => p.url === u)) {
+        acc.push({
+          url: u,
+          caption: h.headline.slice(0, 120),
+          credit: photoCredit(h.imageCredit, h.outlet),
+        });
+      }
+      return acc;
+    }, [])
+    .slice(0, 4);
+  const imagePoolBlock = imagePool.length
+    ? imagePool
+        .map((p, i) => `[image ${i + 1}] ${p.url} (photo of/about ${subject.name}; credit: ${p.credit ?? 'the outlet'})`)
+        .join('\n')
+    : '';
+
   const userPrompt = `Write this week's ValorOdds ${mode === 'player' ? 'Player Spotlight' : 'Team Spotlight'} article.
 
 SUBJECT: ${subject.name} (${subject.sport})
@@ -493,8 +544,11 @@ SUBJECT TYPE: ${mode}
 
 RECENT HEADLINES (your only factual sources — cite them):
 ${contextBlock}
-
-Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]). End with "## What to watch". Return STRICT JSON.`;
+${imagePoolBlock ? `
+AVAILABLE PHOTOS (real images you may embed — use the exact URL):
+${imagePoolBlock}
+` : ''}
+Requirements: 550-800 words. Cover why ${subject.name} is trending this week, what the reporting says, and what it means for their season. Cite sources inline with markdown links labeled by outlet name (e.g. [CBS Sports](url) — never [source 2]).${imagePoolBlock ? ` Embed ${imagePool.length >= 2 ? 'exactly two photos' : 'the one photo'} from AVAILABLE PHOTOS at natural points mid-article as markdown images: ![short caption — photo credit](exact URL). Never invent image URLs; never write image-2 placeholders.` : ' Do not embed any images.'} End with "## What to watch". Return STRICT JSON.`;
 
   // 5. Run the provider ladder.
   const providers = buildProviderLadder();
@@ -532,10 +586,14 @@ Requirements: 550-800 words. Cover why ${subject.name} is trending this week, wh
   // as [source 3](source-3) placeholders even when told not to. Map them to
   // the real source URL (1-ordered, matching the prompt block) labeled with
   // the outlet that published the headline, or drop them when no URL exists.
-  const bodyMd = mapPlaceholderCitations(
+  let bodyMd = mapPlaceholderCitations(
     parsed.body_md,
     headlines.map((h) => ({ url: h.url, name: h.outlet }))
   );
+  // Inline image hygiene: map invented/placeholder image links to real pool
+  // photos, cap at 2, strip everything else. Runs after citation mapping so
+  // image alt text is never mistaken for a citation.
+  bodyMd = normalizeInlineImages(bodyMd, imagePool, 2);
 
   return {
     title: parsed.title.slice(0, 200),

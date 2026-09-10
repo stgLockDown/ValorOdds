@@ -46,7 +46,7 @@ const CSP_DIRECTIVES = [
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://*.stripe.com https://www.googletagmanager.com https://www.google-analytics.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  "img-src 'self' data: blob: https://cdn.discordapp.com https://images.unsplash.com https://www.google-analytics.com https://*.espncdn.com https://espnmedia-cdn.akamaized.net",
+  "img-src 'self' data: blob: https://cdn.discordapp.com https://images.unsplash.com https://www.google-analytics.com https://*.espncdn.com https://espnmedia-cdn.akamaized.net https://sportshub.cbsistatic.com https://nbcsports.brightspotcdn.com https://media.zenfs.com https://d29szjachogqwa.cloudfront.net",
   // Push services (Google FCM, Mozilla autopush, Apple, Windows WNS) are the
   // endpoints browsers POST to for Web Push; the SW also fetches our own API.
   "connect-src 'self' https://*.stripe.com https://www.google-analytics.com https://region1.google-analytics.com https://fcm.googleapis.com https://*.push.apple.com https://*.notify.windows.com https://*.push.services.mozilla.com",
@@ -111,6 +111,12 @@ const nextConfig = {
       // ESPN article images (news reels + player articles).
       { protocol: 'https', hostname: '**.espncdn.com' },
       { protocol: 'https', hostname: 'espnmedia-cdn.akamaized.net' },
+      // Multi-source news photos: CBS, NBC, Yahoo CDNs (harvested by the bot
+      // alongside ESPN — see ValorOddsDiscordBot shared/api_services.js).
+      { protocol: 'https', hostname: 'sportshub.cbsistatic.com' },
+      { protocol: 'https', hostname: 'nbcsports.brightspotcdn.com' },
+      { protocol: 'https', hostname: 'media.zenfs.com' },
+      { protocol: 'https', hostname: 'd29szjachogqwa.cloudfront.net' },
     ],
   },
 
