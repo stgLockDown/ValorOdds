@@ -34,10 +34,19 @@ export class StripeNotConfiguredError extends Error {
  * True iff a usable Stripe secret key is present. Cheap — does not construct
  * the SDK. Use this in server components to decide whether to render a
  * Stripe-dependent UI block.
+ *
+ * Accepts both full secret keys (`sk_live_…` / `sk_test_…`) and restricted
+ * keys (`rk_live_…` / `rk_test_…`). It deliberately REJECTS API key IDs
+ * (`mk_…` / `rk_…`-less identifiers) — those are the *ID* of a key shown in
+ * the dashboard, not usable key material, and using them yields 401s.
  */
 export function isStripeConfigured(): boolean {
   const key = env.stripeSecretKey();
-  return typeof key === 'string' && key.startsWith('sk_') && key.length > 20;
+  if (typeof key !== 'string' || key.length <= 20) return false;
+  // Explicitly exclude the "mk_" API-key ID prefix — a common misconfiguration
+  // where the dashboard's key ID is pasted instead of the key material.
+  if (key.startsWith('mk_')) return false;
+  return key.startsWith('sk_') || key.startsWith('rk_');
 }
 
 /**
@@ -62,7 +71,23 @@ export function getStripe(): Stripe {
 
 const PRICE_CACHE_TTL = 10 * 60 * 1000; // 10 min
 
-async function resolveActivePriceForProduct(productId: string): Promise<string> {
+/** Advertised monthly prices (cents) per tier — from the pricing page. */
+const TIER_PRICE_CENTS: Record<Exclude<Tier, 'free'>, number> = {
+  basic: 999,
+  premium: 3000,
+  vip: 8000,
+};
+
+/**
+ * Resolve the active monthly price for a product. If the product has no
+ * active monthly price (e.g. it was created in the dashboard without one),
+ * self-heal by creating it at the advertised price — otherwise checkout
+ * would 500 forever until someone opened the dashboard.
+ */
+async function resolveActivePriceForProduct(
+  productId: string,
+  tier: Exclude<Tier, 'free'>,
+): Promise<string> {
   const stripe = getStripe();
   const prices = await stripe.prices.list({
     product: productId,
@@ -73,12 +98,22 @@ async function resolveActivePriceForProduct(productId: string): Promise<string> 
   const monthly = prices.data.find(
     (p) => p.recurring?.interval === 'month' && p.active
   );
+  if (monthly) return monthly.id;
   const fallback = prices.data.find((p) => p.active);
-  const chosen = monthly ?? fallback;
-  if (!chosen) {
-    throw new Error(`No active price found for product ${productId}`);
-  }
-  return chosen.id;
+  if (fallback) return fallback.id;
+
+  const price = await stripe.prices.create({
+    product: productId,
+    unit_amount: TIER_PRICE_CENTS[tier],
+    currency: 'usd',
+    recurring: { interval: 'month' },
+    nickname: `${tier[0].toUpperCase()}${tier.slice(1)} — monthly`,
+  });
+  // eslint-disable-next-line no-console
+  console.log(
+    `[stripe] no active price on product ${productId}; created monthly price ${price.id} at $${(TIER_PRICE_CENTS[tier] / 100).toFixed(2)}`
+  );
+  return price.id;
 }
 
 export async function getPriceId(tier: Exclude<Tier, 'free'>): Promise<string> {
@@ -99,7 +134,7 @@ export async function getPriceId(tier: Exclude<Tier, 'free'>): Promise<string> {
       `No Stripe product configured for tier "${tier}". Set STRIPE_PRODUCT_${tier.toUpperCase()} in the environment.`,
     );
   }
-  const priceId = await resolveActivePriceForProduct(productId);
+  const priceId = await resolveActivePriceForProduct(productId, tier);
 
   global.__stripePriceCache = {
     ...cache,
