@@ -47,6 +47,10 @@ const PatchBody = z
           channel: z.string().min(1).max(30).optional(),
           body: z.string().min(1).max(3800),
           model: z.string().max(120).optional().nullable(),
+          // Image fields are optional so admin body-edits never strip them;
+          // explicit values (image picker) win when provided.
+          image_url: z.string().trim().max(600).optional().nullable(),
+          image_credit: z.string().trim().max(200).optional().nullable(),
         })
       )
       .max(8)
@@ -82,11 +86,18 @@ export async function PATCH(
     if (existing.status === 'posted') {
       return NextResponse.json({ error: 'Campaign already posted — content is immutable' }, { status: 400 });
     }
-    // Merge admin edits over the stored variants (keeps ids/labels/channel).
+    // Merge admin edits over the stored variants (keeps ids/labels/channel,
+    // and images unless the edit explicitly swaps them).
     const merged: MarketingVariant[] = existing.variants.map((v) => {
       const edit = body.variants!.find((e) => e.id === v.id);
       if (!edit) return v;
-      return { ...v, body: edit.body, model: edit.model ?? v.model };
+      return {
+        ...v,
+        body: edit.body,
+        model: edit.model ?? v.model,
+        image_url: edit.image_url !== undefined ? edit.image_url : v.image_url,
+        image_credit: edit.image_credit !== undefined ? edit.image_credit : v.image_credit,
+      };
     });
     const updated = await updateMarketingVariants(id, merged);
     if (body.status && updated) {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Loader2, Sparkles, RefreshCw, XCircle, Pencil, Trash2, Send,
   Megaphone, ListChecks, Save, CheckCircle2, ExternalLink, ChevronDown,
+  ImageIcon, Link2,
 } from 'lucide-react';
 
 // ---------- types (mirror lib/marketing-studio) ----------
@@ -14,6 +15,8 @@ interface Variant {
   channel: string;
   body: string;
   model?: string | null;
+  image_url?: string | null;
+  image_credit?: string | null;
 }
 
 interface PostedVariant {
@@ -101,6 +104,51 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`);
   return json as T;
+}
+
+// ---------- post image preview ----------
+
+function VariantImage({ v, className }: { v: Variant; className?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyUrl = async () => {
+    if (!v.image_url) return;
+    try {
+      await navigator.clipboard.writeText(v.image_url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch { /* clipboard unavailable — the URL is shown in the edit tab */ }
+  };
+
+  if (!v.image_url) return null;
+
+  return (
+    <div className={className ?? 'mt-3'}>
+      <div className="group relative overflow-hidden rounded-lg border border-brand-border bg-brand-surface">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={v.image_url}
+          alt={v.image_credit ? `Campaign image — ${v.image_credit}` : 'Campaign image'}
+          loading="lazy"
+          className={`w-full object-cover ${v.channel === 'instagram' ? 'aspect-square' : 'aspect-[16/9]'}`}
+        />
+        <div className="absolute inset-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
+          {v.image_credit && (
+            <span className="truncate text-[10px] font-medium text-white/90">{v.image_credit}</span>
+          )}
+          <button
+            type="button"
+            onClick={copyUrl}
+            title="Copy image URL"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur hover:bg-white/30"
+          >
+            {copied ? <CheckCircle2 className="h-3 w-3" /> : <Link2 className="h-3 w-3" />}
+            {copied ? 'Copied' : 'URL'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------- main ----------
@@ -236,7 +284,8 @@ function CreateTab({ flash, onCreated, botReachable }: { flash: Flash; onCreated
       <h2 className="mb-1 text-lg font-semibold">Today&apos;s brief</h2>
       <p className="mb-5 text-sm text-brand-muted">
         The generator pulls live arbitrage opportunities, upcoming games, ESPN news and published articles, then writes
-        three variants: a Discord announcement, a Discord bettor post, and an X post.
+        four variants: a Discord announcement, a Discord bettor post, an X post, and an Instagram caption. Every variant
+        ships with an image — the most relevant credited sports photo (or a branded ValorOdds card when the news is quiet).
       </p>
 
       <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-brand-muted">Topic</label>
@@ -424,6 +473,7 @@ function QueueTab({
                   <span className="text-[11px] text-brand-muted/70">{v.body.length} chars{v.channel === 'x' ? ' / 280 target' : ''}</span>
                 </div>
                 <p className="whitespace-pre-wrap text-sm text-brand-text/90">{v.body}</p>
+                <VariantImage v={v} className="mt-3" />
               </div>
             ))}
           </div>
@@ -531,7 +581,8 @@ function ShipPanel({
                   }`}
                 >
                   <span className="font-semibold">{v.label}</span>
-                  {v.channel === 'x' && <span className="ml-2 text-[11px] text-brand-muted">(not Discord — copy it manually)</span>}
+                  {v.channel === 'x' && <span className="ml-2 text-[11px] text-brand-muted">(not Discord — copy text + image URL from the card)</span>}
+                  {v.channel === 'instagram' && <span className="ml-2 text-[11px] text-brand-muted">(not Discord — caption + square image in the queue)</span>}
                 </button>
               ))}
             </div>
@@ -583,12 +634,23 @@ function EditTab({
   const [bodies, setBodies] = useState<Record<string, string>>(
     () => Object.fromEntries(post.variants.map((v) => [v.id, v.body]))
   );
+  const [imgUrls, setImgUrls] = useState<Record<string, string>>(
+    () => Object.fromEntries(post.variants.map((v) => [v.id, v.image_url ?? '']))
+  );
+  const [imgCredits, setImgCredits] = useState<Record<string, string>>(
+    () => Object.fromEntries(post.variants.map((v) => [v.id, v.image_credit ?? '']))
+  );
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
     try {
-      const variants = post.variants.map((v) => ({ ...v, body: bodies[v.id] ?? v.body }));
+      const variants = post.variants.map((v) => ({
+        ...v,
+        body: bodies[v.id] ?? v.body,
+        image_url: imgUrls[v.id]?.trim() || null,
+        image_credit: imgCredits[v.id]?.trim() || null,
+      }));
       const r = await api<{ post: MPost }>(`/api/admin/marketing/${post.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ variants }),
@@ -637,6 +699,44 @@ function EditTab({
             maxLength={3800}
             className="w-full rounded-lg border border-brand-border bg-brand-surface px-3 py-2.5 text-sm outline-none focus:border-brand-primary"
           />
+
+          {/* post image */}
+          <div className="mt-4 rounded-lg border border-brand-border bg-brand-surface/50 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
+              <ImageIcon className="h-3.5 w-3.5" /> Post image
+            </div>
+            {(imgUrls[v.id] ?? '').trim() && (
+              <div className="mb-3 overflow-hidden rounded-lg border border-brand-border">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imgUrls[v.id]}
+                  alt={imgCredits[v.id] || 'Post image'}
+                  className={`w-full object-cover ${v.channel === 'instagram' ? 'aspect-square' : 'aspect-[16/9]'}`}
+                />
+              </div>
+            )}
+            <label className="mb-1 block text-[11px] text-brand-muted">Image URL</label>
+            <input
+              value={imgUrls[v.id] ?? ''}
+              onChange={(e) => setImgUrls((m) => ({ ...m, [v.id]: e.target.value }))}
+              maxLength={600}
+              placeholder="https://… (empty = no image)"
+              className="mb-3 w-full rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-xs outline-none focus:border-brand-primary"
+            />
+            <label className="mb-1 block text-[11px] text-brand-muted">Image credit (attribution)</label>
+            <input
+              value={imgCredits[v.id] ?? ''}
+              onChange={(e) => setImgCredits((m) => ({ ...m, [v.id]: e.target.value }))}
+              maxLength={200}
+              placeholder="e.g. Icon Sportswire via Getty Images"
+              className="w-full rounded-lg border border-brand-border bg-brand-surface px-3 py-2 text-xs outline-none focus:border-brand-primary"
+            />
+            {v.channel === 'instagram' && (
+              <p className="mt-2 text-[11px] text-brand-muted/80">
+                Instagram posts use a square (1080×1080) image — a news photo still works, but square branded cards look best.
+              </p>
+            )}
+          </div>
         </div>
       ))}
 

@@ -3,17 +3,22 @@
  *
  * Flow: an admin writes a brief (topic + audience + tone + notes + focus
  * sports). We harvest a snapshot of live platform data — top arbitrage
- * opportunities, upcoming games, ESPN news, published ValorOdds articles —
- * then run the same OpenAI→DeepSeek provider ladder the News Studio uses to
- * produce channel-specific marketing copy. The admin reviews/edits, approves,
- * and ships each variant to Discord through the bot's internal API.
+ * opportunities, upcoming games, ESPN news, published ValorOdds articles,
+ * plus a pool of credited photos — then run the same OpenAI→DeepSeek
+ * provider ladder the News Studio uses to produce channel-specific marketing
+ * copy. Every variant ships with an image: the most relevant credited photo
+ * from the pool, or a branded ValorOdds card when the pool is empty (square
+ * card for Instagram). The admin reviews/edits, approves, and ships each
+ * variant to Discord through the bot's internal API — the image rides along
+ * as a Discord embed.
  */
 import { query, queryOne } from './db';
 import { getTopOpportunities } from './public-data';
 import { getGamesGrid, isGamesHubSport } from './games-data';
 import { getTopNews } from './espn-news';
 import { getPublishedFeed } from './news-platform';
-import { buildProviderLadder, callProvider, type Provider } from './article-generator';
+import { buildProviderLadder, callProvider, photoCredit, type Provider } from './article-generator';
+import { SITE } from './seo';
 
 // ---------- types ----------
 
@@ -29,11 +34,15 @@ export interface MarketingChannel {
 }
 
 export interface MarketingVariant {
-  id: string;          // stable slug ('discord-main', 'discord-sharp', 'x-thread')
+  id: string;          // stable slug ('discord-main', 'discord-sharp', 'x-thread', 'ig-post')
   label: string;       // display label
-  channel: string;     // 'discord' | 'x' | 'blog'
+  channel: string;     // 'discord' | 'x' | 'instagram' | 'blog'
   body: string;        // the copy
   model?: string | null;
+  /** Accompanying image (URL) — a credited photo, or a branded ValorOdds card. */
+  image_url?: string | null;
+  /** Photo credit when image_url is a sourced news photo (empty for branded cards). */
+  image_credit?: string | null;
 }
 
 export interface MarketingBrief {
@@ -42,6 +51,16 @@ export interface MarketingBrief {
   tone: MarketingTone;
   notes?: string | null;
   focusSports?: string[];
+}
+
+/** A harvested, credited photo that can accompany marketing posts. */
+export interface MarketingPhoto {
+  url: string;
+  credit: string;
+  /** What the photo is about — used to pick the most relevant photo per variant. */
+  context: string;
+  /** Sport code when known (focus-sport matching). */
+  sport: string | null;
 }
 
 export interface PlatformSnapshot {
@@ -58,6 +77,8 @@ export interface PlatformSnapshot {
   games: Array<{ match: string; sport: string; books: number; starts: string | null }>;
   news: Array<{ headline: string; sport: string | null; url: string; publishedAt: string | null }>;
   articles: Array<{ title: string; slug: string; sport: string | null; publishedAt: string | null }>;
+  /** Credited photo pool for post images (may be empty — branded fallback applies). */
+  photos: MarketingPhoto[];
 }
 
 export interface MarketingPost {
@@ -82,40 +103,123 @@ export interface MarketingPost {
 
 const SPORTS = ['NFL', 'NBA', 'MLB', 'NHL', 'NCAAF', 'NCAAB', 'SOCCER'] as const;
 
-/** The three copy variants every campaign generates. */
+/** The copy variants every campaign generates. */
 const VARIANT_SPECS = [
   {
     id: 'discord-main',
     label: 'Discord — main announcement',
     channel: 'discord',
-    guidance: 'For the general announcements channel. 200-350 chars. One hook line, one concrete fact from the data, one CTA linking valorodds.com. May use 1-2 relevant emojis. No @mentions, no markdown headers.',
+    guidance: 'For the general announcements channel. 200-350 chars. One hook line, one concrete fact from the data, one CTA linking valorodds.com. May use 1-2 relevant emojis. No @mentions, no markdown headers. The post ships with an image — do not describe it in the copy.',
   },
   {
     id: 'discord-sharp',
     label: 'Discord — bettor-focused',
     channel: 'discord',
-    guidance: 'For a betting-community channel. 250-450 chars. Lead with the strongest number from the data (arb %, game count, book count). Casual bettor slang ok but no hype-slop. End with a CTA. No @mentions, no markdown headers.',
+    guidance: 'For a betting-community channel. 250-450 chars. Lead with the strongest number from the data (arb %, game count, book count). Casual bettor slang ok but no hype-slop. End with a CTA. No @mentions, no markdown headers. The post ships with an image — do not describe it in the copy.',
   },
   {
     id: 'x-thread',
     label: 'X / Twitter post',
     channel: 'x',
-    guidance: 'A single X post, 280 chars max including any URL. Punchy, no hashtags spam (at most 1), must contain a real number from the data.',
+    guidance: 'A single X post, 280 chars max including any URL. Punchy, no hashtags spam (at most 1), must contain a real number from the data. The post ships with an image — do not describe it in the copy; alt text is handled separately.',
+  },
+  {
+    id: 'ig-post',
+    label: 'Instagram — caption post',
+    channel: 'instagram',
+    guidance: 'An Instagram caption to pair with the campaign image. 150-400 chars, 1-3 short paragraphs or lines separated by newlines. At most 3 hashtags (mix of niche + broad, e.g. #sportsbetting #arbitragebetting #NFL). Include one real number from the data. No @mentions. Instagram captions do not hyperlink raw URLs — reference the site as valorodds.com (plain text) or "link in bio" instead of pasting article links. The image is the star of the post — the caption complements it, never describes it.',
   },
 ] as const;
 
 // ---------- context harvest ----------
+
+/**
+ * Credited photo pool for post images. Sources, in order:
+ *   1. bot-harvested `news` rows (image_url + image_credit populated per outlet)
+ *   2. published ValorOdds article covers (merged in by the caller)
+ * Soft-fails to [] — the branded-card fallback covers an empty pool.
+ */
+async function harvestNewsPhotoPool(focusSports: string[]): Promise<MarketingPhoto[]> {
+  const focus = focusSports.map((s) => s.toUpperCase()).filter(Boolean);
+  try {
+    const r = await query<{
+      sport: string | null;
+      headline: string;
+      image_url: string;
+      image_credit: string | null;
+      source: string | null;
+      published_at: string | null;
+    }>(
+      `SELECT DISTINCT ON (image_url) sport, headline, image_url, image_credit, source, published_at
+       FROM news
+       WHERE image_url ~ '^https?://'
+         AND published_at >= NOW() - INTERVAL '48 hours'
+       ORDER BY image_url, published_at DESC
+       LIMIT 24`
+    );
+    // Rows arrive ordered by image_url (DISTINCT ON requirement) — re-sort
+    // in JS: focus-sport photos first, then most recently published rows.
+    const withTime = r.rows.map((row) => ({
+      photo: {
+        url: row.image_url,
+        credit: photoCredit(row.image_credit, row.source) ?? '',
+        context: row.headline,
+        sport: row.sport ?? null,
+      } as MarketingPhoto,
+      at: row.published_at ? Date.parse(String(row.published_at)) || 0 : 0,
+    }));
+    withTime.sort((a, b) => {
+      const aFocus = focus.length && a.photo.sport && focus.includes(a.photo.sport) ? 0 : 1;
+      const bFocus = focus.length && b.photo.sport && focus.includes(b.photo.sport) ? 0 : 1;
+      if (aFocus !== bFocus) return aFocus - bFocus;
+      return b.at - a.at; // newest rows first
+    });
+    return withTime.slice(0, 12).map((w) => w.photo);
+  } catch (err) {
+    console.error('[harvestNewsPhotoPool] query failed:', err);
+    return [];
+  }
+}
 
 export async function harvestPlatformSnapshot(focusSports: string[] = []): Promise<PlatformSnapshot> {
   const focus = focusSports.map((s) => s.toUpperCase()).filter((s) => SPORTS.includes(s as any));
 
   // All sources degrade independently — an empty snapshot is still a valid
   // generation context (the brief itself carries the message).
-  const [opps, news, articles] = await Promise.all([
+  const [opps, news, articles, newsPhotos] = await Promise.all([
     getTopOpportunities(8).catch(() => []),
     getTopNews(10).catch(() => [] as Awaited<ReturnType<typeof getTopNews>>),
     getPublishedFeed({ limit: 5 }).catch(() => []),
+    harvestNewsPhotoPool(focusSports),
   ]);
+
+  // Merge the photo sources into one pool, deduped by URL: news-table rows
+  // (bot-harvested, credited), article covers, ESPN reel images.
+  const photoByUrl = new Map<string, MarketingPhoto>();
+  for (const p of newsPhotos) photoByUrl.set(p.url, p);
+  for (const a of articles) {
+    if (a.cover_image_url && /^https?:\/\//i.test(a.cover_image_url)) {
+      if (!photoByUrl.has(a.cover_image_url)) {
+        photoByUrl.set(a.cover_image_url, {
+          url: a.cover_image_url,
+          credit: (a.image_credit ?? '').trim(),
+          context: a.title,
+          sport: a.sport ?? null,
+        });
+      }
+    }
+  }
+  for (const n of news) {
+    if (n.imageUrl && /^https?:\/\//i.test(n.imageUrl) && !photoByUrl.has(n.imageUrl)) {
+      photoByUrl.set(n.imageUrl, {
+        url: n.imageUrl,
+        credit: n.imageCredit ?? 'ESPN',
+        context: n.headline,
+        sport: null,
+      });
+    }
+  }
+  const photos = [...photoByUrl.values()].slice(0, 16);
 
   // Games for focus sports (or a spread of major sports when no focus given)
   const sportsForGames = focus.length ? focus : ['NFL', 'NBA', 'MLB', 'NHL'];
@@ -161,7 +265,51 @@ export async function harvestPlatformSnapshot(focusSports: string[] = []): Promi
       sport: a.sport,
       publishedAt: a.published_at,
     })),
+    photos,
   };
+}
+
+// ---------- post images ----------
+
+/**
+ * Branded ValorOdds card (the /api/og dynamic generator) used when no
+ * credited photo is available. Square for Instagram, 1200x630 elsewhere.
+ * Absolute URL— it must resolve when the post ships to Discord/X/IG.
+ */
+function brandedCardUrl(brief: MarketingBrief, square: boolean): string {
+  const params = new URLSearchParams({
+    title: brief.topic.slice(0, 120),
+    subtitle: 'Real-time arbitrage · AI player props · live odds',
+    kicker: SITE.name,
+  });
+  if (square) params.set('square', '1');
+  return `${SITE.url}/api/og?${params.toString()}`;
+}
+
+/**
+ * Attach an image to every generated variant. Strategy: the campaign's
+ * hero photo — the most relevant credited photo in the pool (focus-sport
+ * matched, most recent) — keeps one consistent creative across channels.
+ * Empty pool (or unusable URLs) falls back to a branded ValorOdds card,
+ * square for Instagram. The photo credit rides along for attribution.
+ */
+function assignImagesToVariants(
+  variants: MarketingVariant[],
+  brief: MarketingBrief,
+  snapshot: PlatformSnapshot
+): MarketingVariant[] {
+  const usable = snapshot.photos.filter((p) => /^https?:\/\//i.test(p.url));
+  const hero = usable[0] ?? null;
+  return variants.map((v) => {
+    if (hero) {
+      return { ...v, image_url: hero.url, image_credit: hero.credit || null };
+    }
+    return {
+      ...v,
+      image_url: brandedCardUrl(brief, v.channel === 'instagram'),
+      image_credit: null,
+    };
+  });
 }
 
 // ---------- AI generation ----------
@@ -173,8 +321,9 @@ Hard rules:
 - No gambling advice, no "guaranteed wins", no odds picks in marketing copy. We market the product (data, alerts, coverage), not bets.
 - No @mentions, no role pings, no URLs other than valorodds.com paths from the data.
 - Each variant MUST respect its char limit and platform norms.
+- Every post ships with an image attached automatically (a credited sports photo or a branded ValorOdds card)— NEVER describe or mention the image in the copy; the copy stands alone.
 - Output STRICT JSON only (no markdown fences, no commentary):
-{"discord-main": "...", "discord-sharp": "...", "x-thread": "..."}`;
+{"discord-main": "...", "discord-sharp": "...", "x-thread": "...", "ig-post": "..."}`;
 
 function buildUserPrompt(brief: MarketingBrief, snapshot: PlatformSnapshot): string {
   const audienceMap: Record<MarketingAudience, string> = {
@@ -271,7 +420,9 @@ export async function generateMarketingVariants(
   if (!variants.length) {
     throw new Error('Marketing generation produced no usable variants');
   }
-  return { variants, model: usedProvider.name };
+  // Attach the campaign image to every variant (hero photo, or branded card).
+  const withImages = assignImagesToVariants(variants, brief, snapshot);
+  return { variants: withImages, model: usedProvider.name };
 }
 
 // ---------- persistence ----------
@@ -292,7 +443,7 @@ function rowToPost(row: any): MarketingPost {
     tone: row.tone,
     extraNotes: row.extra_notes,
     focusSports: row.focus_sports ?? [],
-    context: row.context ?? { harvestedAt: '', opportunities: [], games: [], news: [], articles: [] },
+    context: row.context ?? { harvestedAt: '', opportunities: [], games: [], news: [], articles: [], photos: [] },
     variants: Object.values(row.variants ?? {}) as MarketingVariant[],
     generatorModel: row.generator_model,
     status: row.status,

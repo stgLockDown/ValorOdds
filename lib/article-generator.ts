@@ -287,7 +287,7 @@ export async function playerHeadshot(name: string, sport: string): Promise<{ url
  * outlet that published the photo (news.source). Never the article author —
  * the byline credits the writer, not the photographer.
  */
-function photoCredit(credit: string | null | undefined, outlet: string | null | undefined): string | null {
+export function photoCredit(credit: string | null | undefined, outlet: string | null | undefined): string | null {
   const c = (credit ?? '').trim();
   if (c) return c.slice(0, 200);
   const o = (outlet ?? '').trim();
