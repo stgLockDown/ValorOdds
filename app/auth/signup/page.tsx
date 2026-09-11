@@ -7,6 +7,21 @@ import SignUpForm from './SignUpForm';
 import { buildMetadata } from '@/lib/seo';
 import { auth } from '@/lib/auth';
 
+const RELATIVE_BASE_A = 'https://a.invalid';
+const RELATIVE_BASE_B = 'https://b.invalid';
+function isSafeRedirectPath(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const s = String(url);
+    return (
+      new URL(s, RELATIVE_BASE_A).origin === RELATIVE_BASE_A &&
+      new URL(s, RELATIVE_BASE_B).origin === RELATIVE_BASE_B
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const metadata: Metadata = buildMetadata({
   title: 'Create your free account',
   description:
@@ -20,7 +35,7 @@ export default async function SignUpPage({ searchParams }: { searchParams: { nex
   // — send them straight to wherever they were headed (or the dashboard).
   const session = await auth();
   if (session?.user) {
-    redirect(searchParams.next ?? '/dashboard');
+    redirect(isSafeRedirectPath(searchParams.next) ? (searchParams.next as string) : '/dashboard');
   }
 
   return (
