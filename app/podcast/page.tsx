@@ -90,6 +90,11 @@ export default async function PodcastPage() {
           <p className="mt-4 text-brand-muted text-lg">
             Sports analytics, market moves, and the stories behind the odds — from the ValorOdds team.
           </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/podcast/studio" className="btn-primary">
+              Watch in the Studio →
+            </Link>
+          </div>
         </div>
 
         <div className="mt-10 space-y-4">

@@ -186,6 +186,9 @@ export default function PodcastStudioClient() {
           </p>
         </div>
         <div className="flex gap-2">
+          <a href="/podcast/studio" target="_blank" rel="noopener noreferrer" className="btn-secondary inline-flex items-center gap-2">
+            <ExternalLink className="h-4 w-4" /> Open Studio view
+          </a>
           <button onClick={load} className="btn-secondary inline-flex items-center gap-2" disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
