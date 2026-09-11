@@ -52,6 +52,7 @@ export default function robots(): MetadataRoute.Robots {
     '/dashboard',
     '/account',
     '/admin',
+    '/podcast',
     '/checkout',
     '/api/',
     '/auth/verify',
