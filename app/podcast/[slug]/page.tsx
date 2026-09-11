@@ -128,9 +128,17 @@ export default async function EpisodePage({ params }: PageProps) {
             <p className="font-semibold">{PODCAST_NAME}</p>
             <p className="text-sm text-brand-muted">The ValorOdds podcast</p>
           </div>
-          <Link href="/podcast" className="btn-secondary">
-            All episodes
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href={`/podcast/studio?ep=${episode.slug}`}
+              className="btn-primary"
+            >
+              Watch in Studio
+            </Link>
+            <Link href="/podcast" className="btn-secondary">
+              All episodes
+            </Link>
+          </div>
         </div>
       </main>
       <Footer />

@@ -219,3 +219,203 @@
 .dd-layout-container:not(.dd-layout-editing) .react-grid-item {
   cursor: default;
 }
+
+/* ============================================================ */
+/* Podcast Studio — ESPN-style broadcast set (app/podcast/studio) */
+/* ============================================================ */
+
+/* The overall studio set: dark stage, subtle depth, rounded frame */
+.studio-set {
+  position: relative;
+  border-radius: 16px;
+  padding: 18px 18px 0;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(99, 102, 241, 0.16), transparent 55%),
+    radial-gradient(80% 60% at 85% 100%, rgba(245, 158, 11, 0.10), transparent 60%),
+    linear-gradient(180deg, #0d1326 0%, #080b16 100%);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  box-shadow:
+    0 24px 60px -24px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Ceiling light rig — three hanging studio lights */
+.studio-rig {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 8px 12px;
+}
+.studio-rig span {
+  width: 46px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(165, 180, 252, 0.55), transparent);
+  box-shadow: 0 2px 14px 2px rgba(99, 102, 241, 0.35);
+}
+
+/* Set nameplate above the screen wall */
+.studio-nameplate {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 10px;
+}
+.studio-nameplate-show {
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  font-size: 13px;
+  color: #a5b4fc;
+}
+.studio-nameplate-sub {
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: rgba(156, 163, 175, 0.8);
+}
+
+/* The screen wall — where the video sits */
+.studio-screenwall {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 45px rgba(99, 102, 241, 0.12);
+}
+
+/* Studio desk / control bar under the screen */
+.studio-desk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 6px 14px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Broadcast overlay graphics (over the video) ---------- */
+
+/* Lower third — classic broadcast chyron */
+.studio-lower-third {
+  display: flex;
+  align-items: stretch;
+  max-width: min(92%, 560px);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+  animation: studio-slide-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.studio-lower-third-chip {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  padding-right: 14px;
+}
+.studio-lower-third-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: linear-gradient(90deg, rgba(10, 14, 26, 0.92), rgba(10, 14, 26, 0.78));
+  backdrop-filter: blur(3px);
+  padding: 5px 12px 6px;
+  border-left: none;
+}
+.studio-lower-third-title {
+  font-size: clamp(12px, 1.6vw, 15px);
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.25;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.studio-lower-third-sub {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: 1px;
+  text-transform: uppercase;
+}
+
+@keyframes studio-slide-in {
+  from { transform: translateX(-16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ---------- News ticker ---------- */
+
+.studio-ticker {
+  margin-top: 14px;
+  display: flex;
+  align-items: stretch;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(99, 102, 241, 0.30);
+  background: #0a0e1a;
+}
+.studio-ticker-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  flex-shrink: 0;
+}
+.studio-ticker-track {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+.studio-ticker-items {
+  display: flex;
+  gap: 40px;
+  width: max-content;
+  padding: 9px 0;
+  animation: studio-marquee 60s linear infinite;
+}
+.studio-ticker:hover .studio-ticker-items {
+  animation-play-state: paused;
+}
+.studio-ticker-item {
+  white-space: nowrap;
+  font-size: 12px;
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+}
+.studio-ticker-item:hover {
+  color: #fff;
+}
+@keyframes studio-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ---------- Episode rundown list ---------- */
+
+.studio-rundown-item {
+  border-bottom: 1px solid rgba(55, 65, 81, 0.5);
+  transition: background 0.15s;
+}
+.studio-rundown-item:hover {
+  background: rgba(99, 102, 241, 0.06);
+}
+.studio-rundown-item[data-active='true'] {
+  background: rgba(99, 102, 241, 0.12);
+  box-shadow: inset 3px 0 0 #4f46e5;
+}
+.studio-rundown-item button {
+  padding: 10px 14px;
+  display: block;
+  width: 100%;
+}
