@@ -233,8 +233,8 @@ async function fetchUpcomingGamesBestOddsFallback(
        WHERE ${filter.clause}
          AND game_id = ANY($${oddsIdx})
          AND outcome_price != 0
-         AND ABS(outcome_price) <= ${MAX_VALID_AMERICAN_ODDS}`,
-      [...filter.params, gameIds],
+         AND ABS(outcome_price) <= $${oddsIdx + 1}`,
+      [...filter.params, gameIds, MAX_VALID_AMERICAN_ODDS],
     );
     oddsRows = odds.rows as any[];
   } catch {
