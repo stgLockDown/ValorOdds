@@ -17,6 +17,19 @@ const DiscordIcon = () => (
  * Configuration, AccessDenied, Verification, …). Anything we don't recognise
  * falls through to a generic message instead of leaking the raw code.
  */
+function isSafeRedirectUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(String(url).replace(/[\t\n\r]/g, ''), window.location.origin);
+    return (
+      parsed.origin === window.location.origin &&
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
 function mapAuthError(code?: string): string | null {
   if (!code) return null;
   switch (code) {
@@ -80,7 +93,8 @@ export default function SignInForm({
       setLoading(null);
       return;
     }
-    window.location.href = res?.url ?? callbackUrl;
+    const target = res?.url ?? callbackUrl;
+    window.location.href = isSafeRedirectUrl(target) ? target : '/';
   }
 
   return (
