@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Trophy, Search, Clock, Pause, Play, Check, Loader2, ArrowLeft,
-  Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown, AlertCircle,
+  Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown, AlertCircle, GraduationCap,
 } from 'lucide-react';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
 import {
@@ -27,6 +27,9 @@ interface Player {
   adp: number | null;
   vegasScore?: number | null;
   vegasRank?: number | null;
+  // Pool sport (NFL | MLB | NCAAF) — college players carry 'NCAAF' so the
+  // UI can badge them and apply taxi-squad rules.
+  sport?: string | null;
   // Bio fields (returned by /api/dd/players from dd_player_pool)
   espnId?: string | null;
   headshot?: string | null;
@@ -77,7 +80,7 @@ interface DraftState {
   } | null;
   members: Member[];
   draftBoard: DraftBoardEntry[];
-  teamRosters: Record<string, { playerName: string; position: string | null; team: string | null; round: number; overallPick: number }[]>;
+  teamRosters: Record<string, { playerName: string; position: string | null; team: string | null; round: number; overallPick: number; pickSport?: string | null }[]>;
 }
 
 export default function DraftRoomClient({
@@ -111,6 +114,12 @@ export default function DraftRoomClient({
   const [lastPollTime, setLastPollTime] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [positionWarning, setPositionWarning] = useState<string | null>(null);
+  // ── Dynasty college (devy) mode ──
+  // When enabled the player list queries the NCAAF pool directly; when
+  // disabled, an empty NFL/MLB search falls back to the NCAAF pool so
+  // college players are still discoverable by name.
+  const [collegeFilter, setCollegeFilter] = useState(false);
+  const [collegeFallbackActive, setCollegeFallbackActive] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -155,30 +164,61 @@ export default function DraftRoomClient({
   }, [leagueId]);
 
   // Fetch available players
+  // Dynasty leagues (roster config includes a TAXI slot) can browse the
+  // NCAAF devy pool via the CFB toggle, and a name search that finds
+  // nothing in the league-sport pool falls back to the NCAAF pool so
+  // college players are draftable from the main search box.
+  const isDynastyLeague = !!draftState?.draft.rosterConfig && (() => {
+    const rc = draftState!.draft.rosterConfig;
+    const slots: RosterSlot[] = Array.isArray(rc) ? rc : (rc as { slots: RosterSlot[] }).slots ?? [];
+    return slots.some((s) => s.slot === 'TAXI');
+  })();
+
   const fetchPlayers = useCallback(async () => {
     setPlayersLoading(true);
+    const wantsCollege = collegeFilter && sport !== 'MLB';
     try {
-      const params = new URLSearchParams({
-        sport,
-        seasonYear: String(seasonYear),
-        excludeDrafted: leagueId,
-        sort: sortBy,
-        limit: '100',
-      });
-      if (playerSearch) params.set('search', playerSearch);
-      if (positionFilter) params.set('position', positionFilter);
+      const buildParams = (poolSport: string, searchVal: string) => {
+        const params = new URLSearchParams({
+          sport: poolSport,
+          seasonYear: String(seasonYear),
+          excludeDrafted: leagueId,
+          sort: sortBy,
+          limit: '100',
+        });
+        if (searchVal) params.set('search', searchVal);
+        if (positionFilter) params.set('position', positionFilter);
+        return params;
+      };
 
-      const res = await fetch(`/api/dd/players?${params}`);
-      const data = await res.json();
-      if (res.ok) {
-        setPlayers(data.players || []);
+      let res = await fetch(`/api/dd/players?${buildParams(wantsCollege ? 'NCAAF' : sport, playerSearch)}`);
+      let data = await res.json();
+      let playersFound: Player[] = data.players || [];
+      let fallbackActive = false;
+
+      // Fallback: no league-sport results for this search AND college players
+      // are available (dynasty) → query the NCAAF pool for the same term.
+      if (
+        !wantsCollege &&
+        playersFound.length === 0 &&
+        playerSearch.trim().length > 0 &&
+        sport !== 'MLB' &&
+        isDynastyLeague
+      ) {
+        res = await fetch(`/api/dd/players?${buildParams('NCAAF', playerSearch)}`);
+        data = await res.json();
+        playersFound = data.players || [];
+        fallbackActive = playersFound.length > 0;
       }
+
+      setPlayers(playersFound);
+      setCollegeFallbackActive(fallbackActive);
     } catch {
       // Silently fail
     } finally {
       setPlayersLoading(false);
     }
-  }, [sport, seasonYear, leagueId, playerSearch, positionFilter, sortBy]);
+  }, [sport, seasonYear, leagueId, playerSearch, positionFilter, sortBy, collegeFilter, isDynastyLeague]);
 
   // Initial load
   useEffect(() => {
@@ -629,8 +669,8 @@ export default function DraftRoomClient({
   const onClockMember = currentTurn ? members.find((m) => m.id === currentTurn.memberId) : null;
   const isBotThinking = !isMyTurn && onClockMember?.isBot && !draft.isComplete;
 
-  // Position filter options based on sport
-  const positions = sport === 'NFL'
+  // Position filter options based on sport (college mode uses football positions)
+  const positions = (collegeFilter || sport === 'NFL')
     ? ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']
     : ['C', '1B', '2B', '3B', 'SS', 'OF', 'SP', 'RP'];
 
@@ -641,8 +681,11 @@ export default function DraftRoomClient({
   const positionNeeds = (() => {
     if (!rosterSlots.length) return { needed: [] as string[], filled: {} as Record<string, number>, remaining: {} as Record<string, number> };
     const filled: Record<string, number> = {};
-    // Count how many of each position the user has drafted
+    // Count how many of each position the user has drafted.
+    // College (NCAAF) picks live in taxi slots and never count against
+    // league-sport position limits — mirrors the server-side pick route.
     for (const pick of myRoster) {
+      if (pick.pickSport === 'NCAAF') continue;
       const pos = pick.position ?? 'BN';
       filled[pos] = (filled[pos] ?? 0) + 1;
     }
@@ -675,7 +718,7 @@ export default function DraftRoomClient({
     return positionNeeds.needed.includes(playerPos);
   };
 
-  // ── Position limit enforcement (client-side preview) ──
+  // ── Position limit enforcement (client-side preview) ──────────────────
   // Mirrors the server-side check so the UI can disable the Draft button
   // and show the reason before the user even clicks.
   const positionSummary = rosterSlots.length > 0
@@ -684,9 +727,27 @@ export default function DraftRoomClient({
   const totalRosterSize = rosterSlots.reduce((sum, s) => sum + s.count, 0);
   const enforceLimits = true; // server defaults to true; UI previews accordingly
 
+  // Taxi-squad capacity for college players (mirrors server logic):
+  // prefer the roster config TAXI slot count.
+  const taxiSlotCount = rosterSlots.find((s) => s.slot === 'TAXI')?.count ?? 0;
+  const collegePicksOwned = myRoster.filter((p) => p.pickSport === 'NCAAF').length;
+  const isCollege = (player: Player) => player.sport === 'NCAAF';
+
   const getPickBlockReason = (player: Player): string | null => {
-    if (!rosterSlots.length || !player.position) return null;
+    if (!rosterSlots.length) return null;
     if (!enforceLimits) return null;
+    // College players are taxi-only: hard-block when no taxi slots exist or
+    // the taxi squad is full (parity with the server pick route).
+    if (isCollege(player)) {
+      if (taxiSlotCount <= 0) {
+        return 'No taxi squad slots in this league — college players are taxi-only.';
+      }
+      if (collegePicksOwned >= taxiSlotCount) {
+        return `Taxi squad full (${collegePicksOwned}/${taxiSlotCount} college players stashed).`;
+      }
+      return null;
+    }
+    if (!player.position) return null;
     const check = checkPositionLimit(
       rosterSlots,
       player.position,
@@ -960,6 +1021,34 @@ export default function DraftRoomClient({
               </div>
             )}
 
+            {/* Taxi squad (college/devy stashes) — dynasty leagues only */}
+            {taxiSlotCount > 0 && (
+              <div className="mb-3 p-2.5 rounded-lg bg-brand-accent/10 border border-brand-accent/30">
+                <div className="text-xs font-medium text-brand-text mb-1.5 flex items-center gap-1.5">
+                  <GraduationCap className="w-3.5 h-3.5 text-brand-accent" />
+                  Taxi Squad — College Stashes
+                  <span className="text-brand-muted font-normal">
+                    {collegePicksOwned}/{taxiSlotCount} used
+                  </span>
+                </div>
+                {collegePicksOwned === 0 ? (
+                  <p className="text-[11px] text-brand-muted">
+                    Draft college (CFB) prospects into these slots — they don&apos;t count against position limits.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {myRoster.filter((p) => p.pickSport === 'NCAAF').map((p, i) => (
+                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-brand-accent/20 text-brand-text font-medium flex items-center gap-1">
+                        <GraduationCap className="w-3 h-3 text-brand-accent" />
+                        {p.playerName}
+                        <span className="text-brand-muted">{p.position ?? ''} · {p.team ?? ''}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Position limits summary — filled / capacity per position */}
             {positionSummary.length > 0 && (
               <div className="mb-3 p-2.5 rounded-lg bg-brand-elevated/50 border border-brand-border">
@@ -1007,11 +1096,21 @@ export default function DraftRoomClient({
                       <span className="text-xs text-brand-muted">R{p.round}</span>
                       <span className="text-xs text-brand-muted">#{p.overallPick}</span>
                     </div>
-                    <div className="text-sm font-medium text-brand-text truncate mt-1">{p.playerName}</div>
+                    <div className="text-sm font-medium text-brand-text truncate mt-1 flex items-center gap-1.5">
+                      {p.playerName}
+                      {p.pickSport === 'NCAAF' && (
+                        <span
+                          className="text-[9px] font-bold uppercase tracking-wide bg-brand-accent/20 text-brand-accent px-1 py-0.5 rounded flex-shrink-0"
+                          title="College prospect (taxi stash)"
+                        >
+                          CFB
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-brand-muted flex items-center gap-1.5">
                       <span
                         className="inline-block px-1 rounded font-bold text-[10px]"
-                        style={positionBadgeStyle(sport, p.position)}
+                        style={positionBadgeStyle(p.pickSport === 'NCAAF' ? 'NFL' : sport, p.position)}
                       >
                         {p.position ?? 'BN'}
                       </span>
@@ -1043,6 +1142,44 @@ export default function DraftRoomClient({
                 onChange={(e) => setPlayerSearch(e.target.value)}
               />
             </div>
+
+            {/* CFB (devy) toggle — dynasty leagues only.
+                College players are drafted into taxi slots; the toggle
+                switches the list to the NCAAF pool. */}
+            {isDynastyLeague && sport !== 'MLB' && (
+              <div className="flex items-center gap-2 mb-3">
+                <button
+                  onClick={() => { setCollegeFilter(!collegeFilter); setPositionFilter(''); }}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                    collegeFilter
+                      ? 'bg-gradient-to-r from-brand-primary to-brand-accent text-white'
+                      : 'bg-brand-elevated text-brand-muted hover:text-brand-text'
+                  }`}
+                  title="College football (devy) players — taxi squad eligible"
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  {collegeFilter ? 'CFB Prospects' : 'College Players'}
+                  {taxiSlotCount > 0 && (
+                    <span className={`px-1 rounded text-[10px] ${collegeFilter ? 'bg-white/20' : 'bg-brand-surface'}`}>
+                      {collegePicksOwned}/{taxiSlotCount} taxi
+                    </span>
+                  )}
+                </button>
+                {collegeFilter && (
+                  <span className="text-[11px] text-brand-muted">
+                    Devy prospects — drafted into taxi slots, don&apos;t count vs position limits
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Search fallback notice — matched college players only */}
+            {collegeFallbackActive && !collegeFilter && (
+              <div className="mb-3 p-2 rounded-md bg-brand-accent/10 border border-brand-accent/30 text-[11px] text-brand-accent flex items-center gap-1.5">
+                <GraduationCap className="w-3.5 h-3.5 flex-shrink-0" />
+                No {sport} players matched — showing college (CFB) prospects for your taxi squad.
+              </div>
+            )}
 
             {/* Position filter */}
             <div className="flex flex-wrap gap-1.5 mb-3">
@@ -1116,11 +1253,12 @@ export default function DraftRoomClient({
                   const fillsNeed = playerFillsNeed(player.position);
                   const blockReason = getPickBlockReason(player);
                   const isBlocked = !!blockReason;
+                  const college = isCollege(player);
                   return (
                   <div
                     key={player.id}
-                    className={`flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group cursor-pointer ${fillsNeed ? 'bg-brand-primary/5' : ''} ${isBlocked ? 'opacity-60' : ''}`}
-                    style={positionLeftBorderStyle(sport, player.position)}
+                    className={`flex items-center gap-2 py-2 px-2.5 rounded-lg bg-brand-elevated/50 hover:bg-brand-elevated transition-colors group cursor-pointer ${fillsNeed && !college ? 'bg-brand-primary/5' : ''} ${isBlocked ? 'opacity-60' : ''}`}
+                    style={positionLeftBorderStyle(college ? 'NFL' : sport, player.position)}
                     onMouseEnter={(e) => handlePlayerMouseEnter(player, e)}
                     onMouseLeave={handlePlayerMouseLeave}
                   >
@@ -1155,18 +1293,27 @@ export default function DraftRoomClient({
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-brand-text truncate flex items-center gap-1.5">
                         {player.playerName}
-                        {fillsNeed && (
+                        {college && (
+                          <span
+                            className="text-[9px] font-bold uppercase tracking-wide bg-brand-accent/20 text-brand-accent px-1 py-0.5 rounded"
+                            title={`College prospect — ${player.college ?? 'CFB'} · taxi squad stash`}
+                          >
+                            CFB
+                          </span>
+                        )}
+                        {fillsNeed && !college && (
                           <span className="text-[9px] font-bold uppercase tracking-wide bg-brand-primary/20 text-brand-primary px-1 py-0.5 rounded">Need</span>
                         )}
                       </div>
                       <div className="text-xs text-brand-muted flex items-center gap-1.5">
                         <span
                           className="inline-block px-1 rounded font-bold text-[10px]"
-                          style={positionBadgeStyle(sport, player.position)}
+                          style={positionBadgeStyle(college ? 'NFL' : sport, player.position)}
                         >
                           {player.position ?? '—'}
                         </span>
                         <span className="truncate">{player.team}</span>
+                        {college && player.college && <span className="truncate">· {player.college}</span>}
                         {player.projectedPoints && ` · ${player.projectedPoints.toFixed(1)} pts`}
                         {player.adp != null && ` · ADP ${player.adp}`}
                       </div>
@@ -1180,7 +1327,7 @@ export default function DraftRoomClient({
                           title={blockReason ?? undefined}
                         >
                           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span className="hidden sm:inline">Limit</span>
+                          <span className="hidden sm:inline">{college ? 'Taxi' : 'Limit'}</span>
                         </div>
                       ) : (
                         <button
@@ -1248,7 +1395,7 @@ export default function DraftRoomClient({
         >
           <PlayerInfoCard
             poolId={hoveredPlayer.id}
-            sport={sport}
+            sport={(hoveredPlayer.sport as any) ?? sport}
             seasonYear={seasonYear}
             playerName={hoveredPlayer.playerName}
             position={hoveredPlayer.position}

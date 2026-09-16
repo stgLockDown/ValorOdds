@@ -244,7 +244,9 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
   source: 'espn' | 'db-fallback';
 }> {
   const { sport, seasonYear, scoringPreset } = opts;
-  const limit = opts.limit ?? (sport === 'NFL' ? 400 : 500);
+  // NCAAF is a POOL-ONLY sport: 600 devy players (position-quota mix in
+  // espn-pool.ts) for dynasty taxi squads; NFL redraft pools stay at 400.
+  const limit = opts.limit ?? (sport === 'NFL' ? 400 : sport === 'NCAAF' ? 600 : 500);
   const scoringConfig = getScoringPreset(sport, scoringPreset);
 
   let entries: PlayerPoolEntry[] = [];
@@ -359,8 +361,8 @@ export async function generatePlayerPool(opts: GeneratePoolOptions): Promise<{
   // Estimate ADP based on rank (with some noise for realism)
   entries.forEach((entry) => {
     // ADP ~ rank with slight variation; for NFL a 12-team league has ~20 rounds = 240 picks
-    const leagueSize = sport === 'NFL' ? 12 : 12;
-    const rosterSize = sport === 'NFL' ? 20 : 27;
+    const leagueSize = 12;
+    const rosterSize = sport === 'NFL' ? 20 : sport === 'NCAAF' ? 35 : 27;
     const totalPicks = leagueSize * rosterSize;
     entry.adp = Math.round(entry.rank * (totalPicks / entries.length) * 10) / 10;
   });

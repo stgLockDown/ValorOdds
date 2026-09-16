@@ -37,7 +37,7 @@ interface EspnAthlete {
   position: { abbreviation: string; name: string };
   status?: { type?: string; name?: string };
   jersey?: string;
-  experience?: { years?: number };
+  experience?: { years?: number; displayValue?: string; abbreviation?: string };
   injuries?: Array<{ details?: string; shortName?: string; status?: { name?: string } }>;
   group?: string;      // roster group name e.g. "Offense", "Injured Reserve", "Practice Squad"
   depthIdx?: number;   // 0-based index within the position group (starters first)
@@ -55,6 +55,7 @@ interface EspnAthlete {
 const SPORT_PATH: Record<Sport, string> = {
   NFL: 'football/nfl',
   MLB: 'baseball/mlb',
+  NCAAF: 'football/college-football',
 };
 
 async function fetchJson(url: string): Promise<any> {
@@ -71,6 +72,46 @@ async function fetchJson(url: string): Promise<any> {
 
 /** Fetch the list of teams for a sport. */
 async function fetchTeams(sport: Sport): Promise<EspnTeamRef[]> {
+  if (sport === 'NCAAF') {
+    // CFB teams endpoint returns ALL divisions (400+ incl. D2/D3). Dynasty
+    // devy pools should only contain FBS players. Get the FBS (group 80) id
+    // list from ESPN's core API (items are $refs — just extract the ids),
+    // then resolve names from the site API teams list. 2 HTTP calls total.
+    const fbsUrl =
+      `https://sports.core.api.espn.com/v2/sports/football/leagues/college-football` +
+      `/seasons/${new Date().getFullYear()}/types/2/groups/80/teams?limit=400`;
+    const fbsData = await fetchJson(fbsUrl).catch(() => null);
+    const fbsItems: any[] = Array.isArray(fbsData?.items) ? fbsData.items : [];
+    const fbsIds = new Set(
+      fbsItems
+        .map((it) => String(it?.$ref ?? '').match(/\/teams\/(\d+)/)?.[1])
+        .filter(Boolean) as string[]
+    );
+
+    const siteData = await fetchJson(
+      `${ESPN_BASE}/${SPORT_PATH.NCAAF}/teams?limit=400`
+    );
+    const allTeams: any[] = (siteData?.sports?.[0]?.leagues?.[0]?.teams ?? [])
+      .map((t: any) => t?.team)
+      .filter((t: any) => t && t.id && t.displayName);
+
+    const teams: EspnTeamRef[] = allTeams
+      .filter((t: any) => fbsIds.size === 0 || fbsIds.has(String(t.id)))
+      .map((t: any) => ({
+        id: String(t.id),
+        abbreviation: t.abbreviation ?? t.shortDisplayName ?? String(t.id),
+        displayName: t.displayName,
+      }));
+
+    if (teams.length > 0) return teams;
+    // Absolute fallback: first 160 site teams (approximates FBS).
+    return allTeams.slice(0, 160).map((t: any) => ({
+      id: String(t.id),
+      abbreviation: t.abbreviation ?? String(t.id),
+      displayName: t.displayName,
+    }));
+  }
+
   const data = await fetchJson(
     `${ESPN_BASE}/${SPORT_PATH[sport]}/teams?limit=40`
   );
@@ -94,16 +135,27 @@ async function fetchRoster(sport: Sport, teamId: string): Promise<EspnAthlete[]>
   const groups: any[] = Array.isArray(data?.athletes) ? data.athletes : [];
   const out: EspnAthlete[] = [];
   for (const g of groups) {
-    const groupName: string = (g?.name || g?.type || '').toString();
+    // NFL/MLB groups are keyed by name/type ("offense", "Injured Reserve");
+    // CFB groups are keyed by `position` ("offense", "specialTeam", …).
+    const groupName: string = (g?.name || g?.type || g?.position || '').toString();
     const items: any[] = Array.isArray(g?.items) ? g.items : [];
+    // Per-position depth: NFL rosters group items by position block, but CFB
+    // offense/defense items are INTERLEAVED by position (e.g. TE QB WR RB
+    // OL QB …). A flat index would crush WRs/TEs that happen to sort later.
+    // So we count occurrences of each position within the group and use the
+    // running count as that athlete's depth index.
+    const posCount = new Map<string, number>();
     for (let i = 0; i < items.length; i++) {
       const a = items[i];
       if (!a?.fullName || !a?.position?.abbreviation) continue;
+      const ab = a.position.abbreviation;
+      const depth = posCount.get(ab) ?? 0;
+      posCount.set(ab, depth + 1);
       out.push({
         id: String(a.id),
         fullName: a.fullName,
         position: {
-          abbreviation: a.position.abbreviation,
+          abbreviation: ab,
           name: a.position.name || a.position.abbreviation,
         },
         status: a.status,
@@ -111,7 +163,7 @@ async function fetchRoster(sport: Sport, teamId: string): Promise<EspnAthlete[]>
         experience: a.experience,
         injuries: a.injuries,
         group: groupName,
-        depthIdx: i,
+        depthIdx: depth,
         displayHeight: a.displayHeight,
         displayWeight: a.displayWeight,
         age: a.age,
@@ -173,6 +225,20 @@ const NFL_FANTASY_POS: Record<string, string> = {
 // ESPN doesn't expose "team defense" as an athlete; we synthesize a DEF entry
 // per NFL team below.
 
+// ── NCAAF (college football / devy) ─────────────────────────────────────────
+// ESPN CFB rosters use the same position abbreviations as NFL (QB, RB, WR,
+// TE, OL, LB, DB, K/P…). Fantasy-relevant for taxi-squad devy drafting:
+// QB, RB, WR, TE (+ PK kickers, rare). Linemen / returners are skipped.
+const NCAAF_FANTASY_POS: Record<string, string> = {
+  QB: 'QB',
+  RB: 'RB',
+  FB: 'RB',
+  WR: 'WR',
+  TE: 'TE',
+  K: 'K',
+  PK: 'K',
+};
+
 // MLB: ESPN uses C, 1B, 2B, 3B, SS, LF, CF, RF, DH, SP, RP, P (and sometimes
 // IF/OF). Fantasy-relevant: batters (C/1B/2B/3B/SS/OF/DH) + pitchers (SP/RP).
 const MLB_FANTASY_POS: Record<string, string> = {
@@ -192,7 +258,8 @@ const MLB_FANTASY_POS: Record<string, string> = {
 };
 
 function mapFantasyPos(sport: Sport, abbr: string): string | null {
-  const map = sport === 'NFL' ? NFL_FANTASY_POS : MLB_FANTASY_POS;
+  const map =
+    sport === 'NFL' ? NFL_FANTASY_POS : sport === 'NCAAF' ? NCAAF_FANTASY_POS : MLB_FANTASY_POS;
   return map[abbr.toUpperCase()] ?? null;
 }
 
@@ -379,6 +446,169 @@ const MLB_STARS: Record<string, number> = {
 
 // Dedupe helpers (some entries above were defensive duplicates — harmless).
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NCAAF (college football / devy) model
+//
+// Dynasty devy pools aren't ranked like NFL redraft pools. Players are
+// ranked by (a) real college production (ESPN core-API stat leaders),
+// (b) class-year multipliers (FR get a longevity/UPSIDE boost — they're
+// multiple years from the NFL; JR get a proximity boost — they'll be
+// drafted sooner), and (c) a curated devy-stars overlay (consensus
+// blue-chippers like Arch Manning / Jeremiah Smith) so the top of the
+// pool matches real dynasty rankings. Seniors are excluded entirely —
+// they're about to be NFL rookies (and mostly unrostered), not devy.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NCAAF_POS_PRIOR: Record<string, number> = {
+  QB: 9,
+  RB: 8,
+  WR: 8,
+  TE: 5,
+  K: 3,
+};
+
+/**
+ * Class-year (experience.abbreviation) multipliers for devy value.
+ * FR get upside (multi-year runway), SO the baseline, JR proximity to
+ * the NFL Draft (draftable sooner in rookie drafts after taxi years).
+ */
+const NCAAF_CLASS_MULTIPLIER: Record<string, number> = {
+  FR: 1.35,
+  SO: 1.0,
+  JR: 1.15,
+  SR: 0, // excluded via devy filter, but keep a value for safety
+};
+
+/** Cap on stat-derived devy value (mid-major volume can't out-rank blue chips). */
+const NCAAF_STAT_CAP: Record<string, number> = {
+  QB: 24,
+  RB: 20,
+  WR: 20,
+  TE: 16,
+  K: 10,
+};
+
+/**
+ * Curated devy-stars overlay: consensus blue-chip dynasty prospects.
+ * Keys are uppercased full names; values are projected fantasy points
+ * per game (NFL-scale, since college players fill NFL dynasty taxi slots
+ * and are scored on NFL settings when stashed).
+ *
+ * IMPORTANT: every name below was verified to exist in ESPN's 2026 CFB
+ * rosters (verified 2026-09-15 via FBS roster scan). Never add a name
+ * that isn't on a real roster — an unmatched overlay entry is dead data.
+ */
+const NCAAF_STARS: Record<string, number> = {
+  // Elite devy QBs (2027-28 NFL prospect classes)
+  'ARCH MANNING': 22,      // Texas, JR
+  'JEREMIAH SMITH': 20,    // Ohio State, JR (WR)
+  'DJ LAGWAY': 19,         // Baylor, JR
+  'JARED CURTIS': 18,      // Vanderbilt, FR (2026 #1 recruit)
+  'JULIAN SAYIN': 17,      // Ohio State, JR
+  'DAKORIEN MOORE': 15,    // Oregon, SO (WR)
+  'BO JACKSON': 14,        // Ohio State, SO (RB)
+  'JUSTIN BAKER': 12,      // Tennessee, SO (RB)
+  'MICAH ALEJADO': 11,     // Hawai'i, SO (QB)
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CFB stat leaders (core API) — real college production signal
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface CfbStatLine {
+  passYds?: number;
+  passTds?: number;
+  rushYds?: number;
+  rushTds?: number;
+  recYds?: number;
+  recTds?: number;
+  rec?: number;
+}
+
+/**
+ * Fetch CFB stat leaders from ESPN's core API for the current and previous
+ * season, mapping athleteId → per-game production stats. The API returns
+ * categories (passingYards, rushingYards, …) with up to 100 leaders each.
+ * Values are season TOTALS; we convert to per-game below.
+ */
+async function fetchCfbStatLeaders(): Promise<Map<string, CfbStatLine>> {
+  const seasons = queryCfbStatSeasons();  // e.g. [2025, 2026]
+  const byId = new Map<string, CfbStatLine>();
+  const thisYear = new Date().getFullYear();
+
+  for (const season of seasons) {
+    // Latest season stats count more; earlier seasons are a decent signal.
+    const weight = season === thisYear ? 1 : 0.7;
+
+    const url =
+      `https://sports.core.api.espn.com/v2/sports/football/leagues/college-football` +
+      `/seasons/${season}/types/2/leaders?limit=100`;
+    let data: any;
+    try {
+      data = await fetchJson(url);
+    } catch {
+      continue; // season unavailable — skip
+    }
+
+    const cats: any[] = Array.isArray(data?.categories) ? data.categories : [];
+    for (const cat of cats) {
+      const name = String(cat?.name ?? '');
+      const leaders: any[] = Array.isArray(cat?.leaders) ? cat.leaders : [];
+      for (const l of leaders) {
+        const ref = String(l?.athlete?.$ref ?? '');
+        const id = ref.match(/\/athletes\/(\d+)/)?.[1];
+        if (!id || l?.value == null) continue;
+
+        const cur = byId.get(id) ?? {};
+        // value is the SEASON TOTAL for yard/TD categories; scale to a
+        // per-game basis (~12-14 games) then weight the two seasons.
+        const total = Number(l.value);
+        const perGame = total / (season === thisYear ? 13 : 12);
+        const weighted = perGame * weight;
+        const next = { ...cur };
+        switch (name) {
+          case 'passingYards':
+            next.passYds = (cur.passYds ?? 0) + weighted;
+            break;
+          case 'passingTouchdowns':
+            next.passTds = (cur.passTds ?? 0) + weighted;
+            break;
+          case 'rushingYards':
+            next.rushYds = (cur.rushYds ?? 0) + weighted;
+            break;
+          case 'rushingTouchdowns':
+            next.rushTds = (cur.rushTds ?? 0) + weighted;
+            break;
+          case 'receivingYards':
+            next.recYds = (cur.recYds ?? 0) + weighted;
+            break;
+          case 'receivingTouchdowns':
+            next.recTds = (cur.recTds ?? 0) + weighted;
+            break;
+          case 'receptions':
+            next.rec = (cur.rec ?? 0) + weighted;
+            break;
+          default:
+            continue; // skip kickoffYards, sacks, interceptionYards, totalTackles, QBR
+        }
+        byId.set(id, next);
+      }
+    }
+  }
+  return byId;
+}
+
+/**
+ * Seasons of CFB stat leaders to fetch. Always the last two completed or
+ * in-progress seasons (previous full season + current early season).
+ */
+function queryCfbStatSeasons(): number[] {
+  const thisYear = new Date().getFullYear();
+  return [thisYear - 1, thisYear];
+  // Note: skipping more seasons keeps this to 2 HTTP calls per build.
+}
+
+
 /**
  * Build a projection dict (stat keys matching lib/dd/scoring.ts) from a
  * projected-fantasy-points-per-game target and fantasy position. We solve for
@@ -389,7 +619,10 @@ function buildProjectionFromPoints(
   fpos: string,
   ptsPerGame: number
 ): Record<string, number> {
-  if (sport === 'NFL') {
+  // NFL + NCAAF share the same fantasy stat keys / scoring model (college
+  // players are drafted into NFL dynasty leagues, so their projections use
+  // NFL PPR stat keys). Only MLB uses the pitching/batting branch.
+  if (sport !== 'MLB') {
     switch (fpos) {
       case 'QB': {
         // 0.04/yd, 4/TD, -2/INT → solve for ~ptsPerGame
@@ -462,7 +695,7 @@ function buildProjectionFromPoints(
 
 function eligiblePositions(sport: Sport, fpos: string): string[] {
   const base = [fpos];
-  if (sport === 'NFL') {
+  if (sport !== 'MLB') {
     if (['RB', 'WR', 'TE'].includes(fpos)) base.push('FLEX');
     if (fpos === 'QB') base.push('SFLEX');
   } else {
@@ -519,10 +752,13 @@ export async function fetchEspnPool(
 ): Promise<EspnPoolResult> {
   const rosters = await fetchAllRosters(sport);
   const players: EspnPoolPlayer[] = [];
-  const seen = new Set<string>(); // dedupe by uppercased name (cross-team trades)
+  const seen = new Set<string>(); // dedupe by uppercased name (cross-team transfers)
 
-  const priorMap = sport === 'NFL' ? NFL_POS_PRIOR : MLB_POS_PRIOR;
-  const starsMap = sport === 'NFL' ? NFL_STARS : MLB_STARS;
+  const priorMap = sport === 'NFL' ? NFL_POS_PRIOR : sport === 'NCAAF' ? NCAAF_POS_PRIOR : MLB_POS_PRIOR;
+  const starsMap = sport === 'NFL' ? NFL_STARS : sport === 'NCAAF' ? NCAAF_STARS : MLB_STARS;
+
+  // NCAAF: fetch real college production (stat leaders) to rank the devy pool.
+  const cfbStats = sport === 'NCAAF' ? await fetchCfbStatLeaders().catch(() => new Map<string, CfbStatLine>()) : null;
 
   for (const { team, athletes } of rosters) {
     // NFL: synthesize a team-defense entry per team.
@@ -556,6 +792,112 @@ export async function fetchEspnPool(
       const key = a.fullName.toUpperCase();
       if (seen.has(key)) continue;
       seen.add(key);
+
+      // ── NCAAF devy model ────────────────────────────────────────────────────
+      if (sport === 'NCAAF') {
+        // Devy filter: Seniors are about to leave college ball (they become
+        // NFL rookie-pool members, not devy). ESPN CFB abbreviations are
+        // FR/SO/JR/SR (redshirts keep the base class, e.g. "Redshirt
+        // Sophomore" → SO); displayValue is spelled out.
+        const classAbr = String(a.experience?.abbreviation ?? '').toUpperCase();
+        const classDisp = String(a.experience?.displayValue ?? '').toUpperCase();
+        const isSenior =
+          classAbr.startsWith('SR') ||
+          classDisp.includes('SENIOR') ||
+          classDisp.includes('GRADUATE');
+        if (isSenior) continue;
+
+        // Injury status (if any) — same source as NFL flow
+        const inj = a.injuries?.[0];
+        const injuryStatus = inj?.status?.name || inj?.shortName || null;
+
+        // Real production from CFB stat leaders (per-game, season-weighted).
+        const statLine = cfbStats?.get(a.id);
+        let ptsPerGame = 0;
+        if (statLine) {
+          // NFL PPR scoring applied to per-game college stats.
+          const scored = scoreStatLine('NCAAF', {
+            pass_yd: statLine.passYds ?? 0,
+            pass_td: statLine.passTds ?? 0,
+            rush_yd: statLine.rushYds ?? 0,
+            rush_td: statLine.rushTds ?? 0,
+            rec: statLine.rec ?? 0,
+            rec_yd: statLine.recYds ?? 0,
+            rec_td: statLine.recTds ?? 0,
+          }, scoringConfig);
+          ptsPerGame = scored.fantasyPoints;
+        }
+        // Base prior for players without stat-leader data (most underclassmen
+        // backups). Stars overlay always wins on top.
+        const priorPts = starsMap[key] ?? priorMap[fpos] ?? 5;
+        if (!statLine) {
+          // Statless (most underclassmen backups): fraction of position prior.
+          ptsPerGame = priorPts * 0.5;
+        } else {
+          // Real production: stat score (at 0.9 weight) vs the statless prior
+          // floor; stars overlay is applied separately below.
+          ptsPerGame = Math.max(priorPts * 0.5, ptsPerGame * 0.9);
+        }
+        if (starsMap[key]) ptsPerGame = starsMap[key];
+
+        // Cap stat-derived value so mid-major volume kings don't out-rank
+        // consensus blue chips.
+        const cap = NCAAF_STAT_CAP[fpos] ?? 18;
+        ptsPerGame = Math.min(ptsPerGame, cap);
+
+        // Class-year multiplier (FR upside, JR draft proximity).
+        const mult = NCAAF_CLASS_MULTIPLIER[classAbr] ?? 1;
+        ptsPerGame = ptsPerGame * (mult || 1);
+
+        // Depth discount within position group (backups < starters).
+        const idx = a.depthIdx ?? 0;
+        if (!starsMap[key]) {
+          const depthFactor =
+            idx === 0 ? 1.0 :
+            idx === 1 ? 0.72 :
+            idx === 2 ? 0.55 :
+            idx === 3 ? 0.45 :
+            0.38;
+          ptsPerGame = ptsPerGame * depthFactor;
+        }
+
+        const proj = buildProjectionFromPoints(sport, fpos, ptsPerGame);
+        const scored = scoreStatLine(sport, proj, scoringConfig);
+
+        const bioCollege = a.college?.name || a.college?.shortName || null;
+        const birthPlaceStr = a.birthPlace
+          ? [a.birthPlace.city, a.birthPlace.state, a.birthPlace.country]
+              .filter(Boolean)
+              .join(', ')
+          : null;
+
+        players.push({
+          seasonYear,
+          sport,
+          playerName: a.fullName,
+          // For college players: team = college abbreviation (UGA, OSU, …)
+          // so draft-room rows show the school; college = full school name.
+          team: a.college?.abbrev || team.abbreviation,
+          position: fpos,
+          eligiblePos: eligiblePositions(sport, fpos),
+          projection: proj,
+          projectedPoints: scored.fantasyPoints,
+          isRookie: classAbr === 'FR',
+          injuryStatus,
+          espnId: a.id,
+          headshot: a.headshot?.href || null,
+          height: a.displayHeight || null,
+          weight: a.displayWeight || null,
+          age: a.age ?? null,
+          college: bioCollege,
+          debutYear: a.debutYear ?? null,
+          experienceYears: a.experience?.years ?? null,
+          birthPlace: birthPlaceStr,
+          jersey: a.jersey || null,
+        });
+        continue;
+      }
+      // ── end NCAAF devy model ───────────────────────────────────────────────
 
       // Injury status (if any)
       const inj = a.injuries?.[0];
@@ -643,7 +985,41 @@ export async function fetchEspnPool(
   // Sort by projected points descending so the top of the pool is the elite.
   players.sort((a, b) => b.projectedPoints - a.projectedPoints);
 
-  const finalPlayers = maxPlayers ? players.slice(0, maxPlayers) : players;
+  let finalPlayers = players;
+  if (maxPlayers && sport === 'NCAAF') {
+    // Position quotas: ESPN's stat-leader categories are QB-heavy (passing
+    // yards/TDs/QBR dominate the boards), so a pure points-sort drowns the
+    // pool in QBs and starves TE/K. A devy pool should mirror a realistic
+    // dynasty prospect mix: WR-heavy, then RB, then QB, with real TE depth.
+    const quotas: Record<string, number> = {
+      QB: 110,
+      RB: 170,
+      WR: 220,
+      TE: 70,
+      K: 30,
+    };
+    const taken: Record<string, number> = {};
+    const quotaPicks: EspnPoolPlayer[] = [];
+    const leftovers: EspnPoolPlayer[] = [];
+    for (const p of players) {
+      const q = quotas[p.position] ?? 60;
+      if ((taken[p.position] ?? 0) < q) {
+        taken[p.position] = (taken[p.position] ?? 0) + 1;
+        quotaPicks.push(p);
+      } else {
+        leftovers.push(p);
+      }
+    }
+    // Take quota picks first (in points order), then backfill with the
+    // strongest leftovers if the target size isn't reached.
+    const target = Math.min(maxPlayers, players.length);
+    const fill = [...quotaPicks, ...leftovers]
+      .slice(0, target)
+      .sort((a, b) => b.projectedPoints - a.projectedPoints);
+    finalPlayers = fill;
+  } else if (maxPlayers) {
+    finalPlayers = players.slice(0, maxPlayers);
+  }
 
   return {
     sport,

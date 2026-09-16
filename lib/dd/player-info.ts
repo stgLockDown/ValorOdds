@@ -21,6 +21,7 @@ const ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports';
 const SPORT_LEAGUE: Record<string, string> = {
   NFL: 'football/leagues/nfl',
   MLB: 'baseball/leagues/mlb',
+  NCAAF: 'football/leagues/college-football',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,7 +395,7 @@ function buildStatsSummary(
     for (const season of careerStats) {
       // Extract the most fantasy-relevant stats
       const keyStats: string[] = [];
-      if (sport === 'NFL') {
+      if (sport === 'NFL' || sport === 'NCAAF') {
         const passYd = season.stats['passingYards'];
         const passTd = season.stats['passingTouchdowns'];
         const interceptions = season.stats['interceptions'];

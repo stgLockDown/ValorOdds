@@ -10,7 +10,13 @@
  * columns in dd_leagues (roster_config, scoring_config, settings).
  */
 
-export type Sport = 'NFL' | 'MLB';
+/**
+ * NCAAF is a POOL-ONLY sport: college players live in dd_player_pool with
+ * sport='NCAAF' and are drafted INTO NFL dynasty leagues' taxi squad slots.
+ * Leagues themselves remain NFL or MLB — NCAAF exists in the Sport type so
+ * pool ingestion, scoring, and pick storage can be sport-aware.
+ */
+export type Sport = 'NFL' | 'MLB' | 'NCAAF';
 
 export type LeagueFormat =
   | 'roto'
@@ -580,15 +586,18 @@ export const NFL_SCORING_PRESETS: Record<string, ScoringConfig> = {
 
 export function getRosterPreset(sport: Sport, key: string): RosterConfig {
   if (sport === 'MLB') return MLB_ROSTER_PRESETS[key] ?? MLB_STANDARD_ROSTER;
+  // NCAAF pools use NFL roster presets (college players fill NFL taxi slots)
   return NFL_ROSTER_PRESETS[key] ?? NFL_STANDARD_ROSTER;
 }
 
 export function getScoringPreset(sport: Sport, key: string): ScoringConfig {
   if (sport === 'MLB') return MLB_SCORING_PRESETS[key] ?? MLB_STANDARD_POINTS;
+  // NCAAF pool projections use NFL scoring (drafted into NFL leagues)
   return NFL_SCORING_PRESETS[key] ?? NFL_STANDARD_PPR;
 }
 
 export function listRosterPresets(sport: Sport): { key: string; name: string; totalRosterSize: number; totalStarters: number; qbCount: number; hasSuperflex: boolean; slotSummary: string; isIdp: boolean; isDynasty: boolean; isDefenseOnly: boolean; kickerCount: number }[] {
+  // NCAAF pools use the NFL preset registry (taxi-slot drafting model)
   const presets = sport === 'MLB' ? MLB_ROSTER_PRESETS : NFL_ROSTER_PRESETS;
   return Object.entries(presets).map(([key, p]) => {
     const qbSlot = p.slots.find((s) => s.slot === 'QB');
@@ -627,6 +636,7 @@ export function listRosterPresets(sport: Sport): { key: string; name: string; to
 }
 
 export function listScoringPresets(sport: Sport): { key: string; name: string; mode: string }[] {
+  // NCAAF pools use the NFL scoring registry
   const presets = sport === 'MLB' ? MLB_SCORING_PRESETS : NFL_SCORING_PRESETS;
   return Object.entries(presets).map(([key, p]) => ({
     key,
@@ -664,6 +674,14 @@ export const SEASON_STRUCTURES: Record<Sport, SeasonStructure> = {
     playoffWeeks: 4,
     seasonStartMonth: 3,
     seasonEndMonth: 10,
+  },
+  NCAAF: {
+    sport: 'NCAAF',
+    regularSeasonPeriods: 14,
+    periodLabel: 'week',
+    playoffWeeks: 4,
+    seasonStartMonth: 8,
+    seasonEndMonth: 1,
   },
 };
 

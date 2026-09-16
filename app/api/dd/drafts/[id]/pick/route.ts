@@ -49,7 +49,18 @@ export async function POST(
   }
 
   const leagueId = BigInt(draft.league_id);
-  const numTeams = draft.num_teams;
+  // Effective team count for the draft order: the number of members who had
+  // joined when the draft started. A league's declared num_teams can be larger
+  // than the actual membership (e.g. a 12-team league where the commissioner
+  // started the draft once 2 humans joined) — using the declared count would
+  // misalign the snake order and block members whose slot never comes up.
+  // Draft start uses the ACTUAL member count, so the order math here must too.
+  const membersCountRes = await queryOne<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt FROM dd_league_members WHERE league_id = $1`,
+    [leagueId]
+  );
+  const memberCount = Number(membersCountRes?.cnt ?? '0');
+  const numTeams = memberCount >= 2 ? memberCount : draft.num_teams;
   const rounds = draft.round_count;
 
   // Find the member record for this user
@@ -116,28 +127,54 @@ export async function POST(
     return NextResponse.json({ error: `${playerName} has already been drafted` }, { status: 409 });
   }
 
-  // Look up player from pool to get full info if not provided
-  let playerInfo: { team: string | null; position: string | null; player_id: string | null } = {
+  // Look up player from pool to get full info.
+  // Dynasty leagues draft college (NCAAF) players into taxi slots, so the
+  // lookup tries the LEAGUE sport pool first, then the NCAAF pool. The pick
+  // row stores the player's ACTUAL pool sport so rosters render correctly
+  // and taxi-squad enforcement can identify college players.
+  //
+  // The lookup ALWAYS runs (even when the client sent team/position) so the
+  // player's true pool sport + pool id are resolved — the client values are
+  // only fallbacks for names not found in either pool.
+  let playerInfo: {
+    team: string | null;
+    position: string | null;
+    player_id: string | null;
+    poolSport: Sport | null;
+  } = {
     team: team ?? null,
     position: position ?? null,
     player_id: playerId ?? null,
+    poolSport: null,
   };
 
-  if (!playerInfo.team || !playerInfo.position) {
-    const poolPlayer = await queryOne<{ team: string | null; position: string | null; id: string }>(
-      `SELECT team, position, id::text FROM dd_player_pool
+  {
+    const poolSports: Sport[] = draft.sport === 'NCAAF'
+      ? ['NCAAF', 'NFL']
+      : [draft.sport, 'NCAAF'];
+    const poolPlayer = await queryOne<{
+      team: string | null; position: string | null; id: string; sport: Sport;
+    }>(
+      `SELECT team, position, id::text, sport FROM dd_player_pool
        WHERE season_year = (SELECT season_year FROM dd_leagues WHERE id = $1)
-         AND sport = $2 AND player_name = $3`,
-      [leagueId, draft.sport, playerName]
+         AND sport = ANY($2) AND player_name = $3
+       ORDER BY CASE WHEN sport = $4 THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [leagueId, poolSports, playerName, draft.sport]
     );
     if (poolPlayer) {
       playerInfo = {
-        team: playerInfo.team,
-        position: poolPlayer.position,
-        player_id: poolPlayer.id,
+        // `||` (not `??`): an empty-string client playerId must not mask the
+        // resolved pool id — the pool row is the source of truth for linkage.
+        team: playerInfo.team || poolPlayer.team,
+        position: playerInfo.position || poolPlayer.position,
+        player_id: playerInfo.player_id || poolPlayer.id,
+        poolSport: poolPlayer.sport,
       };
     }
   }
+
+  const isCollegePick = playerInfo.poolSport === 'NCAAF';
 
   // Calculate next pick position
   const nextOverall = currentOverallPick + 1;
@@ -147,14 +184,18 @@ export async function POST(
   const nextRound = nextOrderEntry?.round ?? draft.round_count;
   const nextPickInRound = nextOrderEntry?.pickInRound ?? 1;
 
-  // ── Position limit enforcement (hard block) ──
+  // ── Position limit + taxi-squad enforcement (hard block) ──────────────────
   // If the league has enforcePositionLimits enabled (default true), block
   // picks that exceed the roster position capacity when other starter
   // positions still need filling. This prevents drafting an entire team
   // of QBs when the league limits are e.g. 1 QB.
+  //
+  // College (NCAAF) players are TAXI-ONLY in dynasty leagues: they may only
+  // be drafted while taxi slots remain, and they never count against the
+  // league-sport position limits (taxi slots have eligible ['*']).
   let positionWarning: string | null = null;
   let positionLimits: { position: string; filled: number; capacity: number }[] = [];
-  if (playerInfo.position && memberIdForPick) {
+  if (memberIdForPick) {
     try {
       // Fetch roster config + settings for this league
       const leagueRow = await queryOne<{ roster_config: any; settings: any }>(
@@ -169,12 +210,49 @@ export async function POST(
       const settings = leagueRow?.settings;
       const enforceLimits = settings?.enforcePositionLimits !== false; // default true
 
-      if (slots.length > 0) {
-        // Count how many picks this member has at each position so far
+      // Taxi-squad capacity: prefer the roster config TAXI slot count, fall
+      // back to dynastySettings.taxiSquadSize stored at league creation.
+      const taxiSlots =
+        slots.find((s) => s.slot === 'TAXI')?.count ??
+        settings?.dynastySettings?.taxiSquadSize ??
+        0;
+
+      // Count college picks this member already owns (taxi occupancy).
+      const collegeCountRes = await queryOne<{ cnt: string }>(
+        `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks
+         WHERE draft_id = $1 AND member_id = $2 AND sport = 'NCAAF'`,
+        [draftId, memberIdForPick]
+      );
+      const collegePicksOwned = Number(collegeCountRes?.cnt ?? '0');
+
+      if (isCollegePick) {
+        // ── College player: taxi-only enforcement ──
+        if (taxiSlots <= 0) {
+          return NextResponse.json(
+            {
+              error: `${playerName} is a college player. This league has no taxi squad slots, so college players can't be drafted.`,
+            },
+            { status: 409 }
+          );
+        }
+        if (collegePicksOwned >= taxiSlots) {
+          return NextResponse.json(
+            {
+              error: `Taxi squad full (${collegePicksOwned}/${taxiSlots}). ${playerName} is a college player and can only be drafted into taxi slots.`,
+            },
+            { status: 409 }
+          );
+        }
+        positionWarning = `Taxi squad: ${collegePicksOwned + 1}/${taxiSlots} college players stashed.`;
+      } else if (playerInfo.position && slots.length > 0) {
+        // ── League-sport player: position limit enforcement ──
+        // College picks (sport='NCAAF') are excluded from the filled counts —
+        // they occupy taxi slots, not position slots.
         const positionCountsRes = await query<{ position: string; cnt: string }>(
           `SELECT position, COUNT(*)::text AS cnt
            FROM dd_draft_picks
            WHERE draft_id = $1 AND member_id = $2 AND position IS NOT NULL
+             AND sport != 'NCAAF'
            GROUP BY position`,
           [draftId, memberIdForPick]
         );
@@ -183,7 +261,7 @@ export async function POST(
           filled[row.position] = Number(row.cnt);
         }
 
-        // Total drafted by this member
+        // Total drafted by this member (all picks, incl. taxi stashes)
         const totalDraftedRes = await queryOne<{ cnt: string }>(
           `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks WHERE draft_id = $1 AND member_id = $2`,
           [draftId, memberIdForPick]
@@ -245,7 +323,7 @@ export async function POST(
         playerInfo.player_id,
         playerInfo.team,
         playerInfo.position,
-        draft.sport,
+        playerInfo.poolSport ?? draft.sport, // player's ACTUAL pool sport (NCAAF for college picks)
         auctionAmount ?? null,
       ]
     );

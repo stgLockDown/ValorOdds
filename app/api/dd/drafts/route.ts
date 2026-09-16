@@ -212,7 +212,15 @@ export async function GET(req: NextRequest) {
   }
 
   const draftId = BigInt(draftRow.id);
-  const numTeams = draftRow.num_teams;
+  // Effective team count: actual member count at draft time (matches the
+  // POST /api/dd/drafts order computation). Falls back to declared num_teams
+  // when fewer than 2 members exist (draft can't run anyway).
+  const effectiveTeamsRes = await queryOne<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt FROM dd_league_members WHERE league_id = $1`,
+    [BigInt(draftRow.league_id)]
+  );
+  const memberCount = Number(effectiveTeamsRes?.cnt ?? '0');
+  const numTeams = memberCount >= 2 ? memberCount : draftRow.num_teams;
   const sport = draftRow.sport as Sport;
   // Use the roster_config stored on the league directly (already contains the
   // full preset including slots, totalRosterSize, totalStarters) instead of
@@ -252,10 +260,12 @@ export async function GET(req: NextRequest) {
     id: string; round_num: number; pick_in_round: number; overall_pick: number;
     member_id: string; player_name: string; player_id: string; team: string;
     position: string; is_auto_picked: boolean; picked_at: string;
+    pick_sport: string | null;
     headshot: string | null;
   }>(
     `SELECT dp.id::text, dp.round_num, dp.pick_in_round, dp.overall_pick, dp.member_id::text,
             dp.player_name, dp.player_id, dp.team, dp.position, dp.is_auto_picked, dp.picked_at,
+            dp.sport AS pick_sport,
             pp.headshot_url AS headshot
      FROM dd_draft_picks dp
      LEFT JOIN dd_player_pool pp ON pp.id::text = dp.player_id
@@ -297,6 +307,7 @@ export async function GET(req: NextRequest) {
             position: pick.position,
             isAutoPicked: pick.is_auto_picked,
             pickedAt: pick.picked_at,
+            pickSport: pick.pick_sport ?? draftRow.sport,
             headshot: pick.headshot ?? null,
           }
         : null,
@@ -312,6 +323,7 @@ export async function GET(req: NextRequest) {
       playerId: pick.player_id,
       team: pick.team,
       position: pick.position,
+      pickSport: pick.pick_sport ?? draftRow.sport,
       round: pick.round_num,
       overallPick: pick.overall_pick,
     });

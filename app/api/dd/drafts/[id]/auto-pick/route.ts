@@ -45,7 +45,14 @@ export async function POST(
   }
 
   const leagueId = BigInt(draft.league_id);
-  const numTeams = draft.num_teams;
+  // Effective team count: actual member count (matches draft-start + pick
+  // route order computation). Declared num_teams may exceed actual membership.
+  const membersCountRes = await queryOne<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt FROM dd_league_members WHERE league_id = $1`,
+    [leagueId]
+  );
+  const memberCount = Number(membersCountRes?.cnt ?? '0');
+  const numTeams = memberCount >= 2 ? memberCount : draft.num_teams;
   const rounds = draft.round_count;
 
   // Verify the caller is a member of this league (or commissioner)
