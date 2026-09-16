@@ -124,7 +124,8 @@ const MLB_PITCHING_KEYS: Record<string, string> = {
 };
 
 function getStatKeys(sport: string, stats: Record<string, SeasonStat>): Record<string, string> {
-  if (sport === 'NFL') return NFL_STAT_KEYS;
+  // NFL and NCAAF (college/devy) share football stat keys
+  if (sport === 'NFL' || sport === 'NCAAF') return NFL_STAT_KEYS;
   // MLB: determine if batting or pitching based on which stats are present
   const hasPitching = stats['era'] || stats['inningsPitched'] || stats['wins'] || stats['saves'];
   const hasBatting = stats['battingAverage'] || stats['homeRuns'] || stats['hits'] || stats['runsBattedIn'];
@@ -308,7 +309,8 @@ export function PlayerInfoCard({
 
   if (!info) return null;
 
-  const SportIcon = sport === 'NFL' ? Shield : Target;
+  // Football sports (NFL + NCAAF) get the Shield icon; baseball gets Target
+  const SportIcon = sport === 'MLB' ? Target : Shield;
 
   return (
     <div className="w-[380px] max-h-[480px] overflow-y-auto bg-brand-surface border border-brand-border rounded-xl shadow-2xl">

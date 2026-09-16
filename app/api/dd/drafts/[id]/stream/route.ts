@@ -136,7 +136,14 @@ async function buildDraftState(draftId: bigint) {
 
   if (!draftRow) return null;
 
-  const numTeams = draftRow.num_teams;
+  // Effective team count: actual member count (matches draft-start + pick
+  // route order computation). Declared num_teams may exceed actual membership.
+  const effectiveTeamsRes = await queryOne<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt FROM dd_league_members WHERE league_id = $1`,
+    [BigInt(draftRow.league_id)]
+  );
+  const memberCount = Number(effectiveTeamsRes?.cnt ?? '0');
+  const numTeams = memberCount >= 2 ? memberCount : draftRow.num_teams;
   const sport = draftRow.sport as Sport;
   const rosterConfig: RosterConfig =
     typeof draftRow.roster_config === 'string'
