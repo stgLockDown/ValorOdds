@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 /**
  * Lightweight Markdown article renderer.
@@ -14,7 +15,16 @@ import { marked } from 'marked';
  */
 marked.setOptions({ gfm: true, breaks: false });
 
+function sanitizeHtml(html: string | null | undefined) {
+  return html
+    ? DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['span', 'p'],
+        ALLOWED_ATTR: ['class'],
+      })
+    : '';
+}
+
 export default function MarkdownArticle({ markdown }: { markdown: string }) {
   const html = marked.parse(markdown, { async: false }) as string;
-  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />;
 }
