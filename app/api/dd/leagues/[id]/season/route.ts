@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryOne } from '@/lib/db';
 import { initializeSeason } from '@/lib/dd/season';
+import { loadDraftState, finalizeDraft } from '@/lib/dd/draft-state';
 import { defaultSeasonWeeks } from '@/lib/dd/schedule';
 import type { RosterConfig } from '@/lib/dd/presets';
 
@@ -68,6 +69,28 @@ export async function GET(
      WHERE league_id = $1 ORDER BY created_at DESC LIMIT 1`,
     [leagueId]
   );
+
+  // Reconcile a draft that is complete-by-progress but was never marked
+  // completed (e.g. the final pick was made before the completion check was
+  // fixed). Without this the season would never seed and the head-to-head
+  // area would stay empty forever.
+  if (draft && draft.status !== 'completed') {
+    const state = await loadDraftState(BigInt(draft.id));
+    if (state && state.progress.isComplete) {
+      try {
+        await finalizeDraft(
+          BigInt(draft.id),
+          leagueId,
+          state.draft.roundCount,
+          state.draft.numTeams
+        );
+        draft.status = 'completed';
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[dd] reconcile finalizeDraft failed', err);
+      }
+    }
+  }
 
   // Lazily seed the season if the draft is done but nothing was created yet.
   if (draft && draft.status === 'completed') {
