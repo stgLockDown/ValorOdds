@@ -16,7 +16,14 @@ function createPool(): Pool {
     connectionString,
     // Railway Postgres requires SSL in production; accept self-signed for internal networking.
     ssl: env.isProd ? { rejectUnauthorized: false } : false,
-    max: 10,
+    // Bumped from 10 → 20: the Live Zone feature (real-time play-by-play
+    // polling every 4s per open tab) added meaningful concurrent query
+    // volume on top of odds ingestion / auth enrichment / admin tools that
+    // already share this pool. The batched-upsert fix in lib/live-feed.ts
+    // (syncLiveFeed) is the primary mitigation — this is extra headroom on
+    // top of that. The shared Postgres instance allows up to 500
+    // connections total across all services, so this is well within budget.
+    max: 20,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });

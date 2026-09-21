@@ -212,97 +212,155 @@ function extractEvents(sport: string, summary: any): ExtractedEvent[] {
   return [];
 }
 
+// ---------------------------------------------------------------------------
+// Sync throttling / dedup
+// ---------------------------------------------------------------------------
+//
+// Every open browser tab on a game's Live tab runs its own SSE loop that
+// calls syncLiveFeed() every 4s (plus the initial-snapshot GET route calls
+// it once per page load). With no coordination, N concurrent viewers of the
+// same popular game means N independent "fetch ESPN + upsert ~20 rows"
+// cycles running in parallel every few seconds, each burning multiple
+// round trips against the shared Postgres pool (max: 10 connections for
+// the whole app, shared with odds ingestion, auth enrichment, admin tools,
+// etc). Under real traffic on a live game this starves the pool for
+// everything else in the app (observed in production logs as
+// "timeout exceeded when trying to connect" across totally unrelated
+// endpoints while a live game was being viewed).
+//
+// Fix: coordinate syncs per (sport, espnEventId) so that regardless of how
+// many viewers are polling, at most one sync actually runs at a time and
+// results are shared/throttled to a minimum interval.
+const SYNC_THROTTLE_MS = 3000;
+const syncInFlight = new Map<string, Promise<{ synced: number } | null>>();
+const lastSyncedAt = new Map<string, number>();
+
 /**
  * Fetch the latest ESPN summary for a game and upsert every play/timeout/
  * quarter-end into `live_feed_events`. Idempotent — safe to call on every
  * poll tick. Corrected plays (same source_play_id, changed content) get
  * their `version` bumped in place.
+ *
+ * Coordinated across concurrent callers (see module notes above): if a
+ * sync for this game is already in flight, callers await that same
+ * promise instead of starting a duplicate one; if a sync completed very
+ * recently, callers get an immediate no-op instead of hitting ESPN/DB
+ * again.
  */
 export async function syncLiveFeed(sport: string, espnEventId: string): Promise<{ synced: number } | null> {
   const path = espnPathForSport(sport);
   if (!path || !espnEventId) return null;
-  const summary = await fetchRawSummaryJson(path, espnEventId);
-  if (!summary) return null;
 
-  const events = extractEvents(sport, summary);
-  if (events.length === 0) return { synced: 0 };
+  const key = `${sport.toUpperCase()}:${espnEventId}`;
 
-  const sportUp = sport.toUpperCase();
+  const inFlight = syncInFlight.get(key);
+  if (inFlight) return inFlight;
 
-  // Upsert each event. ON CONFLICT (sport, espn_event_id, source_play_id)
-  // bumps version + refreshes fields only when content actually changed
-  // (cheap `IS DISTINCT FROM` guard avoids pointless version churn on every
-  // poll tick for plays that haven't been corrected).
-  for (const e of events) {
-    await query(
-      `INSERT INTO live_feed_events (
-         sport, espn_event_id, source_play_id, version, event_type, play_type_text, text,
-         team_abbrev, home_score, away_score, period, clock_display, clock_seconds,
-         down, distance, yard_line, yards_to_endzone, possession_text, down_distance_text,
-         is_red_zone, field_position, is_scoring_play, scoring_type, is_turnover, stat_yardage,
-         wallclock, updated_at
-       ) VALUES (
-         $1,$2,$3,1,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,NOW()
-       )
-       ON CONFLICT (sport, espn_event_id, source_play_id) DO UPDATE SET
-         version        = live_feed_events.version + CASE WHEN live_feed_events.text IS DISTINCT FROM EXCLUDED.text
-                                                             OR live_feed_events.home_score IS DISTINCT FROM EXCLUDED.home_score
-                                                             OR live_feed_events.away_score IS DISTINCT FROM EXCLUDED.away_score
-                                                        THEN 1 ELSE 0 END,
-         event_type      = EXCLUDED.event_type,
-         play_type_text  = EXCLUDED.play_type_text,
-         text            = EXCLUDED.text,
-         team_abbrev     = EXCLUDED.team_abbrev,
-         home_score      = EXCLUDED.home_score,
-         away_score      = EXCLUDED.away_score,
-         period          = EXCLUDED.period,
-         clock_display   = EXCLUDED.clock_display,
-         clock_seconds   = EXCLUDED.clock_seconds,
-         down            = EXCLUDED.down,
-         distance        = EXCLUDED.distance,
-         yard_line       = EXCLUDED.yard_line,
-         yards_to_endzone = EXCLUDED.yards_to_endzone,
-         possession_text = EXCLUDED.possession_text,
-         down_distance_text = EXCLUDED.down_distance_text,
-         is_red_zone     = EXCLUDED.is_red_zone,
-         field_position  = EXCLUDED.field_position,
-         is_scoring_play = EXCLUDED.is_scoring_play,
-         scoring_type    = EXCLUDED.scoring_type,
-         is_turnover     = EXCLUDED.is_turnover,
-         stat_yardage    = EXCLUDED.stat_yardage,
-         wallclock       = EXCLUDED.wallclock,
-         updated_at      = NOW()`,
-      [
-        sportUp,
-        String(espnEventId),
-        e.sourcePlayId,
-        e.eventType,
-        e.playTypeText,
-        e.text,
-        e.teamAbbrev,
-        e.homeScore,
-        e.awayScore,
-        e.period,
-        e.clockDisplay,
-        e.clockSeconds,
-        e.down,
-        e.distance,
-        e.yardLine,
-        e.yardsToEndzone,
-        e.possessionText,
-        e.downDistanceText,
-        e.isRedZone,
-        e.fieldPosition,
-        e.isScoringPlay,
-        e.scoringType,
-        e.isTurnover,
-        e.statYardage,
-        e.wallclock,
-      ],
-    );
+  const last = lastSyncedAt.get(key) ?? 0;
+  if (Date.now() - last < SYNC_THROTTLE_MS) {
+    return { synced: 0 };
   }
 
-  return { synced: events.length };
+  const promise = (async (): Promise<{ synced: number } | null> => {
+    try {
+      const summary = await fetchRawSummaryJson(path, espnEventId);
+      if (!summary) return null;
+
+      const events = extractEvents(sport, summary);
+      if (events.length === 0) return { synced: 0 };
+
+      const sportUp = sport.toUpperCase();
+
+      // Batch every play into a single multi-row upsert instead of N
+      // sequential round trips — this is the change that matters most
+      // for pool pressure under concurrent viewers. Each row supplies 25
+      // bound params (version=1 and updated_at=NOW() are literals, not
+      // params), so the stride between rows' placeholder indices is 25.
+      const paramsPerRow = 25;
+      const values: string[] = [];
+      const params: unknown[] = [];
+      events.forEach((e, i) => {
+        const b = i * paramsPerRow;
+        values.push(
+          `($${b + 1},$${b + 2},$${b + 3},1,$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},$${b + 17},$${b + 18},$${b + 19},$${b + 20},$${b + 21},$${b + 22},$${b + 23},$${b + 24},$${b + 25},NOW())`,
+        );
+        params.push(
+          sportUp,
+          String(espnEventId),
+          e.sourcePlayId,
+          e.eventType,
+          e.playTypeText,
+          e.text,
+          e.teamAbbrev,
+          e.homeScore,
+          e.awayScore,
+          e.period,
+          e.clockDisplay,
+          e.clockSeconds,
+          e.down,
+          e.distance,
+          e.yardLine,
+          e.yardsToEndzone,
+          e.possessionText,
+          e.downDistanceText,
+          e.isRedZone,
+          e.fieldPosition,
+          e.isScoringPlay,
+          e.scoringType,
+          e.isTurnover,
+          e.statYardage,
+          e.wallclock,
+        );
+      });
+
+      await query(
+        `INSERT INTO live_feed_events (
+           sport, espn_event_id, source_play_id, version, event_type, play_type_text, text,
+           team_abbrev, home_score, away_score, period, clock_display, clock_seconds,
+           down, distance, yard_line, yards_to_endzone, possession_text, down_distance_text,
+           is_red_zone, field_position, is_scoring_play, scoring_type, is_turnover, stat_yardage,
+           wallclock, updated_at
+         ) VALUES ${values.join(', ')}
+         ON CONFLICT (sport, espn_event_id, source_play_id) DO UPDATE SET
+           version        = live_feed_events.version + CASE WHEN live_feed_events.text IS DISTINCT FROM EXCLUDED.text
+                                                               OR live_feed_events.home_score IS DISTINCT FROM EXCLUDED.home_score
+                                                               OR live_feed_events.away_score IS DISTINCT FROM EXCLUDED.away_score
+                                                          THEN 1 ELSE 0 END,
+           event_type      = EXCLUDED.event_type,
+           play_type_text  = EXCLUDED.play_type_text,
+           text            = EXCLUDED.text,
+           team_abbrev     = EXCLUDED.team_abbrev,
+           home_score      = EXCLUDED.home_score,
+           away_score      = EXCLUDED.away_score,
+           period          = EXCLUDED.period,
+           clock_display   = EXCLUDED.clock_display,
+           clock_seconds   = EXCLUDED.clock_seconds,
+           down            = EXCLUDED.down,
+           distance        = EXCLUDED.distance,
+           yard_line       = EXCLUDED.yard_line,
+           yards_to_endzone = EXCLUDED.yards_to_endzone,
+           possession_text = EXCLUDED.possession_text,
+           down_distance_text = EXCLUDED.down_distance_text,
+           is_red_zone     = EXCLUDED.is_red_zone,
+           field_position  = EXCLUDED.field_position,
+           is_scoring_play = EXCLUDED.is_scoring_play,
+           scoring_type    = EXCLUDED.scoring_type,
+           is_turnover     = EXCLUDED.is_turnover,
+           stat_yardage    = EXCLUDED.stat_yardage,
+           wallclock       = EXCLUDED.wallclock,
+           updated_at      = NOW()`,
+        params,
+      );
+
+      lastSyncedAt.set(key, Date.now());
+      return { synced: events.length };
+    } finally {
+      syncInFlight.delete(key);
+    }
+  })();
+
+  syncInFlight.set(key, promise);
+  return promise;
 }
 
 // ---------------------------------------------------------------------------

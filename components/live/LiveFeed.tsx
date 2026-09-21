@@ -26,21 +26,42 @@ export default function LiveFeed({
 }) {
   const [events, setEvents] = useState<LiveFeedEventDTO[] | null>(null);
   const [connected, setConnected] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams({ sport, home: homeTeam, away: awayTeam });
     if (espnEventId) params.set('event', espnEventId);
 
-    // Initial snapshot fetch (works even if SSE is blocked by a proxy).
-    fetch(`/api/public/live-feed?${params.toString()}`, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data) => setEvents(data.events || []))
-      .catch(() => setEvents([]));
+    let cancelled = false;
+    // Bound the initial fetch so a slow/stuck backend (e.g. transient DB
+    // pool pressure) can't leave the UI on "Loading live feed…" forever —
+    // fail into an explicit, retryable error state instead.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+    fetch(`/api/public/live-feed?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setEvents(data.events || []);
+        setLoadError(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadError(true);
+      })
+      .finally(() => clearTimeout(timeoutId));
 
     const es = new EventSource(`/api/public/live-feed/stream?${params.toString()}`);
     esRef.current = es;
-    es.onopen = () => setConnected(true);
+    es.onopen = () => {
+      setConnected(true);
+      setLoadError(false);
+    };
     es.onerror = () => setConnected(false);
     es.onmessage = (msg) => {
       try {
@@ -48,6 +69,7 @@ export default function LiveFeed({
         if (data.type === 'feed' && Array.isArray(data.events)) {
           setEvents(data.events);
           setConnected(true);
+          setLoadError(false);
         }
       } catch {
         // ignore malformed message
@@ -55,10 +77,28 @@ export default function LiveFeed({
     };
 
     return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timeoutId);
       es.close();
       esRef.current = null;
     };
   }, [sport, homeTeam, awayTeam, espnEventId]);
+
+  if (events === null && loadError) {
+    return (
+      <div className="card p-6 text-center text-sm text-brand-muted">
+        Couldn&apos;t load the live feed right now.{' '}
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="underline decoration-dotted hover:text-brand-text"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (events === null) {
     return (
