@@ -58,6 +58,84 @@ const SPORT_PATH: Record<Sport, string> = {
   NCAAF: 'football/college-football',
 };
 
+// ESPN's real per-team depth chart endpoint (`sports.core.api.espn.com`).
+// This returns athletes grouped by formation/position with an explicit
+// `rank` field reflecting ACTUAL depth-chart standing (starter = 1, backup
+// = 2, ...). This is what we should use for the depth-decay model below.
+// NOTE: `.../teams/{teamId}/roster` (used by fetchRoster) returns athletes
+// within a position group sorted ALPHABETICALLY BY LAST NAME, not by depth
+// chart standing — using that array order as a depth proxy (the old
+// approach) silently misranks any non-curated player whose last name sorts
+// late (e.g. "Smith-Njigba" landing after "Kupp", "Jones", "Horton", "Foster"
+// despite being Seattle's actual #1 WR). Real depth chart data avoids this.
+// NCAAF depth charts are not exposed by this endpoint (`400 Depth charts not
+// supported for football|college-football|...`), so devy pools keep using
+// the alphabetical-order fallback.
+const DEPTHCHART_URL: Partial<Record<Sport, (teamId: string, seasonYear: number) => string>> = {
+  NFL: (teamId, seasonYear) =>
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${seasonYear}/teams/${teamId}/depthcharts`,
+  MLB: (teamId, seasonYear) =>
+    `https://sports.core.api.espn.com/v2/sports/baseball/leagues/mlb/seasons/${seasonYear}/teams/${teamId}/depthcharts`,
+};
+
+/**
+ * Fetch a team's real ESPN depth chart and return a map of
+ * `athleteId -> best (lowest/most-senior) rank at their OWN primary
+ * position abbreviation` (e.g. WR, RB, QB). Rank is 1-based (1 = starter).
+ *
+ * IMPORTANT: we must NOT take the min rank across ALL position slots for an
+ * athlete — special-teams roles (punt/kick returner "pr"/"kr") are also
+ * tracked in the depth chart and frequently rank a WR/RB #1 there even
+ * though they're WR2 or RB3 at their actual offensive position (e.g.
+ * Seattle's Rashid Shaheed is PR1/KR1 but WR2 behind Jaxon Smith-Njigba).
+ * Blending those in would re-introduce a misranking bug just like the one
+ * we're fixing. So we only trust ranks under position keys that map to a
+ * genuine offensive/defensive/kicking position abbreviation matching the
+ * `EspnAthlete.position.abbreviation` values used elsewhere in this file
+ * (wr, rb, qb, te, k/pk, ...) — not return-specialist slots (pr, kr, h, ls).
+ * Returns an empty map on any failure (unsupported sport, network error,
+ * unexpected shape) so callers can safely fall back to the alphabetical-
+ * order heuristic.
+ */
+const DEPTHCHART_IGNORE_POS_KEYS = new Set(['pr', 'kr', 'h', 'ls']);
+
+async function fetchDepthChart(
+  sport: Sport,
+  teamId: string,
+  seasonYear: number
+): Promise<Map<string, number>> {
+  const rankMap = new Map<string, number>();
+  const urlFn = DEPTHCHART_URL[sport];
+  if (!urlFn) return rankMap;
+  try {
+    const data = await fetchJson(urlFn(teamId, seasonYear));
+    const items: any[] = Array.isArray(data?.items) ? data.items : [];
+    for (const formation of items) {
+      const positions = formation?.positions || {};
+      for (const posKey of Object.keys(positions)) {
+        if (DEPTHCHART_IGNORE_POS_KEYS.has(posKey)) continue;
+        const athletes: any[] = Array.isArray(positions[posKey]?.athletes)
+          ? positions[posKey].athletes
+          : [];
+        for (const entry of athletes) {
+          const ref: string | undefined = entry?.athlete?.$ref;
+          const rank: number | undefined = entry?.rank;
+          if (!ref || typeof rank !== 'number') continue;
+          const athleteId = ref.match(/\/athletes\/(\d+)/)?.[1];
+          if (!athleteId) continue;
+          const existing = rankMap.get(athleteId);
+          if (existing === undefined || rank < existing) {
+            rankMap.set(athleteId, rank);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[espn-pool] depth chart fetch failed for team ${teamId}:`, err);
+  }
+  return rankMap;
+}
+
 async function fetchJson(url: string): Promise<any> {
   const res = await fetch(url, {
     headers: { 'User-Agent': 'ValorOdds/1.0 (pool-builder)' },
@@ -128,29 +206,50 @@ async function fetchTeams(sport: Sport): Promise<EspnTeamRef[]> {
 }
 
 /** Fetch a single team's roster. Returns athletes across all roster groups. */
-async function fetchRoster(sport: Sport, teamId: string): Promise<EspnAthlete[]> {
-  const data = await fetchJson(
-    `${ESPN_BASE}/${SPORT_PATH[sport]}/teams/${teamId}/roster`
-  );
+async function fetchRoster(
+  sport: Sport,
+  teamId: string,
+  seasonYear: number
+): Promise<EspnAthlete[]> {
+  const [data, depthChart] = await Promise.all([
+    fetchJson(`${ESPN_BASE}/${SPORT_PATH[sport]}/teams/${teamId}/roster`),
+    fetchDepthChart(sport, teamId, seasonYear),
+  ]);
   const groups: any[] = Array.isArray(data?.athletes) ? data.athletes : [];
   const out: EspnAthlete[] = [];
   for (const g of groups) {
     // NFL/MLB groups are keyed by name/type ("offense", "Injured Reserve");
-    // CFB groups are keyed by `position` ("offense", "specialTeam", …).
+    // CFB groups are keyed by `position` ("offense", "specialTeam", ...).
     const groupName: string = (g?.name || g?.type || g?.position || '').toString();
     const items: any[] = Array.isArray(g?.items) ? g.items : [];
     // Per-position depth: NFL rosters group items by position block, but CFB
     // offense/defense items are INTERLEAVED by position (e.g. TE QB WR RB
-    // OL QB …). A flat index would crush WRs/TEs that happen to sort later.
+    // OL QB ...). A flat index would crush WRs/TEs that happen to sort later.
     // So we count occurrences of each position within the group and use the
-    // running count as that athlete's depth index.
+    // running count as a FALLBACK depth index.
+    //
+    // IMPORTANT: ESPN's roster `items[]` array is sorted ALPHABETICALLY BY
+    // LAST NAME within each position group, NOT by depth-chart standing.
+    // Using that array order as a depth proxy silently misranks players
+    // whose last name sorts late (e.g. "Smith-Njigba" landing after "Kupp",
+    // "Jones", "Horton", "Foster" despite being Seattle's actual #1 WR).
+    // When real depth chart data is available (`depthChart` map, keyed by
+    // athlete id -> 1-based rank), we prefer it and only fall back to the
+    // alphabetical-position-count heuristic when a player isn't found in it
+    // (e.g. IR/practice-squad players ESPN's depth chart omits).
     const posCount = new Map<string, number>();
     for (let i = 0; i < items.length; i++) {
       const a = items[i];
       if (!a?.fullName || !a?.position?.abbreviation) continue;
       const ab = a.position.abbreviation;
-      const depth = posCount.get(ab) ?? 0;
-      posCount.set(ab, depth + 1);
+      const fallbackDepth = posCount.get(ab) ?? 0;
+      posCount.set(ab, fallbackDepth + 1);
+
+      const realRank = depthChart.get(String(a.id));
+      // Real depth chart ranks are 1-based (1 = starter); our depthIdx is
+      // 0-based (0 = starter). Convert when we have real data.
+      const depth = realRank !== undefined ? realRank - 1 : fallbackDepth;
+
       out.push({
         id: String(a.id),
         fullName: a.fullName,
@@ -181,6 +280,7 @@ async function fetchRoster(sport: Sport, teamId: string): Promise<EspnAthlete[]>
 /** Fetch every team's roster, with modest concurrency. */
 async function fetchAllRosters(
   sport: Sport,
+  seasonYear: number,
   concurrency = 6
 ): Promise<Array<{ team: EspnTeamRef; athletes: EspnAthlete[] }>> {
   const teams = await fetchTeams(sport);
@@ -192,7 +292,7 @@ async function fetchAllRosters(
       const i = idx++;
       const team = teams[i];
       try {
-        const athletes = await fetchRoster(sport, team.id);
+        const athletes = await fetchRoster(sport, team.id, seasonYear);
         results.push({ team, athletes });
       } catch (err) {
         console.warn(`[espn-pool] roster fetch failed for ${team.displayName}:`, err);
@@ -373,6 +473,16 @@ const NFL_STARS: Record<string, number> = {
   'PUKA NACUA': 17,
   'ZAY FLOWERS': 13,
   'BRIAN THOMAS JR.': 13,
+  'JAXON SMITH-NJIGBA': 17,
+  'RASHID SHAHEED': 12,
+  'XAVIER WORTHY': 13,
+  'LADD MCCONKEY': 14,
+  'RASHEE RICE': 14,
+  'JAMESON WILLIAMS': 13,
+  'TETAIROA MCMILLAN': 13,
+  'MALIK NABERS': 16,
+  'DRAKE LONDON': 14,
+  'NICO COLLINS': 15,
   // Elite TEs
   'TRAVIS KELCE': 14,
   'SAM LAPORTA': 12,
@@ -750,7 +860,7 @@ export async function fetchEspnPool(
   scoringConfig: ScoringConfig,
   maxPlayers?: number
 ): Promise<EspnPoolResult> {
-  const rosters = await fetchAllRosters(sport);
+  const rosters = await fetchAllRosters(sport, seasonYear);
   const players: EspnPoolPlayer[] = [];
   const seen = new Set<string>(); // dedupe by uppercased name (cross-team transfers)
 
