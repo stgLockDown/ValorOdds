@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Trophy, Search, Clock, Pause, Play, Check, Loader2, ArrowLeft,
   Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown, AlertCircle, GraduationCap,
+  Sparkles,
 } from 'lucide-react';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
 import {
@@ -858,9 +859,17 @@ export default function DraftRoomClient({
               Back to DiamondDraft
             </Link>
           ) : (
-            <Link href={`/dd/league/${leagueId}`} className="btn-primary mt-4">
-              Go to League Home
-            </Link>
+            <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
+              <Link
+                href={`/dd/league/${leagueId}/grades`}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" /> See AI Draft Grades
+              </Link>
+              <Link href={`/dd/league/${leagueId}`} className="btn-secondary">
+                Go to League Home
+              </Link>
+            </div>
           )}
         </div>
       )}

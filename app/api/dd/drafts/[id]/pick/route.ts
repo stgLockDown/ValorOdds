@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryOne, tx } from '@/lib/db';
-import { generateDraftOrder, type Sport } from '@/lib/dd/presets';
+import type { Sport } from '@/lib/dd/presets';
 import { checkPositionLimit, getPositionSummary } from '@/lib/dd/roster-enforcement';
 import { awardXp } from '@/lib/dd/gamification';
+import { loadDraftState, finalizeDraft } from '@/lib/dd/draft-state';
 
-// ─── POST /api/dd/drafts/[id]/pick ── Make a draft pick ───────────────────────
+// ─── POST /api/dd/drafts/[id]/pick ── Make a draft pick ──────────────────────
 // Body: { playerName, playerId?, team?, position?, auctionAmount? }
 export async function POST(
   req: NextRequest,
@@ -24,44 +25,23 @@ export async function POST(
     return NextResponse.json({ error: 'playerName is required' }, { status: 400 });
   }
 
-  const draft = await queryOne<{
-    id: string; league_id: string; draft_type: string; status: string;
-    round_count: number; current_round: number; current_pick: number;
-    league_name: string; sport: Sport; num_teams: number;
-    roster_preset: string; commissioner_id: string;
-  }>(
-    `SELECT d.id::text, d.league_id::text, d.draft_type, d.status, d.round_count,
-            d.current_round, d.current_pick,
-            l.name AS league_name, l.sport, l.num_teams, l.roster_config->>'name' AS roster_preset,
-            l.commissioner_id::text
-     FROM dd_drafts d
-     JOIN dd_leagues l ON l.id = d.league_id
-     WHERE d.id = $1`,
-    [draftId]
-  );
-
-  if (!draft) {
+  const state = await loadDraftState(draftId);
+  if (!state) {
     return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
   }
+  const { draft, members, progress, onClockMemberId, onClockEntry } = state;
 
   if (draft.status !== 'in_progress') {
     return NextResponse.json({ error: `Draft is ${draft.status}, cannot make picks` }, { status: 409 });
   }
 
-  const leagueId = BigInt(draft.league_id);
-  // Effective team count for the draft order: the number of members who had
-  // joined when the draft started. A league's declared num_teams can be larger
-  // than the actual membership (e.g. a 12-team league where the commissioner
-  // started the draft once 2 humans joined) — using the declared count would
-  // misalign the snake order and block members whose slot never comes up.
-  // Draft start uses the ACTUAL member count, so the order math here must too.
-  const membersCountRes = await queryOne<{ cnt: string }>(
-    `SELECT COUNT(*)::text AS cnt FROM dd_league_members WHERE league_id = $1`,
-    [leagueId]
-  );
-  const memberCount = Number(membersCountRes?.cnt ?? '0');
-  const numTeams = memberCount >= 2 ? memberCount : draft.num_teams;
-  const rounds = draft.round_count;
+  const leagueId = BigInt(draft.leagueId);
+
+  // If every roster is full (or the order is exhausted), the draft is over.
+  if (progress.isComplete || !onClockEntry || !onClockMemberId) {
+    await finalizeDraft(draftId, leagueId, draft.roundCount, draft.numTeams);
+    return NextResponse.json({ error: 'Draft is complete' }, { status: 409 });
+  }
 
   // Find the member record for this user
   const member = await queryOne<{ id: string; is_commissioner: boolean; draft_position: number }>(
@@ -75,47 +55,18 @@ export async function POST(
     return NextResponse.json({ error: 'You are not a member of this league' }, { status: 403 });
   }
 
-  // Compute whose turn it is
-  const fullOrder = generateDraftOrder(draft.draft_type as any, numTeams, rounds);
-  const picksMade = await queryOne<{ cnt: string }>(
-    `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks WHERE draft_id = $1`,
-    [draftId]
-  );
-  const currentOverallPick = Number(picksMade?.cnt ?? '0') + 1;
-  const currentOrderEntry = fullOrder.find((p) => p.overallPick === currentOverallPick);
+  const isCommissioner = draft.commissionerId === String(userId) || member.is_commissioner;
 
-  if (!currentOrderEntry) {
-    return NextResponse.json({ error: 'Draft is complete' }, { status: 409 });
-  }
-
-  // Check if it's this user's turn (commissioner can make picks for anyone — auto-draft/override)
-  const isCommissioner = draft.commissioner_id === String(userId) || member.is_commissioner;
-  const expectedSlot = currentOrderEntry.slot;
-  const expectedDraftPosition = expectedSlot + 1;
-
-  if (member.draft_position !== expectedDraftPosition && !isCommissioner) {
-    // Get the name of whose turn it actually is
-    const onClockMember = await queryOne<{ team_name: string; display_name: string | null }>(
-      `SELECT m.team_name, u.display_name
-       FROM dd_league_members m
-       JOIN web_users u ON u.id = m.user_id
-       WHERE m.league_id = $1 AND m.draft_position = $2`,
-      [leagueId, expectedDraftPosition]
-    );
+  // It must be this user's turn (commissioner may pick on anyone's behalf).
+  if (onClockMemberId !== member.id && !isCommissioner) {
+    const onClockMember = members.find((m) => m.id === onClockMemberId);
     return NextResponse.json({
-      error: `It's not your turn. On the clock: ${onClockMember?.display_name ?? onClockMember?.team_name ?? 'Another team'}`,
-      onClockTeam: onClockMember?.team_name,
+      error: `It's not your turn. On the clock: ${onClockMember?.displayName ?? onClockMember?.teamName ?? 'Another team'}`,
+      onClockTeam: onClockMember?.teamName,
     }, { status: 409 });
   }
 
-  // Find the member who should be making this pick (based on slot)
-  const onClockMember = await queryOne<{ id: string; team_name: string }>(
-    `SELECT id::text, team_name FROM dd_league_members
-     WHERE league_id = $1 AND draft_position = $2`,
-    [leagueId, expectedDraftPosition]
-  );
-
-  const memberIdForPick = BigInt(onClockMember?.id ?? member.id);
+  const memberIdForPick = BigInt(onClockMemberId);
 
   // Check that this player hasn't been drafted already
   const alreadyDrafted = await queryOne<{ id: string }>(
@@ -132,10 +83,6 @@ export async function POST(
   // lookup tries the LEAGUE sport pool first, then the NCAAF pool. The pick
   // row stores the player's ACTUAL pool sport so rosters render correctly
   // and taxi-squad enforcement can identify college players.
-  //
-  // The lookup ALWAYS runs (even when the client sent team/position) so the
-  // player's true pool sport + pool id are resolved — the client values are
-  // only fallbacks for names not found in either pool.
   let playerInfo: {
     team: string | null;
     position: string | null;
@@ -176,14 +123,6 @@ export async function POST(
 
   const isCollegePick = playerInfo.poolSport === 'NCAAF';
 
-  // Calculate next pick position
-  const nextOverall = currentOverallPick + 1;
-  const nextOrderEntry = fullOrder.find((p) => p.overallPick === nextOverall);
-  const isLastPick = currentOverallPick >= numTeams * rounds;
-
-  const nextRound = nextOrderEntry?.round ?? draft.round_count;
-  const nextPickInRound = nextOrderEntry?.pickInRound ?? 1;
-
   // ── Position limit + taxi-squad enforcement (hard block) ──────────────────
   // If the league has enforcePositionLimits enabled (default true), block
   // picks that exceed the roster position capacity when other starter
@@ -195,9 +134,8 @@ export async function POST(
   // league-sport position limits (taxi slots have eligible ['*']).
   let positionWarning: string | null = null;
   let positionLimits: { position: string; filled: number; capacity: number }[] = [];
-  if (memberIdForPick) {
+  {
     try {
-      // Fetch roster config + settings for this league
       const leagueRow = await queryOne<{ roster_config: any; settings: any }>(
         `SELECT roster_config, settings FROM dd_leagues WHERE id = $1`,
         [leagueId]
@@ -206,18 +144,14 @@ export async function POST(
       const slots: { slot: string; label: string; count: number; eligible: string[]; isStarter: boolean }[] =
         rc && typeof rc === 'object' && Array.isArray(rc.slots) ? rc.slots : [];
 
-      // Determine if enforcement is enabled (default true)
       const settings = leagueRow?.settings;
       const enforceLimits = settings?.enforcePositionLimits !== false; // default true
 
-      // Taxi-squad capacity: prefer the roster config TAXI slot count, fall
-      // back to dynastySettings.taxiSquadSize stored at league creation.
       const taxiSlots =
         slots.find((s) => s.slot === 'TAXI')?.count ??
         settings?.dynastySettings?.taxiSquadSize ??
         0;
 
-      // Count college picks this member already owns (taxi occupancy).
       const collegeCountRes = await queryOne<{ cnt: string }>(
         `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks
          WHERE draft_id = $1 AND member_id = $2 AND sport = 'NCAAF'`,
@@ -246,8 +180,6 @@ export async function POST(
         positionWarning = `Taxi squad: ${collegePicksOwned + 1}/${taxiSlots} college players stashed.`;
       } else if (playerInfo.position && slots.length > 0) {
         // ── League-sport player: position limit enforcement ──
-        // College picks (sport='NCAAF') are excluded from the filled counts —
-        // they occupy taxi slots, not position slots.
         const positionCountsRes = await query<{ position: string; cnt: string }>(
           `SELECT position, COUNT(*)::text AS cnt
            FROM dd_draft_picks
@@ -261,17 +193,14 @@ export async function POST(
           filled[row.position] = Number(row.cnt);
         }
 
-        // Total drafted by this member (all picks, incl. taxi stashes)
         const totalDraftedRes = await queryOne<{ cnt: string }>(
           `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks WHERE draft_id = $1 AND member_id = $2`,
           [draftId, memberIdForPick]
         );
         const totalDrafted = Number(totalDraftedRes?.cnt ?? '0');
 
-        // Compute total roster size from slots
         const totalRosterSize = slots.reduce((sum, s) => sum + s.count, 0);
 
-        // Build position summary for the response (UI uses this)
         positionLimits = getPositionSummary(slots, filled).map((p) => ({
           position: p.position,
           filled: p.filled,
@@ -295,19 +224,18 @@ export async function POST(
               { status: 409 }
             );
           }
-          // If allowed but at capacity (depth pick), include advisory warning
           if (limitCheck.capacity > 0 && limitCheck.filled >= limitCheck.capacity) {
             positionWarning = `Note: You've reached the ${playerInfo.position} capacity (${limitCheck.filled}/${limitCheck.capacity}). This player will sit on your bench.`;
           }
         }
       }
-    } catch (e) {
+    } catch {
       // Non-critical — if the check fails, allow the pick (fail-open)
     }
   }
 
+  // Insert the pick, then recompute progress to decide whether the draft ends.
   const result = await tx(async (client) => {
-    // Insert the pick
     await client.query(
       `INSERT INTO dd_draft_picks
         (draft_id, round_num, pick_in_round, overall_pick, member_id,
@@ -315,50 +243,56 @@ export async function POST(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, NOW())`,
       [
         draftId,
-        currentOrderEntry.round,
-        currentOrderEntry.pickInRound,
-        currentOverallPick,
+        onClockEntry.round,
+        onClockEntry.pickInRound,
+        onClockEntry.overallPick,
         memberIdForPick,
         playerName,
         playerInfo.player_id,
         playerInfo.team,
         playerInfo.position,
-        playerInfo.poolSport ?? draft.sport, // player's ACTUAL pool sport (NCAAF for college picks)
+        playerInfo.poolSport ?? draft.sport,
         auctionAmount ?? null,
       ]
     );
 
-    // Update draft progress
+    // Recompute progress with this pick included.
+    const after = await loadDraftState(draftId);
+    const isLastPick = !after || after.progress.isComplete;
+
     if (isLastPick) {
-      // Draft complete!
       await client.query(
         `UPDATE dd_drafts SET status = 'completed', current_round = $1, current_pick = $2, completed_at = NOW() WHERE id = $3`,
-        [draft.round_count, numTeams, draftId]
+        [draft.roundCount, draft.numTeams, draftId]
       );
       await client.query(
         `UPDATE dd_leagues SET status = 'in_season', updated_at = NOW() WHERE id = $1`,
         [leagueId]
       );
     } else {
+      const next = after!.onClockEntry!;
       await client.query(
         `UPDATE dd_drafts SET current_round = $1, current_pick = $2 WHERE id = $3`,
-        [nextRound, nextPickInRound, draftId]
+        [next.round, next.pickInRound, draftId]
       );
     }
+
+    return { isLastPick, after };
   });
 
-  // Award XP for making a pick
   const xpResult = await awardXp(session.user.id, 'make_draft_pick', {
-    leagueId: draft.league_id,
-    metadata: { leagueName: draft.league_name, playerName },
+    leagueId: draft.leagueId,
+    metadata: { leagueName: draft.leagueName, playerName },
   }).catch(() => ({ awarded: false, newTotalXp: 0, newLevel: 1, newLevelTitle: 'Rookie', leveledUp: false, newBadges: [], streakUpdated: false }));
+
+  const nextEntry = result.after?.onClockEntry ?? null;
 
   return NextResponse.json({
     success: true,
     pick: {
-      overallPick: currentOverallPick,
-      round: currentOrderEntry.round,
-      pickInRound: currentOrderEntry.pickInRound,
+      overallPick: onClockEntry.overallPick,
+      round: onClockEntry.round,
+      pickInRound: onClockEntry.pickInRound,
       memberId: String(memberIdForPick),
       playerName,
       playerId: playerInfo.player_id,
@@ -366,16 +300,16 @@ export async function POST(
       position: playerInfo.position,
       isAutoPicked: false,
     },
-    isDraftComplete: isLastPick,
+    isDraftComplete: result.isLastPick,
     positionWarning,
     positionLimits,
-    nextTurn: isLastPick
+    nextTurn: result.isLastPick || !nextEntry
       ? null
       : {
-          overallPick: nextOverall,
-          round: nextRound,
-          pickInRound: nextPickInRound,
-          slot: nextOrderEntry?.slot,
+          overallPick: nextEntry.overallPick,
+          round: nextEntry.round,
+          pickInRound: nextEntry.pickInRound,
+          slot: nextEntry.slot,
         },
     xpAwarded: xpResult.awarded,
     leveledUp: xpResult.leveledUp,
