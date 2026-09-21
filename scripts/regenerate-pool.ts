@@ -83,8 +83,11 @@ async function main() {
           await client.query(
             `INSERT INTO dd_player_pool
                (season_year, sport, player_name, team, position, eligible_pos,
-                adp, rank, tier, projection, projected_points, is_rookie, injury_status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                adp, rank, tier, projection, projected_points, is_rookie, injury_status,
+                espn_id, headshot_url, height, weight, age, college, debut_year,
+                experience_years, birth_place, jersey)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                     $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
             [
               SEASON_YEAR,
               sport,
@@ -99,6 +102,16 @@ async function main() {
               p.projectedPoints,
               p.isRookie,
               p.injuryStatus,
+              p.espnId || null,
+              p.headshot || null,
+              p.height || null,
+              p.weight || null,
+              p.age ?? null,
+              p.college || null,
+              p.debutYear ?? null,
+              p.experienceYears ?? null,
+              p.birthPlace || null,
+              p.jersey || null,
             ]
           );
           inserted++;

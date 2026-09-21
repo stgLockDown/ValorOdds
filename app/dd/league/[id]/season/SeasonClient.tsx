@@ -5,8 +5,12 @@ import Link from 'next/link';
 import {
   Loader2, ArrowLeft, Trophy, Crown, Users, Calendar, Save, Check,
   AlertCircle, Sparkles, ChevronLeft, ChevronRight, Swords, Medal,
+  UserPlus, Play,
 } from 'lucide-react';
 import { getPositionColor } from '@/lib/dd/position-colors';
+import { ToastProvider, useToast } from '@/components/dd/ToastProvider';
+import NotificationBell from '@/components/dd/NotificationBell';
+import WaiversPanel from '@/components/dd/WaiversPanel';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -19,7 +23,8 @@ interface RosterPlayer {
 }
 interface Member {
   id: string; teamName: string; displayName: string; draftPosition: number | null;
-  isBot: boolean; record: { wins: number; losses: number; ties: number; pointsFor: number };
+  isBot: boolean; isCommissioner: boolean;
+  record: { wins: number; losses: number; ties: number; pointsFor: number };
 }
 interface Matchup {
   id: string; week: number; homeMemberId: string; awayMemberId: string;
@@ -219,11 +224,25 @@ export default function SeasonClient({
 }: {
   leagueId: string; leagueName: string;
 }) {
+  return (
+    <ToastProvider>
+      <SeasonInner leagueId={leagueId} leagueName={leagueName} />
+    </ToastProvider>
+  );
+}
+
+function SeasonInner({
+  leagueId, leagueName,
+}: {
+  leagueId: string; leagueName: string;
+}) {
+  const { push } = useToast();
   const [data, setData] = useState<SeasonData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'matchup' | 'lineup' | 'standings'>('matchup');
+  const [tab, setTab] = useState<'matchup' | 'lineup' | 'standings' | 'waivers'>('matchup');
   const [week, setWeek] = useState(1);
+  const [scoring, setScoring] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -240,6 +259,39 @@ export default function SeasonClient({
   }, [leagueId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Deep-link support: /season?tab=waivers
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'waivers' || t === 'lineup' || t === 'standings' || t === 'matchup') {
+      setTab(t);
+    }
+  }, []);
+
+  const scoreWeek = async () => {
+    setScoring(true);
+    try {
+      const res = await fetch(`/api/dd/leagues/${leagueId}/score`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ week }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to score week');
+      const n = json.scored?.length ?? 0;
+      push({
+        kind: 'score',
+        title: n ? `Week ${week} scored` : 'Nothing to score',
+        body: n ? `${n} matchup${n === 1 ? '' : 's'} went final.` : 'This week is already final.',
+      });
+      await load();
+    } catch (e: any) {
+      push({ kind: 'league', title: 'Scoring failed', body: e.message });
+    } finally {
+      setScoring(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -290,6 +342,7 @@ export default function SeasonClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <NotificationBell leagueId={leagueId} />
           <Link href={`/dd/league/${leagueId}/grades`} className="btn-secondary inline-flex items-center gap-2">
             <Sparkles className="w-4 h-4" /> AI Grades
           </Link>
@@ -314,6 +367,7 @@ export default function SeasonClient({
         {([
           ['matchup', 'Matchup', Swords],
           ['lineup', 'Set Lineup', Users],
+          ['waivers', 'Waivers', UserPlus],
           ['standings', 'Standings', Trophy],
         ] as const).map(([key, label, Icon]) => (
           <button
@@ -350,6 +404,21 @@ export default function SeasonClient({
             >
               <ChevronRight className="w-4 h-4" />
             </button>
+            {hasSeason && (
+              <button
+                onClick={scoreWeek}
+                disabled={scoring}
+                className="btn-secondary inline-flex items-center gap-2 text-xs ml-2"
+                title="Score this week's matchups"
+              >
+                {scoring ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                Score Week
+              </button>
+            )}
           </div>
 
           {/* My matchup */}
@@ -383,7 +452,7 @@ export default function SeasonClient({
                 }, [] as any[])}
               </div>
               <div className="text-center text-xs text-brand-muted mt-3">
-                {myMatchup.status === 'completed' ? 'Final' : 'Scheduled'}
+                {myMatchup.status === 'final' ? 'Final' : 'Scheduled'}
               </div>
             </div>
           ) : hasSeason && (
@@ -441,6 +510,24 @@ export default function SeasonClient({
               You don&apos;t have a roster yet. Complete your league draft first.
             </p>
           )}
+        </div>
+      )}
+
+      {/* ── Waivers tab ── */}
+      {tab === 'waivers' && (
+        <div className="card">
+          <h3 className="font-semibold text-brand-text mb-4 flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-brand-success" /> Waiver Wire
+          </h3>
+          <WaiversPanel
+            leagueId={leagueId}
+            sport={data.league.sport}
+            roster={myRoster}
+            isCommissioner={
+              data.members.find((m) => m.id === data.currentMemberId)?.isCommissioner === true
+            }
+            onChanged={load}
+          />
         </div>
       )}
 
