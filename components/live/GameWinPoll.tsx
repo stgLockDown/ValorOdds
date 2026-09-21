@@ -28,6 +28,10 @@ export default function GameWinPoll({
   const [poll, setPoll] = useState<(Poll & { voting?: boolean; error?: string }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [changingVote, setChangingVote] = useState(false);
+  // Tracks a fetch failure (e.g. transient DB pool pressure returning a
+  // 500) separately from "poll doesn't exist" so we can retry with
+  // backoff instead of just disappearing forever after one bad tick.
+  const [fetchFailed, setFetchFailed] = useState(false);
 
   const fetchPoll = useCallback(async () => {
     try {
@@ -39,12 +43,16 @@ export default function GameWinPoll({
         commenceTime,
       });
       const res = await fetch(`/api/polls/game?${params.toString()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data?.poll) {
         setPoll((prev) => ({ ...data.poll, voting: prev?.voting, error: prev?.error }));
+        setFetchFailed(false);
       }
     } catch {
-      // Silent — voting widget is a nice-to-have, never blocks the feed.
+      // Transient — retry on the next interval tick / manual retry click
+      // rather than treating this as "no poll exists".
+      setFetchFailed(true);
     } finally {
       setLoading(false);
     }
@@ -55,6 +63,14 @@ export default function GameWinPoll({
     const interval = setInterval(fetchPoll, 20_000);
     return () => clearInterval(interval);
   }, [fetchPoll]);
+
+  // Quick retry after a transient failure (e.g. a one-off DB timeout)
+  // instead of waiting the full 20s poll interval.
+  useEffect(() => {
+    if (!fetchFailed || poll) return;
+    const retryTimeout = setTimeout(fetchPoll, 3_000);
+    return () => clearTimeout(retryTimeout);
+  }, [fetchFailed, poll, fetchPoll]);
 
   const handleVote = useCallback(
     async (team: 'home' | 'away') => {
