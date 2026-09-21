@@ -114,9 +114,11 @@ export async function GET(
     display_name: string | null;
     draft_position: number | null;
     is_bot: boolean;
+    is_commissioner: boolean;
   }>(
     `SELECT m.id::text, m.team_name, u.display_name, m.draft_position,
-            (u.password_hash = 'bot_no_login') AS is_bot
+            (u.password_hash = 'bot_no_login') AS is_bot,
+            m.is_commissioner
      FROM dd_league_members m
      JOIN web_users u ON u.id = m.user_id
      WHERE m.league_id = $1
@@ -183,7 +185,7 @@ export async function GET(
   const records: Record<string, { wins: number; losses: number; ties: number; pointsFor: number }> = {};
   for (const m of membersRes.rows) records[m.id] = { wins: 0, losses: 0, ties: 0, pointsFor: 0 };
   for (const g of matchupsRes.rows) {
-    if (g.status !== 'completed') continue;
+    if (g.status !== 'final') continue;
     const hs = g.home_score != null ? Number(g.home_score) : 0;
     const as = g.away_score != null ? Number(g.away_score) : 0;
     if (records[g.home_member_id]) records[g.home_member_id].pointsFor += hs;
@@ -205,7 +207,7 @@ export async function GET(
         Math.max(
           1,
           ...matchupsRes.rows
-            .filter((m) => m.status === 'completed')
+            .filter((m) => m.status === 'final')
             .map((m) => m.week_num + 1)
         )
       )
@@ -228,6 +230,7 @@ export async function GET(
       displayName: m.display_name ?? m.team_name,
       draftPosition: m.draft_position,
       isBot: m.is_bot,
+      isCommissioner: m.is_commissioner,
       record: records[m.id] ?? { wins: 0, losses: 0, ties: 0, pointsFor: 0 },
     })),
     rosters: rosterByMember,
