@@ -45,7 +45,10 @@ async function main() {
     for (const sport of ['NFL', 'MLB'] as const) {
       const scoringKey = sport === 'NFL' ? 'standard_ppr' : 'standard';
       const scoring = getScoringPreset(sport, scoringKey);
-      const limit = sport === 'NFL' ? 400 : 500;
+      // NFL: 500 gives real depth across all positions. fetchEspnPool applies
+      // position quotas so K + DEF (which score far fewer points and would
+      // otherwise be truncated off the end) are always included.
+      const limit = sport === 'NFL' ? 500 : 500;
 
       console.log(`\n=== Regenerating ${sport} ${SEASON_YEAR} (limit ${limit}) ===`);
       const result = await fetchEspnPool(sport, SEASON_YEAR, scoring, limit);

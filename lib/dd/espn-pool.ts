@@ -1096,39 +1096,48 @@ export async function fetchEspnPool(
   players.sort((a, b) => b.projectedPoints - a.projectedPoints);
 
   let finalPlayers = players;
-  if (maxPlayers && sport === 'NCAAF') {
-    // Position quotas: ESPN's stat-leader categories are QB-heavy (passing
-    // yards/TDs/QBR dominate the boards), so a pure points-sort drowns the
-    // pool in QBs and starves TE/K. A devy pool should mirror a realistic
-    // dynasty prospect mix: WR-heavy, then RB, then QB, with real TE depth.
-    const quotas: Record<string, number> = {
-      QB: 110,
-      RB: 170,
-      WR: 220,
-      TE: 70,
-      K: 30,
-    };
-    const taken: Record<string, number> = {};
-    const quotaPicks: EspnPoolPlayer[] = [];
-    const leftovers: EspnPoolPlayer[] = [];
-    for (const p of players) {
-      const q = quotas[p.position] ?? 60;
-      if ((taken[p.position] ?? 0) < q) {
-        taken[p.position] = (taken[p.position] ?? 0) + 1;
-        quotaPicks.push(p);
-      } else {
-        leftovers.push(p);
+  if (maxPlayers) {
+    // Position quotas. A pure points-sort starves low-scoring positions:
+    //  - NCAAF: ESPN's stat-leader categories are QB-heavy (passing yards/TDs/
+    //    QBR dominate the boards), so a devy pool should mirror a realistic
+    //    dynasty prospect mix: WR-heavy, then RB, then QB, with real TE depth.
+    //  - NFL: kickers and team defenses score far fewer fantasy points than
+    //    skill players, so they always sort to the bottom and get truncated
+    //    off entirely. Every league needs K + DEF starters, so we must
+    //    guarantee they survive the cut.
+    const quotas: Record<string, number> =
+      sport === 'NCAAF'
+        ? { QB: 110, RB: 170, WR: 220, TE: 70, K: 30 }
+        : sport === 'NFL'
+          ? { QB: 45, RB: 100, WR: 120, TE: 45, K: 32, DEF: 32 }
+          : // MLB: relievers score far fewer points than starters/hitters, so a
+            // pure points-sort leaves almost no RP depth (leagues start RP×2 +
+            // P×2). Guarantee every position survives the cut.
+            { C: 40, '1B': 30, '2B': 30, '3B': 30, SS: 30, OF: 90, DH: 20, SP: 90, RP: 90 };
+
+    if (Object.keys(quotas).length === 0) {
+      finalPlayers = players.slice(0, maxPlayers);
+    } else {
+      const taken: Record<string, number> = {};
+      const quotaPicks: EspnPoolPlayer[] = [];
+      const leftovers: EspnPoolPlayer[] = [];
+      for (const p of players) {
+        const q = quotas[p.position] ?? 60;
+        if ((taken[p.position] ?? 0) < q) {
+          taken[p.position] = (taken[p.position] ?? 0) + 1;
+          quotaPicks.push(p);
+        } else {
+          leftovers.push(p);
+        }
       }
+      // Take quota picks first (in points order), then backfill with the
+      // strongest leftovers if the target size isn't reached.
+      const target = Math.min(maxPlayers, players.length);
+      const fill = [...quotaPicks, ...leftovers]
+        .slice(0, target)
+        .sort((a, b) => b.projectedPoints - a.projectedPoints);
+      finalPlayers = fill;
     }
-    // Take quota picks first (in points order), then backfill with the
-    // strongest leftovers if the target size isn't reached.
-    const target = Math.min(maxPlayers, players.length);
-    const fill = [...quotaPicks, ...leftovers]
-      .slice(0, target)
-      .sort((a, b) => b.projectedPoints - a.projectedPoints);
-    finalPlayers = fill;
-  } else if (maxPlayers) {
-    finalPlayers = players.slice(0, maxPlayers);
   }
 
   return {

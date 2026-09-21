@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryOne, tx } from '@/lib/db';
-import { generateDraftOrder, type Sport } from '@/lib/dd/presets';
+import { loadDraftState, finalizeDraft } from '@/lib/dd/draft-state';
+import { checkPositionLimit } from '@/lib/dd/roster-enforcement';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/dd/drafts/[id]/auto-pick
-// Auto-picks the best available player (by rank) for the current on-clock slot.
+// Auto-picks the best available player for the current on-clock slot.
 // Only works if the on-clock member is a bot (password_hash = 'bot_no_login'),
 // OR if the authenticated user is the commissioner (manual auto-pick / override).
+//
+// The pick respects position limits: it walks the pool in rank order and takes
+// the first player the on-clock team is actually allowed to draft, so a bot
+// never gets stuck when its remaining starter needs are limited.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function POST(
@@ -21,39 +26,22 @@ export async function POST(
   const userId = BigInt(session.user.id);
   const draftId = BigInt(params.id);
 
-  // Fetch draft + league info
-  const draft = await queryOne<{
-    id: string; league_id: string; draft_type: string; status: string;
-    round_count: number; current_round: number; current_pick: number;
-    sport: Sport; num_teams: number; commissioner_id: string; season_year: number;
-  }>(
-    `SELECT d.id::text, d.league_id::text, d.draft_type, d.status, d.round_count,
-            d.current_round, d.current_pick,
-            l.sport, l.num_teams, l.commissioner_id::text, l.season_year
-     FROM dd_drafts d
-     JOIN dd_leagues l ON l.id = d.league_id
-     WHERE d.id = $1`,
-    [draftId]
-  );
-
-  if (!draft) {
+  const state = await loadDraftState(draftId);
+  if (!state) {
     return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
   }
+  const { draft, members, progress, onClockMemberId, onClockEntry } = state;
 
   if (draft.status !== 'in_progress') {
     return NextResponse.json({ error: `Draft is ${draft.status}, cannot make picks` }, { status: 409 });
   }
 
-  const leagueId = BigInt(draft.league_id);
-  // Effective team count: actual member count (matches draft-start + pick
-  // route order computation). Declared num_teams may exceed actual membership.
-  const membersCountRes = await queryOne<{ cnt: string }>(
-    `SELECT COUNT(*)::text AS cnt FROM dd_league_members WHERE league_id = $1`,
-    [leagueId]
-  );
-  const memberCount = Number(membersCountRes?.cnt ?? '0');
-  const numTeams = memberCount >= 2 ? memberCount : draft.num_teams;
-  const rounds = draft.round_count;
+  const leagueId = BigInt(draft.leagueId);
+
+  if (progress.isComplete || !onClockEntry || !onClockMemberId) {
+    await finalizeDraft(draftId, leagueId, draft.roundCount, draft.numTeams);
+    return NextResponse.json({ error: 'Draft is complete' }, { status: 409 });
+  }
 
   // Verify the caller is a member of this league (or commissioner)
   const callerMember = await queryOne<{ id: string; is_commissioner: boolean }>(
@@ -61,59 +49,59 @@ export async function POST(
      WHERE league_id = $1 AND user_id = $2`,
     [leagueId, userId]
   );
-
   if (!callerMember) {
     return NextResponse.json({ error: 'You are not a member of this league' }, { status: 403 });
   }
 
-  const isCommissioner = draft.commissioner_id === String(userId) || callerMember.is_commissioner;
-
-  // Compute whose turn it is
-  const fullOrder = generateDraftOrder(draft.draft_type as any, numTeams, rounds);
-  const picksMade = await queryOne<{ cnt: string }>(
-    `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks WHERE draft_id = $1`,
-    [draftId]
-  );
-  const currentOverallPick = Number(picksMade?.cnt ?? '0') + 1;
-  const currentOrderEntry = fullOrder.find((p) => p.overallPick === currentOverallPick);
-
-  if (!currentOrderEntry) {
-    return NextResponse.json({ error: 'Draft is complete' }, { status: 409 });
-  }
-
-  const expectedSlot = currentOrderEntry.slot;
-  const expectedDraftPosition = expectedSlot + 1;
-
-  // Find the on-clock member
-  const onClockMember = await queryOne<{
-    id: string; team_name: string; user_id: string; is_bot: boolean;
-  }>(
-    `SELECT m.id::text, m.team_name, m.user_id::text,
-            (u.password_hash = 'bot_no_login') AS is_bot
-     FROM dd_league_members m
-     JOIN web_users u ON u.id = m.user_id
-     WHERE m.league_id = $1 AND m.draft_position = $2`,
-    [leagueId, expectedDraftPosition]
-  );
+  const isCommissioner = draft.commissionerId === String(userId) || callerMember.is_commissioner;
+  const onClockMember = members.find((m) => m.id === onClockMemberId);
 
   if (!onClockMember) {
     return NextResponse.json({ error: 'Could not find the on-clock member' }, { status: 404 });
   }
 
   // Only auto-pick if the on-clock member is a bot, or caller is commissioner overriding
-  if (!onClockMember.is_bot && !isCommissioner) {
+  if (!onClockMember.isBot && !isCommissioner) {
     return NextResponse.json({
       error: 'Auto-pick is only available for bot-controlled teams',
-      onClockMember: onClockMember.team_name,
+      onClockMember: onClockMember.teamName,
     }, { status: 403 });
   }
 
-  // Find the best available player by rank from the pool (not yet drafted)
-  const bestPlayer = await queryOne<{
+  const memberIdForPick = BigInt(onClockMemberId);
+
+  // ── Load roster config + this member's current roster for limit checks ──
+  const leagueRow = await queryOne<{ roster_config: any; settings: any }>(
+    `SELECT roster_config, settings FROM dd_leagues WHERE id = $1`,
+    [leagueId]
+  );
+  const rc = leagueRow?.roster_config;
+  const slots: { slot: string; label: string; count: number; eligible: string[]; isStarter: boolean }[] =
+    rc && typeof rc === 'object' && Array.isArray(rc.slots) ? rc.slots : [];
+  const enforceLimits = leagueRow?.settings?.enforcePositionLimits !== false;
+  const totalRosterSize = slots.reduce((sum, s) => sum + s.count, 0);
+
+  const positionCountsRes = await query<{ position: string; cnt: string }>(
+    `SELECT position, COUNT(*)::text AS cnt
+     FROM dd_draft_picks
+     WHERE draft_id = $1 AND member_id = $2 AND position IS NOT NULL AND sport != 'NCAAF'
+     GROUP BY position`,
+    [draftId, memberIdForPick]
+  );
+  const filled: Record<string, number> = {};
+  for (const row of positionCountsRes.rows) filled[row.position] = Number(row.cnt);
+
+  const totalDraftedRes = await queryOne<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt FROM dd_draft_picks WHERE draft_id = $1 AND member_id = $2`,
+    [draftId, memberIdForPick]
+  );
+  const totalDrafted = Number(totalDraftedRes?.cnt ?? '0');
+
+  // ── Walk the pool in rank order, taking the first legal player ──
+  const candidates = await query<{
     id: string; player_name: string; team: string | null; position: string | null;
-    rank: number | null;
   }>(
-    `SELECT pp.id::text, pp.player_name, pp.team, pp.position, pp.rank
+    `SELECT pp.id::text, pp.player_name, pp.team, pp.position
      FROM dd_player_pool pp
      WHERE pp.sport = $1
        AND pp.season_year = $2
@@ -125,25 +113,30 @@ export async function POST(
          SELECT player_name FROM dd_draft_picks WHERE draft_id = $3
        )
      ORDER BY pp.rank NULLS LAST, pp.projected_points DESC NULLS LAST
-     LIMIT 1`,
-    [draft.sport, draft.season_year, draftId]
+     LIMIT 400`,
+    [draft.sport, draft.seasonYear, draftId]
   );
+
+  let bestPlayer: { id: string; player_name: string; team: string | null; position: string | null } | null = null;
+  if (enforceLimits && slots.length > 0) {
+    for (const c of candidates.rows) {
+      if (!c.position) { bestPlayer = c; break; }
+      const check = checkPositionLimit(slots, c.position, filled, totalRosterSize, totalDrafted);
+      if (check.allowed) { bestPlayer = c; break; }
+    }
+  } else {
+    bestPlayer = candidates.rows[0] ?? null;
+  }
+
+  // Fallback: if limits blocked everything, take the best available anyway so
+  // the draft can never deadlock on a bot's turn.
+  if (!bestPlayer) bestPlayer = candidates.rows[0] ?? null;
 
   if (!bestPlayer) {
     return NextResponse.json({ error: 'No available players to draft' }, { status: 409 });
   }
 
-  const memberIdForPick = BigInt(onClockMember.id);
-
-  // Calculate next pick
-  const nextOverall = currentOverallPick + 1;
-  const nextOrderEntry = fullOrder.find((p) => p.overallPick === nextOverall);
-  const isLastPick = currentOverallPick >= numTeams * rounds;
-  const nextRound = nextOrderEntry?.round ?? draft.round_count;
-  const nextPickInRound = nextOrderEntry?.pickInRound ?? 1;
-
-  await tx(async (client) => {
-    // Insert the auto-pick
+  const result = await tx(async (client) => {
     await client.query(
       `INSERT INTO dd_draft_picks
         (draft_id, round_num, pick_in_round, overall_pick, member_id,
@@ -151,43 +144,50 @@ export async function POST(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, NOW())`,
       [
         draftId,
-        currentOrderEntry.round,
-        currentOrderEntry.pickInRound,
-        currentOverallPick,
+        onClockEntry.round,
+        onClockEntry.pickInRound,
+        onClockEntry.overallPick,
         memberIdForPick,
-        bestPlayer.player_name,
-        bestPlayer.id,
-        bestPlayer.team,
-        bestPlayer.position,
+        bestPlayer!.player_name,
+        bestPlayer!.id,
+        bestPlayer!.team,
+        bestPlayer!.position,
         draft.sport,
       ]
     );
 
-    // Update draft progress
+    const after = await loadDraftState(draftId);
+    const isLastPick = !after || after.progress.isComplete;
+
     if (isLastPick) {
       await client.query(
         `UPDATE dd_drafts SET status = 'completed', current_round = $1, current_pick = $2, completed_at = NOW() WHERE id = $3`,
-        [draft.round_count, numTeams, draftId]
+        [draft.roundCount, draft.numTeams, draftId]
       );
       await client.query(
         `UPDATE dd_leagues SET status = 'in_season', updated_at = NOW() WHERE id = $1`,
         [leagueId]
       );
     } else {
+      const next = after!.onClockEntry!;
       await client.query(
         `UPDATE dd_drafts SET current_round = $1, current_pick = $2 WHERE id = $3`,
-        [nextRound, nextPickInRound, draftId]
+        [next.round, next.pickInRound, draftId]
       );
     }
+
+    return { isLastPick, after };
   });
+
+  const nextEntry = result.after?.onClockEntry ?? null;
 
   return NextResponse.json({
     success: true,
     autoPicked: true,
     pick: {
-      overallPick: currentOverallPick,
-      round: currentOrderEntry.round,
-      pickInRound: currentOrderEntry.pickInRound,
+      overallPick: onClockEntry.overallPick,
+      round: onClockEntry.round,
+      pickInRound: onClockEntry.pickInRound,
       memberId: String(memberIdForPick),
       playerName: bestPlayer.player_name,
       playerId: bestPlayer.id,
@@ -195,14 +195,14 @@ export async function POST(
       position: bestPlayer.position,
       isAutoPicked: true,
     },
-    isDraftComplete: isLastPick,
-    nextTurn: isLastPick
+    isDraftComplete: result.isLastPick,
+    nextTurn: result.isLastPick || !nextEntry
       ? null
       : {
-          overallPick: nextOverall,
-          round: nextRound,
-          pickInRound: nextPickInRound,
-          slot: nextOrderEntry?.slot,
+          overallPick: nextEntry.overallPick,
+          round: nextEntry.round,
+          pickInRound: nextEntry.pickInRound,
+          slot: nextEntry.slot,
         },
   });
 }

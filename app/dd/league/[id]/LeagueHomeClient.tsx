@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   Trophy, Crown, Users, Copy, Check, Play, Pause, Loader2,
   Target, Shield, Settings, ArrowLeft, Plus, Clock, UserPlus,
-  X, DollarSign, Timer, Save,
+  X, DollarSign, Timer, Save, Sparkles,
 } from 'lucide-react';
 
 interface League {
@@ -177,6 +177,15 @@ export default function LeagueHomeClient({
                   <><Play className="w-4 h-4" /> Start Draft</>
                 )}
               </button>
+            )}
+            {/* AI Draft Grades — available once the draft is complete */}
+            {draft && draft.status === 'completed' && (
+              <Link
+                href={`/dd/league/${league.id}/grades`}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" /> AI Draft Grades
+              </Link>
             )}
           </div>
         </div>
