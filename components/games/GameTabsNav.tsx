@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 export const GAME_TABS = [
   { slug: 'details', label: 'Details' },
+  { slug: 'live', label: 'Live' },
   { slug: 'odds', label: 'Odds' },
   { slug: 'box-score', label: 'Box Score' },
   { slug: 'standings', label: 'Standings' },

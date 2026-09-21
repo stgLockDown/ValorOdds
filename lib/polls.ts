@@ -355,6 +355,81 @@ export async function getTodaysPolls(
 }
 
 /**
+ * Get (or lazily create) a single game-scoped poll, independent of the
+ * daily top-4 homepage slate and its MAX_POLLS/MAX_PER_SPORT caps.
+ *
+ * Used by the Live Zone "who will win?" widget on individual game pages —
+ * every live/upcoming game gets its own poll row (idempotent via the same
+ * `(poll_date, game_id)` unique constraint the homepage seeding uses), not
+ * just the 4 featured on the homepage. `poll_date` is derived from the
+ * game's own commence date (not "today") so postponed/international games
+ * scheduled outside the normal window still get a stable poll row.
+ */
+export async function getOrCreateGamePoll(
+  gameId: string,
+  sport: string,
+  homeTeam: string,
+  awayTeam: string,
+  commenceTime: string,
+  fingerprint?: string,
+): Promise<Poll | null> {
+  try {
+    const pollDate = new Date(commenceTime).toISOString().slice(0, 10);
+
+    await query(
+      `INSERT INTO community_polls (poll_date, sport, game_id, home_team, away_team, commence_time, display_order)
+       VALUES ($1, $2, $3, $4, $5, $6, 0)
+       ON CONFLICT (poll_date, game_id) DO NOTHING`,
+      [pollDate, sport.toUpperCase(), gameId, homeTeam, awayTeam, new Date(commenceTime)],
+    );
+
+    const r = await query<{
+      id: number;
+      sport: string;
+      home_team: string;
+      away_team: string;
+      commence_time: Date;
+      display_order: number;
+      home_votes: number;
+      away_votes: number;
+      user_vote: string | null;
+    }>(
+      `SELECT
+         p.id, p.sport, p.home_team, p.away_team, p.commence_time, p.display_order,
+         COUNT(v.id) FILTER (WHERE v.voted_for = p.home_team) AS home_votes,
+         COUNT(v.id) FILTER (WHERE v.voted_for = p.away_team) AS away_votes,
+         ${fingerprint ? `(SELECT voted_for FROM community_poll_votes WHERE poll_id = p.id AND voter_fingerprint = $2)` : 'NULL'} AS user_vote
+       FROM community_polls p
+       LEFT JOIN community_poll_votes v ON v.poll_id = p.id
+       WHERE p.poll_date = $1 AND p.game_id = $${fingerprint ? '3' : '2'}
+       GROUP BY p.id, p.sport, p.home_team, p.away_team, p.commence_time, p.display_order`,
+      fingerprint ? [pollDate, fingerprint, gameId] : [pollDate, gameId],
+    );
+
+    if (r.rows.length === 0) return null;
+    const row = r.rows[0];
+    const homeVotes = parseInt(String(row.home_votes), 10) || 0;
+    const awayVotes = parseInt(String(row.away_votes), 10) || 0;
+    return {
+      id: row.id,
+      sport: row.sport,
+      homeTeam: row.home_team,
+      awayTeam: row.away_team,
+      commenceTime: new Date(row.commence_time).toISOString(),
+      displayOrder: row.display_order,
+      homeVotes,
+      awayVotes,
+      totalVotes: homeVotes + awayVotes,
+      userVote:
+        row.user_vote === row.home_team ? 'home' : row.user_vote === row.away_team ? 'away' : null,
+    };
+  } catch (err) {
+    console.error('[polls] Error getting/creating game poll:', err);
+    return null;
+  }
+}
+
+/**
  * Record a vote. Deduplicates by fingerprint — if the voter already
  * voted on this poll, their vote is updated (changed) rather than
  * duplicated. This lets people change their mind.

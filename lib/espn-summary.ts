@@ -104,7 +104,7 @@ export type GameSummary = {
 // Fetch helper
 // ---------------------------------------------------------------------------
 
-function espnPathForSport(sport: string): string | null {
+export function espnPathForSport(sport: string): string | null {
   const key = sport.toUpperCase();
   const paths = SPORT_PATHS[key];
   if (!paths || paths.length === 0) return null;
@@ -137,7 +137,17 @@ async function fetchJsonOnce(url: string): Promise<any | null> {
   }
 }
 
-/** Try each ESPN host in order until one returns a usable summary payload. */
+/**
+ * Try each ESPN host in order until one returns a usable summary payload.
+ * Exported (as `fetchRawSummaryJson`) so other modules that need fields not
+ * covered by `GameSummary` (e.g. lib/live-feed.ts's full play-by-play with
+ * situational data) can reuse the same fetch/fallback/cache logic instead
+ * of re-implementing it.
+ */
+export async function fetchRawSummaryJson(sportPath: string, eventId: string): Promise<any | null> {
+  return fetchSummaryJson(sportPath, eventId);
+}
+
 async function fetchSummaryJson(sportPath: string, eventId: string): Promise<any | null> {
   for (const base of ESPN_HOSTS) {
     const url = `${base}/${sportPath}/summary?event=${encodeURIComponent(eventId)}`;
