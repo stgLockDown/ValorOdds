@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Trophy, Search, Clock, Pause, Play, Check, Loader2, ArrowLeft,
   Target, Shield, Crown, ChevronRight, X, Filter, Zap, ArrowUpDown, AlertCircle, GraduationCap,
-  Sparkles,
+  Sparkles, Swords,
 } from 'lucide-react';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
 import {
@@ -106,6 +107,9 @@ export default function DraftRoomClient({
   const [draftState, setDraftState] = useState<DraftState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [redirectIn, setRedirectIn] = useState<number | null>(null);
+  const [redirectCancelled, setRedirectCancelled] = useState(false);
+  const router = useRouter();
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerSearch, setPlayerSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState<string>('');
@@ -302,6 +306,31 @@ export default function DraftRoomClient({
       }
     };
   }, [draftState?.draft.isComplete, draftState?.draft.id, fetchDraftState, fetchPlayers]);
+
+  // ── Auto-redirect to the Head-to-Head area once the draft completes ──
+  // Gives the user a short countdown so they can still peek at grades or
+  // the league home, but otherwise drops them straight into the in-season
+  // hub where they set their lineup and see weekly matchups.
+  useEffect(() => {
+    const isMock = draftState?.draft.isMock;
+    if (!draftState?.draft.isComplete || isMock || redirectCancelled) {
+      setRedirectIn(null);
+      return;
+    }
+    setRedirectIn(6);
+    const tick = setInterval(() => {
+      setRedirectIn((n) => {
+        if (n === null) return null;
+        if (n <= 1) {
+          clearInterval(tick);
+          router.push(`/dd/league/${leagueId}/season`);
+          return 0;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [draftState?.draft.isComplete, draftState?.draft.isMock, redirectCancelled, leagueId, router]);
 
   // Countdown timer: track when the current turn started and tick down every second
   useEffect(() => {
@@ -854,6 +883,11 @@ export default function DraftRoomClient({
           <Trophy className="w-10 h-10 text-brand-accent mx-auto mb-2" />
           <h2 className="text-xl font-bold text-brand-text">Draft Complete!</h2>
           <p className="text-brand-muted mt-1">All {draft.totalPicks} picks have been made.</p>
+          {!draft.isMock && redirectIn !== null && redirectIn > 0 && (
+            <p className="text-sm text-brand-primaryText mt-2">
+              Taking you to Head-to-Head in {redirectIn}s&hellip;
+            </p>
+          )}
           {draft.isMock ? (
             <Link href="/dd" className="btn-primary mt-4">
               Back to DiamondDraft
@@ -861,14 +895,28 @@ export default function DraftRoomClient({
           ) : (
             <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
               <Link
-                href={`/dd/league/${leagueId}/grades`}
+                href={`/dd/league/${leagueId}/season`}
                 className="btn-primary inline-flex items-center gap-2"
+              >
+                <Swords className="w-4 h-4" /> Go to Head-to-Head
+              </Link>
+              <Link
+                href={`/dd/league/${leagueId}/grades`}
+                className="btn-secondary inline-flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4" /> See AI Draft Grades
               </Link>
-              <Link href={`/dd/league/${leagueId}`} className="btn-secondary">
-                Go to League Home
+              <Link href={`/dd/league/${leagueId}`} className="btn-ghost">
+                League Home
               </Link>
+              {redirectIn !== null && redirectIn > 0 && (
+                <button
+                  onClick={() => setRedirectCancelled(true)}
+                  className="btn-ghost text-xs"
+                >
+                  Stay here
+                </button>
+              )}
             </div>
           )}
         </div>

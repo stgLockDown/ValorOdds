@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   Trophy, Crown, Users, Copy, Check, Play, Pause, Loader2,
   Target, Shield, Settings, ArrowLeft, Plus, Clock, UserPlus,
-  X, DollarSign, Timer, Save, Sparkles,
+  X, DollarSign, Timer, Save, Sparkles, Swords,
 } from 'lucide-react';
 
 interface League {
@@ -178,11 +178,20 @@ export default function LeagueHomeClient({
                 )}
               </button>
             )}
+            {/* Head-to-Head — the in-season hub for matchups + lineup */}
+            {draft && draft.status === 'completed' && (
+              <Link
+                href={`/dd/league/${league.id}/season`}
+                className="btn-primary inline-flex items-center gap-2"
+              >
+                <Swords className="w-4 h-4" /> Head-to-Head
+              </Link>
+            )}
             {/* AI Draft Grades — available once the draft is complete */}
             {draft && draft.status === 'completed' && (
               <Link
                 href={`/dd/league/${league.id}/grades`}
-                className="btn-primary inline-flex items-center gap-2"
+                className="btn-secondary inline-flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4" /> AI Draft Grades
               </Link>
