@@ -18,6 +18,7 @@ import GameStandingsTab from '@/components/games/GameStandingsTab';
 import GameInjuriesTab from '@/components/games/GameInjuriesTab';
 import GameFuturesTab from '@/components/games/GameFuturesTab';
 import GameNewsTab from '@/components/games/GameNewsTab';
+import GameLiveTab from '@/components/games/GameLiveTab';
 
 /**
  * Public per-game tabbed detail page: /games/[sport]/[gameSlug]/[tab]
@@ -69,6 +70,8 @@ function TabContent({ tab, game }: { tab: GameTabSlug; game: GameCard }) {
   switch (tab) {
     case 'details':
       return <GameDetailsTab game={game} injuriesHref={`/games/${findSportSlug(game.sport)}/${encodeURIComponent(game.slug)}/injuries`} />;
+    case 'live':
+      return <GameLiveTab game={game} />;
     case 'odds':
       return <GameOddsTab game={game} />;
     case 'box-score':
