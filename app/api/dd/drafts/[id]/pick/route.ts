@@ -5,6 +5,7 @@ import type { Sport } from '@/lib/dd/presets';
 import { checkPositionLimit, getPositionSummary } from '@/lib/dd/roster-enforcement';
 import { awardXp } from '@/lib/dd/gamification';
 import { loadDraftState, finalizeDraft } from '@/lib/dd/draft-state';
+import { initializeSeason } from '@/lib/dd/season';
 
 // ─── POST /api/dd/drafts/[id]/pick ── Make a draft pick ──────────────────────
 // Body: { playerName, playerId?, team?, position?, auctionAmount? }
@@ -256,8 +257,11 @@ export async function POST(
       ]
     );
 
-    // Recompute progress with this pick included.
-    const after = await loadDraftState(draftId);
+    // Recompute progress with this pick included. Must read through the SAME
+    // transaction client so the just-inserted (uncommitted) pick is visible —
+    // otherwise the completion check is one pick stale and the draft never
+    // finalizes.
+    const after = await loadDraftState(draftId, client);
     const isLastPick = !after || after.progress.isComplete;
 
     if (isLastPick) {
@@ -279,6 +283,17 @@ export async function POST(
 
     return { isLastPick, after };
   });
+
+  // Seed the in-season game (rosters + schedule) once the draft is done.
+  // Best-effort: a failure here must not fail the pick response.
+  if (result.isLastPick) {
+    try {
+      await initializeSeason(leagueId, draftId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[dd] initializeSeason failed after final pick', err);
+    }
+  }
 
   const xpResult = await awardXp(session.user.id, 'make_draft_pick', {
     leagueId: draft.leagueId,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryOne, tx } from '@/lib/db';
 import { loadDraftState, finalizeDraft } from '@/lib/dd/draft-state';
+import { initializeSeason } from '@/lib/dd/season';
 import { checkPositionLimit } from '@/lib/dd/roster-enforcement';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,7 +157,9 @@ export async function POST(
       ]
     );
 
-    const after = await loadDraftState(draftId);
+    // Read through the same transaction client so the just-inserted pick is
+    // visible and the completion check is accurate.
+    const after = await loadDraftState(draftId, client);
     const isLastPick = !after || after.progress.isComplete;
 
     if (isLastPick) {
@@ -178,6 +181,16 @@ export async function POST(
 
     return { isLastPick, after };
   });
+
+  // Seed the in-season game (rosters + schedule) once the draft is done.
+  if (result.isLastPick) {
+    try {
+      await initializeSeason(leagueId, draftId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[dd] initializeSeason failed after final auto-pick', err);
+    }
+  }
 
   const nextEntry = result.after?.onClockEntry ?? null;
 

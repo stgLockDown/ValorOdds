@@ -6,10 +6,33 @@
  * a team whose roster is full is SKIPPED in the order, and the draft ends
  * once no team has remaining capacity (or the order is exhausted).
  */
+import type { PoolClient } from 'pg';
 import { query, queryOne, tx } from '@/lib/db';
 import { generateDraftOrder, type Sport, type RosterConfig } from '@/lib/dd/presets';
 import { computeDraftProgress, type DraftProgress } from '@/lib/dd/draft-progress';
 import { initializeSeason } from '@/lib/dd/season';
+
+/**
+ * Minimal query surface shared by the pool helpers and a transaction client.
+ * Passing a `PoolClient` lets callers read their own uncommitted writes.
+ */
+type Queryable = {
+  query: <T = any>(text: string, params?: unknown[]) => Promise<{ rows: T[] }>;
+};
+
+/** Run a query through either the shared pool or a transaction client. */
+async function q<T = any>(
+  client: PoolClient | undefined,
+  text: string,
+  params: unknown[] = []
+): Promise<T[]> {
+  if (client) {
+    const r = await client.query(text, params as never[]);
+    return r.rows as T[];
+  }
+  const r = await query<any>(text, params);
+  return r.rows as T[];
+}
 
 export interface DraftMember {
   id: string;
@@ -109,8 +132,21 @@ export async function finalizeDraft(
   }
 }
 
-export async function loadDraftState(draftId: bigint): Promise<LoadedDraftState | null> {
-  const draftRow = await queryOne<any>(
+/**
+ * Load the full draft state.
+ *
+ * Pass `client` (a transaction `PoolClient`) when calling from inside a
+ * transaction that has just written a pick — otherwise the read goes through
+ * a different pooled connection and cannot see the uncommitted row, which
+ * makes the completion check one pick stale and prevents the draft from ever
+ * finalizing.
+ */
+export async function loadDraftState(
+  draftId: bigint,
+  client?: PoolClient
+): Promise<LoadedDraftState | null> {
+  const draftRows = await q<any>(
+    client,
     `SELECT d.id::text, d.league_id::text, d.draft_type, d.status, d.round_count,
             d.current_round, d.current_pick, d.pick_timer_seconds, d.is_mock,
             d.started_at, d.completed_at,
@@ -121,15 +157,17 @@ export async function loadDraftState(draftId: bigint): Promise<LoadedDraftState 
      WHERE d.id = $1`,
     [draftId]
   );
+  const draftRow = draftRows[0];
   if (!draftRow) return null;
 
   const leagueId = BigInt(draftRow.league_id);
 
-  const memberCountRes = await queryOne<{ cnt: string }>(
+  const memberCountRows = await q<{ cnt: string }>(
+    client,
     `SELECT COUNT(*)::text AS cnt FROM dd_league_members WHERE league_id = $1`,
     [leagueId]
   );
-  const memberCount = Number(memberCountRes?.cnt ?? '0');
+  const memberCount = Number(memberCountRows[0]?.cnt ?? '0');
   const numTeams = memberCount >= 2 ? memberCount : draftRow.num_teams;
 
   const rosterConfig: RosterConfig =
@@ -139,10 +177,11 @@ export async function loadDraftState(draftId: bigint): Promise<LoadedDraftState 
   const rosterCapacity = rosterCapacityOf(rosterConfig);
   const rounds = draftRow.round_count;
 
-  const membersRes = await query<{
+  const membersRes = await q<{
     id: string; user_id: string; team_name: string; draft_position: number | null;
     display_name: string | null; is_bot: boolean;
   }>(
+    client,
     `SELECT m.id::text, m.user_id::text, m.team_name, m.draft_position, u.display_name,
             (u.password_hash = 'bot_no_login') AS is_bot
      FROM dd_league_members m
@@ -152,7 +191,7 @@ export async function loadDraftState(draftId: bigint): Promise<LoadedDraftState 
     [leagueId]
   );
 
-  const members: DraftMember[] = membersRes.rows.map((m) => ({
+  const members: DraftMember[] = membersRes.map((m) => ({
     id: m.id,
     userId: m.user_id,
     teamName: m.team_name,
@@ -166,7 +205,8 @@ export async function loadDraftState(draftId: bigint): Promise<LoadedDraftState 
     if (m.draftPosition != null) slotToMember.set(m.draftPosition - 1, m);
   }
 
-  const picksRes = await query<any>(
+  const picksRes = await q<any>(
+    client,
     `SELECT dp.id::text, dp.round_num, dp.pick_in_round, dp.overall_pick, dp.member_id::text,
             dp.player_name, dp.player_id, dp.team, dp.position, dp.sport, dp.is_auto_picked, dp.picked_at,
             pp.headshot_url AS headshot
@@ -177,7 +217,7 @@ export async function loadDraftState(draftId: bigint): Promise<LoadedDraftState 
     [draftId]
   );
 
-  const picks = picksRes.rows.map((p) => ({
+  const picks = picksRes.map((p) => ({
     id: p.id,
     roundNum: p.round_num,
     pickInRound: p.pick_in_round,
