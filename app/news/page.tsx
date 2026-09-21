@@ -46,7 +46,7 @@ export default async function NewsIndexPage() {
             ValorOdds Originals &amp; live sports headlines
           </h1>
           <p className="mt-4 text-brand-muted text-lg">
-            In-house analysis and editorials from the ValorOdds team \u2014 weekly player and team
+            In-house analysis and editorials from the ValorOdds team — weekly player and team
             spotlights, market reads, and breaking news from around the sports world.
           </p>
         </header>
