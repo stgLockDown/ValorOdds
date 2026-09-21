@@ -884,7 +884,7 @@ export default function DraftRoomClient({
         {{
           [PANEL_KEYS.DRAFT_BOARD]: (
             <>
-          <div className="card overflow-hidden">
+          <div className="card overflow-hidden h-full flex flex-col">
             <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
               <Trophy className="w-5 h-5 text-brand-accent" />
               Draft Board
@@ -902,15 +902,15 @@ export default function DraftRoomClient({
                 </span>
               ))}
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-auto flex-1 min-h-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-brand-border">
-                    <th className="text-left py-2 px-2 text-brand-muted font-medium sticky left-0 bg-brand-surface z-10">
+                    <th className="text-left py-2 px-2 text-brand-muted font-medium sticky left-0 top-0 bg-brand-surface z-20">
                       Round
                     </th>
                     {members.map((m) => (
-                      <th key={m.id} className="text-center py-2 px-1.5 text-brand-muted font-medium min-w-[110px] max-w-[140px]">
+                      <th key={m.id} className="text-center py-2 px-1.5 text-brand-muted font-medium min-w-[110px] max-w-[140px] sticky top-0 bg-brand-surface z-10">
                         <div className="truncate flex items-center justify-center gap-1" title={m.teamName}>
                           {m.isBot && <Zap className="w-3 h-3 text-brand-accent flex-shrink-0" />}
                           <span className="truncate text-xs">{m.teamName}</span>
@@ -986,12 +986,13 @@ export default function DraftRoomClient({
           ),
           [PANEL_KEYS.MY_ROSTER]: (
             <>
-          <div className="card">
+          <div className="card h-full flex flex-col">
             <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
               <Crown className="w-5 h-5 text-brand-accent" />
               Your Team — {currentTeamName}
               <span className="text-sm text-brand-muted font-normal">({myRoster.length} players)</span>
             </h3>
+            <div className="flex-1 min-h-0 overflow-y-auto">
 
             {/* Position needs indicator */}
             {rosterSlots.length > 0 && Object.keys(positionNeeds.remaining).length > 0 && (
@@ -1121,11 +1122,12 @@ export default function DraftRoomClient({
               </div>
             )}
           </div>
+            </div>
             </>
           ),
           [PANEL_KEYS.AVAILABLE_PLAYERS]: (
             <>
-          <div className="card">
+          <div className="card h-full flex flex-col">
             <h3 className="font-semibold text-brand-text mb-3 flex items-center gap-2">
               <Search className="w-5 h-5 text-brand-primaryText" />
               Available Players
@@ -1239,7 +1241,7 @@ export default function DraftRoomClient({
             </div>
 
             {/* Player list */}
-            <div className="space-y-1.5 max-h-[600px] overflow-y-auto">
+            <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto">
               {playersLoading ? (
                 <div className="text-center py-8">
                   <Loader2 className="w-5 h-5 text-brand-primary animate-spin mx-auto" />
