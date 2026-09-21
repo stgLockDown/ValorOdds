@@ -184,15 +184,36 @@ export async function getGamesGrid(sportCode: string, limit = 60): Promise<GameC
 
   let rows: any[] = [];
   try {
+    // IMPORTANT: a single game_id can accumulate MULTIPLE distinct
+    // commence_time values over its lifetime (e.g. a rain delay pushes
+    // the listed start time back several times through the day; the odds
+    // feed re-reports the updated time and our ingestion writes a new row
+    // with the same game_id but a different commence_time). Grouping by
+    // (game_id, commence_time) -- as this query previously did -- turns
+    // every one of those historical commence_time values into its own
+    // grid row, producing the same game duplicated 3-4x with different
+    // (stale) book counts. Fixed by first picking ONE canonical row per
+    // game_id -- its most recently reported commence_time via
+    // DISTINCT ON (game_id) ... ORDER BY snapshot_time DESC -- and then
+    // separately aggregating n_books across ALL of that game_id's rows
+    // (regardless of which commence_time they were recorded under), so a
+    // mid-day time update doesn't also fragment/undercount book coverage.
     const r = await query(
-      `SELECT game_id, sport, home_team, away_team, commence_time,
-              COUNT(DISTINCT bookmaker_key)::int AS n_books
-       FROM odds_snapshots
-       WHERE ${filter.clause}
-         AND commence_time > NOW() - INTERVAL '16 hours'
-         AND commence_time < NOW() + INTERVAL '10 days'
-       GROUP BY game_id, sport, home_team, away_team, commence_time
-       ORDER BY commence_time ASC
+      `WITH latest_per_game AS (
+         SELECT DISTINCT ON (game_id)
+                game_id, sport, home_team, away_team, commence_time
+         FROM odds_snapshots
+         WHERE ${filter.clause}
+         ORDER BY game_id, snapshot_time DESC
+       )
+       SELECT l.game_id, l.sport, l.home_team, l.away_team, l.commence_time,
+              COUNT(DISTINCT o.bookmaker_key)::int AS n_books
+       FROM latest_per_game l
+       JOIN odds_snapshots o ON o.game_id = l.game_id
+       WHERE l.commence_time > NOW() - INTERVAL '16 hours'
+         AND l.commence_time < NOW() + INTERVAL '10 days'
+       GROUP BY l.game_id, l.sport, l.home_team, l.away_team, l.commence_time
+       ORDER BY l.commence_time ASC
        LIMIT $${filter.params.length + 1}`,
       [...filter.params, Math.max(limit * 3, 120)],
     );

@@ -105,8 +105,20 @@ async function fetchJson(url: string): Promise<unknown | null> {
         Accept: 'application/json',
         Referer: 'https://www.espn.com/',
       },
-      // News pages use ISR; never let Next dedupe multiple sections.
-      cache: 'no-store',
+      // IMPORTANT: do NOT use `cache: 'no-store'` here. This function is
+      // called from statically-rendered / ISR pages (e.g. /games/[sport]
+      // with `export const revalidate = 60`), and a `no-store` fetch inside
+      // an otherwise-static page render makes Next.js bail from static to
+      // dynamic *mid-render*, which throws
+      // "Page changed from static to dynamic at runtime" and 500s that one
+      // regeneration request (intermittently, whenever ISR happens to
+      // revalidate the page) -- see
+      // https://nextjs.org/docs/messages/app-static-to-dynamic-error.
+      // We already have our own in-memory TTL cache (CACHE_TTL_MS, 5 min)
+      // wrapping every caller of fetchJson, so freshness is already
+      // guaranteed at that layer -- align the underlying fetch's cache
+      // lifetime with it instead of opting out of caching entirely.
+      next: { revalidate: 300 },
     });
     if (!res.ok) {
       console.warn(`[espn-news] ${url} → HTTP ${res.status}`);

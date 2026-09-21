@@ -36,7 +36,7 @@ export default function GamesIndexPage() {
           </h1>
           <p className="mt-4 text-brand-muted text-lg">
             Pick a sport to see upcoming games with live odds, best lines across sportsbooks,
-            and AI analysis for every matchup \u2014 all in one place.
+            and AI analysis for every matchup — all in one place.
           </p>
         </header>
 
@@ -52,7 +52,7 @@ export default function GamesIndexPage() {
               <p className="mt-2 text-sm text-brand-muted">
                 Upcoming {s.name} games, live odds, and AI picks.
               </p>
-              <span className="mt-4 inline-block text-sm text-brand-accent">View games \u2192</span>
+              <span className="mt-4 inline-block text-sm text-brand-accent">View games →</span>
             </Link>
           ))}
         </section>
