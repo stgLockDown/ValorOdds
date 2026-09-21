@@ -9,6 +9,7 @@
 import { query, queryOne, tx } from '@/lib/db';
 import { generateDraftOrder, type Sport, type RosterConfig } from '@/lib/dd/presets';
 import { computeDraftProgress, type DraftProgress } from '@/lib/dd/draft-progress';
+import { initializeSeason } from '@/lib/dd/season';
 
 export interface DraftMember {
   id: string;
@@ -74,6 +75,10 @@ export function rosterCapacityOf(rosterConfig: RosterConfig | null | undefined):
 /**
  * Mark a draft complete and move the league into its in-season phase.
  * Idempotent — safe to call when the draft is already completed.
+ *
+ * Also seeds the in-season game: copies drafted players into `dd_rosters`
+ * (with an optimal starting lineup) and generates the weekly head-to-head
+ * schedule into `dd_matchups`.
  */
 export async function finalizeDraft(
   draftId: bigint,
@@ -93,6 +98,15 @@ export async function finalizeDraft(
       [leagueId]
     );
   });
+
+  // Seed rosters + schedule. Best-effort: a failure here must not roll back
+  // the draft completion itself (the season can be re-initialized later).
+  try {
+    await initializeSeason(leagueId, draftId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[dd] initializeSeason failed after draft finalize', err);
+  }
 }
 
 export async function loadDraftState(draftId: bigint): Promise<LoadedDraftState | null> {
