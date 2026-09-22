@@ -177,6 +177,11 @@ export async function GET(
     hasLiveData: weekly.hasLiveData,
     liveProgress: weekly.liveProgress,
     liveGames: weekly.liveGames,
+    // Calendar-derived week state. `isFutureWeek` tells the UI that every line
+    // in this payload is a projection, so it must not render "earned" scores.
+    calendarWeek: weekly.currentWeek,
+    isFutureWeek: weekly.isFutureWeek,
+    isProjectedWeek: weekly.isProjectedWeek,
     rosters: weekly.rosters,
     myRoster: membership ? rosterById.get(membership.id) ?? null : null,
     // Every matchup for the selected week — powers the full matchup board

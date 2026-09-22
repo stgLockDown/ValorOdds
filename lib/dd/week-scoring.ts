@@ -88,7 +88,16 @@ export async function scoreWeek(
   const anyPending = weekly.rosters.some((r) =>
     r.starters.some((p) => p.week.gameState && p.week.gameState !== 'post')
   );
-  const complete = !anyLive || !anyPending;
+  // A week that hasn't happened yet is projection-only and must NEVER be
+  // finalized — otherwise projected points would be locked in as real results
+  // and a winner declared for games that were never played.
+  const complete = weekly.isFutureWeek ? false : !anyLive || !anyPending;
+
+  if (weekly.isFutureWeek) {
+    // Nothing to record for a future week. Leave the matchups untouched so
+    // they stay 'scheduled' rather than being written as in-progress scores.
+    return { week, scored: [], skipped: matchups.rows.length, complete: false };
+  }
 
   const scored: ScoredMatchup[] = [];
 

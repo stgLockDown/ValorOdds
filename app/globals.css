@@ -594,3 +594,118 @@
 .lg-play-in { animation: lgPlayIn 0.45s ease-out; }
 .lg-score-tick { animation: lgScoreTick 0.8s ease-out; }
 .lg-arc-draw { stroke-dasharray: 200; animation: lgArcDraw 1.4s ease-out forwards; }
+
+/* ---------- Matchup board: "in play" possession highlight ---------- */
+
+/* A player whose offense currently has the ball. Soft, slow breathing glow so
+   a whole column of live players doesn't strobe. */
+@keyframes ddInPlayGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); }
+  50%      { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+
+/* Same, but red-zone urgency. */
+@keyframes ddRedZoneGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }
+  50%      { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+}
+
+.dd-inplay { animation: ddInPlayGlow 2.4s ease-in-out infinite; }
+.dd-inplay-rz { animation: ddRedZoneGlow 1.6s ease-in-out infinite; }
+
+/* ---------- Live field graphic: refined motion ---------- */
+
+/* Ball travels between yard lines instead of teleporting. Paired with a CSS
+   transition on `cx`, this gives a smooth broadcast-style glide. */
+.lg-ball-travel {
+  transition:
+    transform 900ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 300ms ease-out;
+}
+
+/* Soft halo that trails the ball while a drive is live. */
+@keyframes lgBallHalo {
+  0%   { r: 1.1; opacity: 0.55; }
+  70%  { r: 3.2; opacity: 0; }
+  100% { r: 3.2; opacity: 0; }
+}
+.lg-ball-halo { animation: lgBallHalo 2.2s ease-out infinite; }
+
+/* Scrimmage / first-down markers slide into their new spot. */
+.lg-marker-slide {
+  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* First-down chain shimmering so the line-to-gain reads instantly. */
+@keyframes lgChainFlow {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -12; }
+}
+.lg-chain-flow {
+  stroke-dasharray: 3 3;
+  animation: lgChainFlow 1.1s linear infinite;
+}
+
+/* Red-zone wash that pulses over the attacking 20. */
+@keyframes lgRedZoneWash {
+  0%, 100% { opacity: 0.10; }
+  50%      { opacity: 0.26; }
+}
+.lg-rz-wash { animation: lgRedZoneWash 2.4s ease-in-out infinite; }
+
+/* Field-position bar filling to the current yard line. */
+.lg-progress-fill {
+  transition: width 900ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* New play card: slide + settle, replacing the old abrupt drop. */
+@keyframes lgPlayEnter {
+  0%   { opacity: 0; transform: translateY(-10px) scale(0.985); }
+  60%  { opacity: 1; transform: translateY(2px) scale(1.004); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.lg-play-enter { animation: lgPlayEnter 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* Scoring play gets a gold sweep across the card. */
+@keyframes lgScoreSweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.lg-score-sweep {
+  background-image: linear-gradient(
+    100deg,
+    rgba(245, 158, 11, 0) 35%,
+    rgba(245, 158, 11, 0.18) 50%,
+    rgba(245, 158, 11, 0) 65%
+  );
+  background-size: 200% 100%;
+  animation: lgScoreSweep 2.2s linear infinite;
+}
+
+/* Possession arrow nudging toward the attacking end zone. */
+@keyframes lgDriveNudge {
+  0%, 100% { transform: translateX(0); opacity: 0.85; }
+  50%      { transform: translateX(2.5px); opacity: 1; }
+}
+.lg-drive-nudge { animation: lgDriveNudge 1.8s ease-in-out infinite; }
+
+/* Respect reduced-motion: keep the information, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .dd-inplay,
+  .dd-inplay-rz,
+  .lg-ball-halo,
+  .lg-chain-flow,
+  .lg-rz-wash,
+  .lg-score-sweep,
+  .lg-drive-nudge,
+  .lg-ball-pulse,
+  .lg-spin,
+  .lg-live-pulse {
+    animation: none !important;
+  }
+  .lg-ball-travel,
+  .lg-marker-slide,
+  .lg-progress-fill {
+    transition: none !important;
+  }
+}
