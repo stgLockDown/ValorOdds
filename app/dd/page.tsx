@@ -66,23 +66,28 @@ export default async function DDHomePage() {
     id: string; name: string; sport: string; format: string; num_teams: number;
     status: string; season_year: number; team_name: string; is_commissioner: boolean;
     draft_position: number | null; member_count: string; invite_code: string;
+    is_mock: boolean;
   }> } = { rows: [] };
   try {
     leaguesRes = await query<{
       id: string; name: string; sport: string; format: string; num_teams: number;
       status: string; season_year: number; team_name: string; is_commissioner: boolean;
       draft_position: number | null; member_count: string; invite_code: string;
+      is_mock: boolean;
     }>(
       `SELECT l.id::text, l.name, l.sport, l.format, l.num_teams, l.status,
               l.season_year, m.team_name, m.is_commissioner, m.draft_position,
               (SELECT COUNT(*)::text FROM dd_league_members lm WHERE lm.league_id = l.id) AS member_count,
-              l.invite_code
+              l.invite_code,
+              COALESCE(l.settings->>'isMock', 'false') = 'true' AS is_mock
        FROM dd_leagues l
        JOIN dd_league_members m ON m.league_id = l.id
        WHERE m.user_id = $1
          AND NOT (
-           -- Hide completed mock drafts: mock leagues whose draft is done
-           (l.settings->>'isMock' = 'true')
+           -- Hide completed mock drafts: mock leagues whose draft is done.
+           -- COALESCE is required: real leagues have no isMock key, so the
+           -- raw comparison is NULL and would wrongly exclude them.
+           COALESCE(l.settings->>'isMock', 'false') = 'true'
            AND l.draft_id IS NOT NULL
            AND l.status IN ('in_season', 'completed', 'archived')
          )
@@ -151,6 +156,10 @@ export default async function DDHomePage() {
     memberCount: parseInt(l.member_count, 10),
   }));
 
+  // Split real leagues from mock drafts so they render in separate sections.
+  const realLeagues = serializedLeagues.filter((l) => !l.is_mock);
+  const mockDrafts = serializedLeagues.filter((l) => l.is_mock);
+
   return (
     <>
       <JsonLd data={diamondDraftJsonLd()} />
@@ -161,7 +170,8 @@ export default async function DDHomePage() {
       <Navbar />
       <DDHomeClient
         userId={session.user.id}
-        leagues={serializedLeagues}
+        leagues={realLeagues}
+        mockDrafts={mockDrafts}
         profile={profile ? {
           level: profile.level,
           totalXp: profile.totalXp,

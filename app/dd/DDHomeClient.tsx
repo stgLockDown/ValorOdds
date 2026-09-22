@@ -11,6 +11,7 @@ interface League {
   id: string; name: string; sport: string; format: string; num_teams: number;
   status: string; season_year: number; team_name: string; is_commissioner: boolean;
   draft_position: number | null; memberCount: number; invite_code: string;
+  is_mock?: boolean;
 }
 
 interface Profile {
@@ -32,12 +33,14 @@ interface PublicLeague {
 export default function DDHomeClient({
   userId,
   leagues,
+  mockDrafts = [],
   profile,
   leaderboard,
   publicLeagues,
 }: {
   userId: string;
   leagues: League[];
+  mockDrafts?: League[];
   profile: Profile | null;
   leaderboard: LeaderboardEntry[];
   publicLeagues: PublicLeague[];
@@ -195,6 +198,48 @@ export default function DDHomeClient({
       )
     : 0;
 
+  const LeagueCard = ({ league, isMock = false }: { league: League; isMock?: boolean }) => (
+    <Link
+      href={`/dd/league/${league.id}`}
+      className="card card-interactive block group"
+    >
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-lg bg-brand-elevated flex items-center justify-center flex-shrink-0">
+            {sportIcon(league.sport)}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-brand-text truncate group-hover:text-brand-primaryText transition-colors">
+                {league.name}
+              </h3>
+              {league.is_commissioner && (
+                <Crown className="w-4 h-4 text-brand-accent flex-shrink-0" />
+              )}
+              {isMock && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-brand-primary/15 text-brand-primaryText flex-shrink-0">
+                  Mock
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-brand-muted truncate">
+              {league.team_name} · {league.sport} {league.season_year} · {league.format.replace(/_/g, ' ')}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="text-right hidden sm:block">
+            <div className="text-sm text-brand-muted">{league.memberCount}/{league.num_teams} teams</div>
+          </div>
+          <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusColor(league.status)}`}>
+            {statusLabel(league.status)}
+          </span>
+          <ChevronRight className="w-5 h-5 text-brand-muted group-hover:text-brand-primaryText transition-colors" />
+        </div>
+      </div>
+    </Link>
+  );
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
       {/* Hero / Header */}
@@ -258,42 +303,27 @@ export default function DDHomeClient({
           ) : (
             <div className="space-y-3">
               {leagues.map((league) => (
-                <Link
-                  key={league.id}
-                  href={`/dd/league/${league.id}`}
-                  className="card card-interactive block group"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-brand-elevated flex items-center justify-center flex-shrink-0">
-                        {sportIcon(league.sport)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-brand-text truncate group-hover:text-brand-primaryText transition-colors">
-                            {league.name}
-                          </h3>
-                          {league.is_commissioner && (
-                            <Crown className="w-4 h-4 text-brand-accent flex-shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-sm text-brand-muted truncate">
-                          {league.team_name} · {league.sport} {league.season_year} · {league.format.replace(/_/g, ' ')}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-right hidden sm:block">
-                        <div className="text-sm text-brand-muted">{league.memberCount}/{league.num_teams} teams</div>
-                      </div>
-                      <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusColor(league.status)}`}>
-                        {statusLabel(league.status)}
-                      </span>
-                      <ChevronRight className="w-5 h-5 text-brand-muted group-hover:text-brand-primaryText transition-colors" />
-                    </div>
-                  </div>
-                </Link>
+                <LeagueCard key={league.id} league={league} />
               ))}
+            </div>
+          )}
+
+          {/* Mock Drafts — kept separate from real leagues */}
+          {mockDrafts.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold text-brand-text flex items-center gap-2 mb-1">
+                <Sparkles className="w-5 h-5 text-brand-primaryText" />
+                Mock Drafts
+                <span className="text-sm text-brand-muted font-normal">({mockDrafts.length})</span>
+              </h2>
+              <p className="text-sm text-brand-muted mb-4">
+                Practice drafts against AI bots. These don&apos;t count toward your real leagues.
+              </p>
+              <div className="space-y-3">
+                {mockDrafts.map((league) => (
+                  <LeagueCard key={league.id} league={league} isMock />
+                ))}
+              </div>
             </div>
           )}
 
