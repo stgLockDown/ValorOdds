@@ -179,6 +179,21 @@ export async function GET(
     liveGames: weekly.liveGames,
     rosters: weekly.rosters,
     myRoster: membership ? rosterById.get(membership.id) ?? null : null,
+    // Every matchup for the selected week — powers the full matchup board
+    // (both teams' starters + benches with live per-player scores).
+    matchups: matchupsRes.rows
+      .filter((m) => m.week_num === week)
+      .map((m) => ({
+        id: m.id,
+        week: m.week_num,
+        homeMemberId: m.home_member_id,
+        awayMemberId: m.away_member_id,
+        homeScore: m.home_score != null ? Number(m.home_score) : null,
+        awayScore: m.away_score != null ? Number(m.away_score) : null,
+        winnerMemberId: m.winner_member_id,
+        isTie: m.is_tie,
+        status: m.status,
+      })),
     matchup: myMatchup
       ? {
           id: myMatchup.id,

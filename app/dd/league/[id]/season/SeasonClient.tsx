@@ -13,6 +13,10 @@ import NotificationBell from '@/components/dd/NotificationBell';
 import WaiversPanel from '@/components/dd/WaiversPanel';
 import OddsMeter from '@/components/dd/OddsMeter';
 import CelebrationOverlay from '@/components/dd/CelebrationOverlay';
+import MatchupBoard, {
+  type WeeklyRoster as BoardRoster,
+  type BoardMatchup,
+} from '@/components/dd/MatchupBoard';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -303,6 +307,12 @@ function SeasonInner({
   const [scoring, setScoring] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [live, setLive] = useState<{ hasLiveData: boolean; liveGames: number } | null>(null);
+  const [board, setBoard] = useState<{
+    rosters: BoardRoster[];
+    matchups: BoardMatchup[];
+    liveGames: number;
+    hasLiveData: boolean;
+  } | null>(null);
   const [odds, setOdds] = useState<{
     homeWinPct: number; awayWinPct: number; tiePct: number;
     homeProjected: number; awayProjected: number; confidence: number;
@@ -342,6 +352,12 @@ function SeasonInner({
         setLive({
           hasLiveData: Boolean(json.hasLiveData),
           liveGames: Number(json.liveGames ?? 0),
+        });
+        setBoard({
+          rosters: json.rosters ?? [],
+          matchups: json.matchups ?? [],
+          liveGames: Number(json.liveGames ?? 0),
+          hasLiveData: Boolean(json.hasLiveData),
         });
         // Keep polling while games are live.
         if (Number(json.liveGames ?? 0) > 0) {
@@ -596,8 +612,25 @@ function SeasonInner({
             )}
           </div>
 
-          {/* My matchup */}
-          {myMatchup ? (
+          {/* Full matchup board — both teams' starters + benches, live scores,
+              big-play animations, and interactables. */}
+          {board && board.matchups.length > 0 && (
+            <MatchupBoard
+              leagueId={leagueId}
+              sport={data.league.sport}
+              seasonYear={data.league.seasonYear}
+              week={week}
+              rosters={board.rosters}
+              matchups={board.matchups}
+              members={data.members}
+              currentMemberId={data.currentMemberId}
+              liveGames={board.liveGames}
+              hasLiveData={board.hasLiveData}
+            />
+          )}
+
+          {/* My matchup (fallback when the board payload isn't loaded yet) */}
+          {!board && myMatchup ? (
             <div className="rounded-xl border-2 border-brand-primary/40 bg-brand-primary/5 p-5">
               <div className="text-center text-xs font-semibold uppercase tracking-wide text-brand-primaryText mb-4">
                 Your Matchup
