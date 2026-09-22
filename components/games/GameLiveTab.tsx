@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import GameWinPoll from '@/components/live/GameWinPoll';
 import LiveFeed from '@/components/live/LiveFeed';
+import LiveGameGraphic from '@/components/live/LiveGameGraphic';
 import type { GameCard } from '@/lib/games-data';
 
 /**
@@ -35,6 +36,14 @@ export default function GameLiveTab({ game }: { game: GameCard }) {
 
   return (
     <div className="space-y-4">
+      {/* Broadcast-style live game graphic — scoreboard, field position,
+          win-probability chart, live odds, and the play-by-play log. */}
+      <LiveGameGraphic
+        sport={game.sport}
+        homeTeam={game.homeTeam}
+        awayTeam={game.awayTeam}
+        espnEventId={game.espnEventId}
+      />
       <GameWinPoll
         gameId={game.gameId}
         sport={game.sport}
