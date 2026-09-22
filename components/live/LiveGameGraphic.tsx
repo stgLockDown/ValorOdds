@@ -424,9 +424,16 @@ function FieldDiagram({ data }: { data: LiveGameGraphicData }) {
           </g>
         ))}
 
+        {/* Red-zone wash — the attacking 20. The offense always drives toward
+            increasing x in this projection, so the target RZ is x 90 → 110. */}
+        {situation?.isRedZone && (
+          <rect className="lg-rz-wash" x={90} y={0} width={20} height={FIELD_H} fill="#ef4444" />
+        )}
+
         {/* Drive trajectory arc */}
         {showDrive && driveStartX != null && (
           <path
+            key={`arc-${driveStartX}-${ballX}`}
             className="lg-arc-draw"
             d={`M ${driveStartX} ${FIELD_H - 6} Q ${(driveStartX + ballX) / 2} ${FIELD_H * 0.18} ${ballX} ${FIELD_H / 2}`}
             fill="none"
@@ -437,41 +444,66 @@ function FieldDiagram({ data }: { data: LiveGameGraphicData }) {
           />
         )}
 
-        {/* Line to gain */}
+        {/* Line to gain — a flowing chain so the first-down marker reads
+            instantly, sliding rather than jumping between snaps. */}
         {ltgX != null && (
-          <line x1={ltgX} y1="0" x2={ltgX} y2={FIELD_H} stroke="#22d3ee" strokeWidth="0.5" opacity="0.9" />
+          <g className="lg-marker-slide" style={{ transform: `translateX(${ltgX}px)` }}>
+            <line
+              className="lg-chain-flow"
+              x1={0}
+              y1="0"
+              x2={0}
+              y2={FIELD_H}
+              stroke="#22d3ee"
+              strokeWidth="0.5"
+              opacity="0.95"
+            />
+            <polygon points={`0,0.6 -1.3,-0.4 1.3,-0.4`} fill="#22d3ee" opacity="0.95" />
+          </g>
         )}
 
-        {/* Scrimmage line */}
-        <line x1={ballX} y1="0" x2={ballX} y2={FIELD_H} stroke="#facc15" strokeWidth="0.4" opacity="0.8" />
-
-        {/* Ball marker */}
-        <g filter="url(#fGlow)">
-          <circle className="lg-ball-pulse" cx={ballX} cy={FIELD_H / 2} r="2.6" fill="url(#lgBall)" />
-          <circle cx={ballX} cy={FIELD_H / 2} r="3.6" fill="none" stroke="#f59e0b" strokeWidth="0.3" opacity="0.7" />
+        {/* Scrimmage line — slides to the new spot with the ball. */}
+        <g className="lg-marker-slide" style={{ transform: `translateX(${ballX}px)` }}>
+          <line x1={0} y1="0" x2={0} y2={FIELD_H} stroke="#facc15" strokeWidth="0.4" opacity="0.85" />
         </g>
 
-        {/* Possessing team logo at the ball */}
-        {offTeam?.logo && (
-          <image
-            href={offTeam.logo}
-            x={ballX - 3}
-            y={FIELD_H / 2 - 9}
-            width="6"
-            height="6"
-            opacity="0.95"
-          />
-        )}
+        {/* Ball marker + possession logo + direction arrow all travel together
+            so the whole cluster glides between plays instead of teleporting. */}
+        <g className="lg-ball-travel" style={{ transform: `translateX(${ballX}px)` }}>
+          <g filter="url(#fGlow)">
+            {/* Expanding halo trailing the live ball. */}
+            <circle className="lg-ball-halo" cx={0} cy={FIELD_H / 2} r="1.1" fill="#f59e0b" opacity="0.5" />
+            <circle className="lg-ball-pulse" cx={0} cy={FIELD_H / 2} r="2.6" fill="url(#lgBall)" />
+            <circle cx={0} cy={FIELD_H / 2} r="3.6" fill="none" stroke="#f59e0b" strokeWidth="0.3" opacity="0.7" />
+          </g>
 
-        {/* Direction arrow */}
-        <g opacity="0.7">
-          <line x1={ballX + 6} y1={FIELD_H / 2} x2={ballX + 14} y2={FIELD_H / 2} stroke="#22d3ee" strokeWidth="0.4" />
-          <polygon
-            points={`${ballX + 14},${FIELD_H / 2} ${ballX + 12},${FIELD_H / 2 - 1.2} ${ballX + 12},${FIELD_H / 2 + 1.2}`}
-            fill="#22d3ee"
-          />
+          {/* Possessing team logo at the ball */}
+          {offTeam?.logo && (
+            <image href={offTeam.logo} x={-3} y={FIELD_H / 2 - 9} width="6" height="6" opacity="0.95" />
+          )}
+
+          {/* Direction arrow, nudging toward the attacking end zone */}
+          <g className="lg-drive-nudge" opacity="0.75">
+            <line x1={6} y1={FIELD_H / 2} x2={14} y2={FIELD_H / 2} stroke="#22d3ee" strokeWidth="0.4" />
+            <polygon
+              points={`14,${FIELD_H / 2} 12,${FIELD_H / 2 - 1.2} 12,${FIELD_H / 2 + 1.2}`}
+              fill="#22d3ee"
+            />
+          </g>
         </g>
       </svg>
+
+      {/* Field-position bar — a compact, always-readable read of the drive that
+          animates smoothly even when the SVG is scaled down on mobile. */}
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-brand-elevated">
+        <div
+          className="lg-progress-fill h-full rounded-full"
+          style={{
+            width: `${Math.max(0, Math.min(100, ballYard))}%`,
+            background: `linear-gradient(90deg, ${offColor}, ${situation?.isRedZone ? '#ef4444' : '#22d3ee'})`,
+          }}
+        />
+      </div>
 
       {/* Field footer: possession + drive summary */}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
@@ -614,8 +646,14 @@ function PlayCard({ play, data }: { play: Play; data: LiveGameGraphicData }) {
   };
 
   return (
-    <div className={`lg-play-in rounded-xl border p-3 ${tone}`}>
-      <div className="flex items-start gap-3">
+    <div
+      className={`lg-play-enter relative overflow-hidden rounded-xl border p-3 ${tone}`}
+    >
+      {/* Scoring plays get a slow gold sweep instead of a hard flash. */}
+      {kind.tone === 'score' && (
+        <span className="lg-score-sweep pointer-events-none absolute inset-0 rounded-xl" />
+      )}
+      <div className="relative flex items-start gap-3">
         {/* Avatar */}
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-elevated">
           {team?.logo ? (

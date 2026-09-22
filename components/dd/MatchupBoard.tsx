@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { getPositionColor } from '@/lib/dd/position-colors';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
+import { compareSlots, slotLabel } from '@/lib/dd/slot-order';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types — mirror the /api/dd/leagues/[id]/home payload
@@ -19,6 +20,12 @@ export interface WeeklyStatEntry {
   points: number;
   source: 'live' | 'actual' | 'projection';
   gameState?: 'pre' | 'in' | 'post';
+  /** Player's team has the ball right now (D/ST: opponent has the ball). */
+  hasPossession?: boolean;
+  /** That offense is inside the opponent's 20. */
+  isRedZone?: boolean;
+  /** Line is an estimate, not earned points. */
+  isProjected?: boolean;
 }
 export interface WeeklyPlayerLine {
   playerName: string;
@@ -41,6 +48,8 @@ export interface WeeklyRoster {
   starterPoints: number;
   benchPoints: number;
   projectedStarterPoints: number;
+  projectedWeekPoints?: number;
+  inPlayCount?: number;
 }
 export interface BoardMatchup {
   id: string;
@@ -72,6 +81,12 @@ export interface MatchupBoardProps {
   currentMemberId: string | null;
   liveGames: number;
   hasLiveData: boolean;
+  /** League's real current scoring period (Wed→Tue calendar). */
+  calendarWeek?: number | null;
+  /** True when the selected week hasn't been played yet. */
+  isFutureWeek?: boolean;
+  /** True when every line shown is a projection. */
+  isProjectedWeek?: boolean;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -151,20 +166,26 @@ function sourceMeta(p: WeeklyPlayerLine): { label: string; color: string } {
   const isActual = p.week.source === 'actual';
   const inGame = p.week.gameState === 'in';
   const finalGame = p.week.gameState === 'post';
-  const label = isLive
-    ? inGame
-      ? 'Live'
-      : finalGame
-        ? 'Final'
-        : 'Scheduled'
-    : isActual
-      ? 'Actual'
-      : 'Proj';
-  const color = inGame
-    ? 'text-brand-danger'
-    : isLive || isActual
-      ? 'text-brand-success'
-      : 'text-brand-muted';
+  // A projected line is never labelled as earned points — future weeks and
+  // players whose game hasn't kicked off always read "Proj".
+  const label = p.week.isProjected
+    ? 'Proj'
+    : isLive
+      ? inGame
+        ? 'Live'
+        : finalGame
+          ? 'Final'
+          : 'Scheduled'
+      : isActual
+        ? 'Actual'
+        : 'Proj';
+  const color = p.week.isProjected
+    ? 'text-brand-muted'
+    : inGame
+      ? 'text-brand-danger'
+      : isLive || isActual
+        ? 'text-brand-success'
+        : 'text-brand-muted';
   return { label, color };
 }
 
@@ -193,6 +214,10 @@ function PlayerRow({
 }) {
   const { label: sourceLabel, color: sourceColor } = sourceMeta(player);
   const inGame = player.week.gameState === 'in';
+  // "In play" = this player's offense has the ball right now (for a D/ST, the
+  // opponent has it, so the defense is on the field). ESPN highlights these.
+  const inPlay = inGame && Boolean(player.week.hasPossession);
+  const inRedZone = inPlay && Boolean(player.week.isRedZone);
   const animatedPoints = useAnimatedNumber(player.week.points);
 
   return (
@@ -200,9 +225,13 @@ function PlayerRow({
       className={`group relative flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors cursor-pointer ${
         isFlashing
           ? 'dd-bigplay border-brand-accent/70 bg-brand-accent/10'
-          : inGame
-            ? 'border-brand-danger/40 bg-brand-danger/5 hover:border-brand-danger/70'
-            : 'border-brand-border bg-brand-elevated/40 hover:border-brand-primary/60'
+          : inRedZone
+            ? 'dd-inplay-rz border-brand-danger/80 bg-brand-danger/15 hover:border-brand-danger'
+            : inPlay
+              ? 'dd-inplay border-brand-success/70 bg-brand-success/10 hover:border-brand-success'
+              : inGame
+                ? 'border-brand-danger/40 bg-brand-danger/5 hover:border-brand-danger/70'
+                : 'border-brand-border bg-brand-elevated/40 hover:border-brand-primary/60'
       }`}
       onMouseEnter={(e) => onHover(player, e.currentTarget)}
       onMouseLeave={onLeave}
@@ -234,8 +263,17 @@ function PlayerRow({
         <Pin className="w-3.5 h-3.5" fill={isPinned ? 'currentColor' : 'none'} />
       </button>
 
+      {/* Possession rail — a bright edge on players whose offense is on the field */}
+      {inPlay && (
+        <span
+          className={`pointer-events-none absolute left-0 top-1 bottom-1 w-[3px] rounded-full ${
+            inRedZone ? 'bg-brand-danger' : 'bg-brand-success'
+          }`}
+        />
+      )}
+
       <span className="w-11 text-[10px] font-bold uppercase tracking-wide text-brand-muted flex-shrink-0">
-        {player.slot}
+        {slotLabel(player.slot)}
       </span>
 
       {/* Headshot */}
@@ -263,13 +301,41 @@ function PlayerRow({
           {player.opponent && (
             <span className="text-[10px] text-brand-muted flex-shrink-0">vs {player.opponent}</span>
           )}
-          {inGame && (
+          {inGame && !inPlay && (
             <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-brand-danger flex-shrink-0">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-danger opacity-75" />
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-brand-danger" />
               </span>
               Live
+            </span>
+          )}
+          {inPlay && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                inRedZone
+                  ? 'border-brand-danger/60 bg-brand-danger/20 text-brand-danger'
+                  : 'border-brand-success/60 bg-brand-success/20 text-brand-success'
+              }`}
+              title={
+                inRedZone
+                  ? 'Red zone — this offense has the ball inside the 20'
+                  : 'In play — this player\u2019s team has possession'
+              }
+            >
+              <span className="relative flex h-1.5 w-1.5">
+                <span
+                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    inRedZone ? 'bg-brand-danger' : 'bg-brand-success'
+                  }`}
+                />
+                <span
+                  className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
+                    inRedZone ? 'bg-brand-danger' : 'bg-brand-success'
+                  }`}
+                />
+              </span>
+              {inRedZone ? 'Red Zone' : 'In Play'}
             </span>
           )}
         </div>
@@ -313,6 +379,7 @@ function TeamColumn({
   isMe,
   isWinner,
   isFinal,
+  isFutureWeek,
   sport,
   pinned,
   flashes,
@@ -328,6 +395,7 @@ function TeamColumn({
   isMe: boolean;
   isWinner: boolean;
   isFinal: boolean;
+  isFutureWeek: boolean;
   sport: string;
   pinned: Set<string>;
   flashes: Record<string, number>;
@@ -343,7 +411,14 @@ function TeamColumn({
   const order = (list: WeeklyPlayerLine[]) => {
     let out = [...list];
     if (liveOnly) out = out.filter((p) => p.week.gameState !== 'pre');
-    if (sortBy === 'points') out.sort((a, b) => b.week.points - a.week.points);
+    if (sortBy === 'points') {
+      out.sort((a, b) => b.week.points - a.week.points);
+    } else {
+      // ESPN lineup order: QB, RB, RB, WR, WR, TE, FLEX, FLEX+, D/ST, K.
+      // The server already sorts this way; re-applying here keeps the order
+      // correct after toggling back from the points view.
+      out.sort((a, b) => compareSlots(a.slot, b.slot, sport));
+    }
     // Pinned players float to the top, preserving their relative order.
     out.sort((a, b) => Number(pinned.has(b.playerName)) - Number(pinned.has(a.playerName)));
     return out;
@@ -383,7 +458,7 @@ function TeamColumn({
             {animatedTotal.toFixed(1)}
           </div>
           <div className="text-[9px] uppercase tracking-wide text-brand-muted">
-            {isFinal ? 'Final' : 'Live total'}
+            {isFutureWeek ? 'Projected' : isFinal ? 'Final' : 'Live total'}
           </div>
         </div>
       </div>
@@ -634,6 +709,9 @@ export default function MatchupBoard({
   currentMemberId,
   liveGames,
   hasLiveData,
+  calendarWeek = null,
+  isFutureWeek = false,
+  isProjectedWeek = false,
 }: MatchupBoardProps) {
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
   const rosterById = useMemo(() => new Map(rosters.map((r) => [r.memberId, r])), [rosters]);
@@ -829,7 +907,11 @@ export default function MatchupBoard({
         )}
 
         <div className="ml-auto flex items-center gap-2 text-[11px] text-brand-muted">
-          {liveGames > 0 ? (
+          {isFutureWeek ? (
+            <span className="inline-flex items-center gap-1.5 font-semibold text-brand-primaryText">
+              <Activity className="w-3.5 h-3.5" /> Projected — not yet played
+            </span>
+          ) : liveGames > 0 ? (
             <span className="inline-flex items-center gap-1.5 font-bold uppercase tracking-wide text-brand-danger">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-danger opacity-75" />
@@ -848,6 +930,21 @@ export default function MatchupBoard({
           )}
         </div>
       </div>
+
+      {/* Future-week notice — these numbers are estimates, never earned points. */}
+      {isFutureWeek && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-brand-primary/30 bg-brand-primary/10 px-3 py-2.5 text-xs">
+          <Activity className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-brand-primaryText" />
+          <p className="leading-relaxed text-brand-muted">
+            <span className="font-semibold text-brand-primaryText">
+              Week {week} hasn&rsquo;t been played yet.
+            </span>{' '}
+            Every total below is a <span className="font-semibold">projection</span> — no points have
+            been earned.
+            {calendarWeek != null && ` The current scoring period is Week ${calendarWeek}.`}
+          </p>
+        </div>
+      )}
 
       {/* Focused matchup scoreboard */}
       <div className="card p-4 sm:p-5">
@@ -906,6 +1003,7 @@ export default function MatchupBoard({
           isMe={focus.homeMemberId === currentMemberId}
           isWinner={focus.winnerMemberId === focus.homeMemberId}
           isFinal={isFinal}
+          isFutureWeek={isFutureWeek}
           sport={sport}
           pinned={pinned}
           flashes={flashes}
@@ -922,6 +1020,7 @@ export default function MatchupBoard({
           isMe={focus.awayMemberId === currentMemberId}
           isWinner={focus.winnerMemberId === focus.awayMemberId}
           isFinal={isFinal}
+          isFutureWeek={isFutureWeek}
           sport={sport}
           pinned={pinned}
           flashes={flashes}

@@ -47,6 +47,17 @@ interface Board {
   myBudget: number;
   mySpent: number;
   faabEnabled: boolean;
+  /** Every position with at least one free agent (server-side census). */
+  availablePositions?: { position: string; count: number }[];
+  /** Wed→Tue waiver window state. */
+  window?: {
+    waiversOpen: boolean;
+    isWaiverProcessingDay: boolean;
+    phase: string;
+    opensAt: string | null;
+    statusText: string;
+    currentWeek: number | null;
+  };
 }
 
 interface RosterPlayer {
@@ -159,16 +170,28 @@ export default function WaiversPanel({
     if (!board) return [];
     const q = search.trim().toLowerCase();
     return board.freeAgents.filter((p) => {
-      if (position && p.position !== position) return false;
+      if (position && (p.position ?? '').toUpperCase() !== position.toUpperCase()) return false;
       if (q && !p.playerName.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [board, search, position]);
 
+  // Position options come from the server-side census so every position with
+  // a free agent is selectable — the visible page is only the top slice, so
+  // deriving options from it used to hide DEF/K/TE entirely.
   const positions = useMemo(() => {
-    if (!board) return [];
-    return Array.from(new Set(board.freeAgents.map((p) => p.position).filter(Boolean))) as string[];
+    if (!board) return [] as { position: string; count: number }[];
+    if (board.availablePositions?.length) return board.availablePositions;
+    const seen = new Map<string, number>();
+    for (const p of board.freeAgents) {
+      const key = (p.position ?? '').toUpperCase();
+      if (!key) continue;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    return [...seen].map(([pos, count]) => ({ position: pos, count }));
   }, [board]);
+
+  const waiverWindow = board?.window;
 
   const remaining = board ? board.myBudget - board.mySpent : 0;
 
@@ -379,12 +402,39 @@ export default function WaiversPanel({
           >
             <option value="">All positions</option>
             {positions.map((p) => (
-              <option key={p} value={p}>
-                {p}
+              <option key={p.position} value={p.position}>
+                {p.position} ({p.count})
               </option>
             ))}
           </select>
         </div>
+
+        {/* Waiver window — the scoring period ends Tuesday, the wire re-opens
+            Wednesday. Informational only; claims are never blocked here. */}
+        {waiverWindow && (
+          <div
+            className={`mb-4 flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-xs ${
+              waiverWindow.isWaiverProcessingDay
+                ? 'border-brand-accent/30 bg-brand-accent/10 text-brand-accent'
+                : 'border-brand-success/25 bg-brand-success/10 text-brand-success'
+            }`}
+          >
+            <span
+              className={`mt-0.5 inline-block h-2 w-2 flex-shrink-0 rounded-full ${
+                waiverWindow.isWaiverProcessingDay
+                  ? 'bg-brand-accent'
+                  : 'bg-brand-success animate-pulse'
+              }`}
+            />
+            <div className="leading-relaxed">
+              <span className="font-semibold">
+                {waiverWindow.isWaiverProcessingDay ? 'Waivers processing' : 'Wire open'}
+                {waiverWindow.currentWeek != null && ` · Week ${waiverWindow.currentWeek}`}
+              </span>
+              <span className="text-brand-muted"> — {waiverWindow.statusText}</span>
+            </div>
+          </div>
+        )}
 
         {filtered.length === 0 ? (
           <p className="text-sm text-brand-muted text-center py-8">

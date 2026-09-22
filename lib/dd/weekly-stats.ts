@@ -24,6 +24,8 @@ import { query } from '@/lib/db';
 import { scoreStatLine, type StatLine } from './scoring';
 import { getScoringPreset, type ScoringConfig, type Sport } from './presets';
 import { getLiveWeekStats, isLiveSport, type LiveWeekStats } from './live-stats';
+import { sortBySlotOrder } from './slot-order';
+import { getFantasyWeekInfo } from './week-calendar';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -40,6 +42,19 @@ export interface WeeklyStatEntry {
   source: 'live' | 'actual' | 'projection';
   /** Live game state when the line came from a real game. */
   gameState?: 'pre' | 'in' | 'post';
+  /**
+   * True when this player's team currently has the ball in a live game (for a
+   * D/ST, when the opponent has the ball). Drives the "in play" highlight.
+   */
+  hasPossession?: boolean;
+  /** True when the player's offense is inside the opponent's 20. */
+  isRedZone?: boolean;
+  /**
+   * True when the line is a forward-looking estimate rather than earned
+   * points — i.e. the week hasn't happened yet, or the player's game hasn't
+   * kicked off. UI should render these as "PROJ" and never as a live score.
+   */
+  isProjected?: boolean;
 }
 
 export interface WeeklyPlayerLine {
@@ -70,6 +85,13 @@ export interface WeeklyRoster {
   benchPoints: number;
   /** Season-long projected starter total (for the odds meter baseline). */
   projectedStarterPoints: number;
+  /**
+   * Sum of this week's projected starter points. For a future week this equals
+   * `starterPoints`; for a live week it's the pre-game expectation.
+   */
+  projectedWeekPoints: number;
+  /** How many starters are on the field with the ball right now. */
+  inPlayCount: number;
 }
 
 export interface WeeklyStatsResult {
@@ -87,6 +109,18 @@ export interface WeeklyStatsResult {
   liveProgress: number | null;
   /** Number of games in the week that are currently live (state === 'in'). */
   liveGames: number;
+  /**
+   * The league's current scoring period, derived from the Wed→Tue fantasy
+   * calendar. Null when it can't be determined (non-weekly sports).
+   */
+  currentWeek: number | null;
+  /**
+   * True when `week` is later than `currentWeek`. The whole payload is then
+   * projection-only: no live or historical box scores are mixed in.
+   */
+  isFutureWeek: boolean;
+  /** True when every starter line in the payload is a projection. */
+  isProjectedWeek: boolean;
   rosters: WeeklyRoster[];
 }
 
@@ -260,6 +294,15 @@ export async function getWeeklyStats(
   const sport = league.sport as Sport;
   const seasonYear = Number(league.season_year) || new Date().getFullYear();
 
+  // ── Fantasy calendar gate ────────────────────────────────────────────────
+  // A scoring period runs Wednesday → Tuesday. Weeks after the current one
+  // have not been played, so they must render as PROJECTIONS ONLY. Without
+  // this gate, live box scores and stale `player_stats` rows (which carry no
+  // week column) leak into every future week and show phantom "earned" points.
+  const weekInfo = getFantasyWeekInfo(sport, seasonYear);
+  const currentWeek = weekInfo.currentWeek;
+  const isFuture = currentWeek != null && week > currentWeek;
+
   // Resolve the scoring config: prefer the league's stored config, else preset.
   let scoring: ScoringConfig;
   const stored =
@@ -288,9 +331,14 @@ export async function getWeeklyStats(
   );
 
   // Real box scores for this league's players (best-effort).
+  //
+  // NOTE: `player_stats` has no `week` column and `game_date` is frequently
+  // NULL, so a single stored box score would otherwise be replayed as the
+  // "actual" result for EVERY week, including ones that haven't happened.
+  // We therefore only consult it for the current or a past week.
   const names = [...new Set(rosterRes.rows.map((r) => r.player_name))];
   const actualByPlayer = new Map<string, StatLine>();
-  if (names.length) {
+  if (names.length && !isFuture) {
     try {
       const actualRes = await query<{
         player_name: string;
@@ -314,8 +362,10 @@ export async function getWeeklyStats(
   }
 
   // Live game stats for the week (the primary source once games are played).
+  // Skipped entirely for future weeks — there is nothing live to report and
+  // fetching would only risk surfacing another week's numbers.
   let live: LiveWeekStats | null = null;
-  if (isLiveSport(sport)) {
+  if (isLiveSport(sport) && !isFuture) {
     try {
       live = await getLiveWeekStats(sport, seasonYear, week);
     } catch {
@@ -351,6 +401,8 @@ export async function getWeeklyStats(
         starterPoints: 0,
         benchPoints: 0,
         projectedStarterPoints: 0,
+        projectedWeekPoints: 0,
+        inPlayCount: 0,
       };
       byMember.set(r.member_id, entry);
     }
@@ -362,6 +414,8 @@ export async function getWeeklyStats(
     let source: 'live' | 'actual' | 'projection';
     let gameState: 'pre' | 'in' | 'post' | undefined;
     let opponent: string | null = null;
+    let hasPossession = false;
+    let isRedZone = false;
 
     const liveEntry = live
       ? isDefense
@@ -376,6 +430,8 @@ export async function getWeeklyStats(
       source = 'live';
       gameState = liveEntry.gameState;
       opponent = liveEntry.opponent;
+      hasPossession = Boolean(liveEntry.hasPossession);
+      isRedZone = Boolean(liveEntry.isRedZone);
     } else {
       const actual = actualByPlayer.get(r.player_name);
       if (actual && Object.keys(actual).length) {
@@ -399,9 +455,21 @@ export async function getWeeklyStats(
             (gm) => gm.homeAbbrev === r.team || gm.awayAbbrev === r.team
           );
           if (g) opponent = g.homeAbbrev === r.team ? g.awayAbbrev : g.homeAbbrev;
+          if (ts === 'in') {
+            // A skill player is in play when his own offense has the ball; a
+            // D/ST is in play when the opponent has it.
+            const offenseTeam = isDefense ? opponent : r.team;
+            if (offenseTeam) {
+              hasPossession = live.possession.has(offenseTeam);
+              isRedZone = live.redZone.has(offenseTeam);
+            }
+          }
         }
       }
     }
+
+    // Future weeks, and players whose game hasn't kicked off, are estimates.
+    const isProjected = isFuture || source === 'projection' || gameState === 'pre';
 
     const scored = scoreStatLine(sport, stats, scoring);
     const points = round1(scored.fantasyPoints);
@@ -422,14 +490,20 @@ export async function getWeeklyStats(
         points,
         source,
         gameState,
+        hasPossession,
+        isRedZone,
+        isProjected,
       },
       opponent,
     };
 
-    if (r.slot && r.slot !== 'BN') {
+    if (r.slot && r.slot !== 'BN' && r.slot !== 'BENCH' && r.slot !== 'IR' && r.slot !== 'IL') {
       entry.starters.push(line);
       entry.starterPoints += points;
       entry.projectedStarterPoints += projectedPoints;
+      if (isProjected) entry.projectedWeekPoints += points;
+      else entry.projectedWeekPoints += projectedPoints;
+      if (hasPossession) entry.inPlayCount += 1;
     } else {
       entry.bench.push(line);
       entry.benchPoints += points;
@@ -438,9 +512,15 @@ export async function getWeeklyStats(
 
   const rosters = [...byMember.values()].map((r) => ({
     ...r,
+    // ESPN lineup order: QB, RB, RB, WR, WR, TE, FLEX, FLEX+, D/ST, K.
+    // The SQL `ORDER BY r.slot` is alphabetical, which produced
+    // FLEX, FLEX, K, QB, RB… — so we re-sort here into the canonical order.
+    starters: sortBySlotOrder(r.starters, (p) => p.slot, sport),
+    bench: sortBySlotOrder(r.bench, (p) => p.slot, sport),
     starterPoints: round1(r.starterPoints),
     benchPoints: round1(r.benchPoints),
     projectedStarterPoints: round1(r.projectedStarterPoints),
+    projectedWeekPoints: round1(r.projectedWeekPoints),
   }));
 
   return {
@@ -451,6 +531,10 @@ export async function getWeeklyStats(
     hasLiveData,
     liveProgress,
     liveGames,
+    currentWeek,
+    isFutureWeek: isFuture,
+    isProjectedWeek:
+      isFuture || rosters.every((r) => r.starters.every((p) => p.week.isProjected === true)),
     rosters,
   };
 }

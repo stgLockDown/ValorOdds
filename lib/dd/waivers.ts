@@ -12,6 +12,22 @@
  */
 import { query, queryOne, tx } from '@/lib/db';
 import { emitNotification } from './notifications';
+import { getFantasyWeekInfo, waiverStatusText } from './week-calendar';
+
+/**
+ * Canonical position ordering for the waiver filter, matching ESPN's dropdown.
+ * Unknown positions sort to the end alphabetically rather than being dropped.
+ */
+const POSITION_ORDER = [
+  'QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DST', 'D/ST',
+  'DL', 'DE', 'DT', 'LB', 'DB', 'CB', 'S',
+  'C', '1B', '2B', '3B', 'SS', 'OF', 'LF', 'CF', 'RF', 'DH', 'SP', 'RP', 'P',
+];
+
+function positionRank(pos: string): number {
+  const i = POSITION_ORDER.indexOf(String(pos).toUpperCase());
+  return i >= 0 ? i : POSITION_ORDER.length;
+}
 
 export interface FreeAgent {
   playerName: string;
@@ -48,6 +64,21 @@ export interface WaiverBoard {
   myBudget: number;
   mySpent: number;
   faabEnabled: boolean;
+  /**
+   * Every position that actually has at least one free agent in this league,
+   * in canonical order. The filter dropdown is built from this rather than
+   * from the (truncated) `freeAgents` page, so DEF/K/TE are always selectable.
+   */
+  availablePositions: { position: string; count: number }[];
+  /** Waiver window state, derived from the Wed→Tue fantasy calendar. */
+  window: {
+    waiversOpen: boolean;
+    isWaiverProcessingDay: boolean;
+    phase: string;
+    opensAt: string | null;
+    statusText: string;
+    currentWeek: number | null;
+  };
 }
 
 /** Total FAAB spent by a member (sum of winning bids). */
@@ -88,32 +119,92 @@ export async function getWaiverBoard(
   let filters = '';
 
   if (opts.position) {
-    params.push(opts.position);
-    filters += ` AND pp.position = $${params.length}`;
+    params.push(opts.position.toUpperCase());
+    filters += ` AND UPPER(pp.position) = $${params.length}`;
   }
   if (opts.search) {
     params.push(`%${opts.search}%`);
     filters += ` AND pp.player_name ILIKE $${params.length}`;
   }
+
+  // ── Per-position coverage ────────────────────────────────────────────────
+  // A flat `ORDER BY projected_points DESC LIMIT 60` is dominated by QB/RB/WR
+  // (a DEF projects ~5 pts, a K ~7-9, while a QB projects 20+), so kickers,
+  // defenses and even tight ends never made it onto the board at all. We rank
+  // WITHIN each position and interleave, guaranteeing every position is
+  // represented while still leading with the best players overall.
+  //
+  // When the caller has already filtered to one position, the guarantee is
+  // moot and we just return that position's best N.
+  const perPosFloor = opts.position ? limit : 12;
+  params.push(perPosFloor);
+  const posFloorIdx = params.length;
   params.push(limit);
+  const limitIdx = params.length;
 
   const faRes = await query<any>(
-    `SELECT pp.player_name, pp.espn_id, pp.team, pp.position, pp.sport,
-            pp.projected_points, pp.rank, pp.adp, pp.headshot_url, pp.injury_status
+    `WITH available AS (
+       SELECT pp.player_name, pp.espn_id, pp.team, pp.position, pp.sport,
+              pp.projected_points, pp.rank, pp.adp, pp.headshot_url,
+              pp.injury_status
+       FROM dd_player_pool pp
+       WHERE pp.sport = $2
+         AND pp.season_year = $3
+         AND NOT EXISTS (
+           SELECT 1 FROM dd_rosters r
+           WHERE r.league_id = $1
+             AND r.player_name = pp.player_name
+             AND r.sport = pp.sport
+         )
+         ${filters}
+     ),
+     ranked AS (
+       SELECT a.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY UPPER(COALESCE(a.position, '?'))
+                ORDER BY a.projected_points DESC NULLS LAST,
+                         a.rank ASC NULLS LAST,
+                         a.player_name ASC
+              ) AS pos_rn
+       FROM available a
+     )
+     SELECT player_name, espn_id, team, position, sport,
+            projected_points, rank, adp, headshot_url, injury_status
+     FROM ranked
+     WHERE pos_rn <= $${posFloorIdx}
+     ORDER BY pos_rn ASC,
+              projected_points DESC NULLS LAST,
+              rank ASC NULLS LAST,
+              player_name ASC
+     LIMIT $${limitIdx}`,
+    params
+  );
+
+  // Full position census for the filter dropdown — independent of the page
+  // above, so every position with at least one free agent is offered.
+  const posRes = await query<{ position: string | null; cnt: string }>(
+    `SELECT UPPER(pp.position) AS position, COUNT(*)::text AS cnt
      FROM dd_player_pool pp
      WHERE pp.sport = $2
        AND pp.season_year = $3
+       AND pp.position IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM dd_rosters r
          WHERE r.league_id = $1
            AND r.player_name = pp.player_name
            AND r.sport = pp.sport
        )
-       ${filters}
-     ORDER BY pp.projected_points DESC NULLS LAST, pp.rank ASC NULLS LAST
-     LIMIT $${params.length}`,
-    params
+     GROUP BY UPPER(pp.position)
+     ORDER BY 1`,
+    [leagueId, league.sport, league.season_year]
   );
+
+  const availablePositions = posRes.rows
+    .filter((r) => r.position)
+    .map((r) => ({ position: r.position as string, count: Number(r.cnt) }))
+    .sort((a, b) => positionRank(a.position) - positionRank(b.position));
+
+  const weekInfo = getFantasyWeekInfo(league.sport, Number(league.season_year));
 
   const claimsRes = await query<any>(
     `SELECT c.id::text, c.member_id::text, m.team_name, c.player_name,
@@ -166,6 +257,15 @@ export async function getWaiverBoard(
     myBudget: budgetRow?.faab_budget ?? 100,
     mySpent: await spentByMember(leagueId, memberId),
     faabEnabled,
+    availablePositions,
+    window: {
+      waiversOpen: weekInfo.waiversOpen,
+      isWaiverProcessingDay: weekInfo.isWaiverProcessingDay,
+      phase: weekInfo.phase,
+      opensAt: weekInfo.waiversOpenAt,
+      statusText: waiverStatusText(weekInfo),
+      currentWeek: weekInfo.currentWeek,
+    },
   };
 }
 

@@ -39,12 +39,24 @@ export interface ScoreboardGame {
   homeScore: number;
   awayScore: number;
   state: GameState;
+  /** Abbreviation of the team currently with the ball (live games only). */
+  possessionTeam?: string | null;
+  /** Short game clock/period label, e.g. "8:42 - 3rd". */
+  statusDetail?: string | null;
+  /** True when the offense is inside the opponent's 20. */
+  isRedZone?: boolean;
+  /** Down & distance text, e.g. "2nd & 7 at DAL 34". */
+  downDistance?: string | null;
 }
 
 export interface LiveStatEntry {
   stats: StatLine;
   opponent: string | null;
   gameState: GameState;
+  /** True when this player's team currently has the ball in a live game. */
+  hasPossession?: boolean;
+  /** True when this player's team is live and in the red zone. */
+  isRedZone?: boolean;
 }
 
 export interface LiveWeekStats {
@@ -60,6 +72,14 @@ export interface LiveWeekStats {
    * silently falling back to a projection with no game state.
    */
   teamState: Map<string, GameState>;
+  /**
+   * Abbreviations of teams that currently have the ball in a live game. Drives
+   * the "in play" highlight on the matchup board — an ESPN-style cue that a
+   * player's offense is on the field right now.
+   */
+  possession: Set<string>;
+  /** Teams whose offense is currently inside the opponent's 20-yard line. */
+  redZone: Set<string>;
 }
 
 /** Sports whose ESPN scoreboard is week-addressable. */
@@ -127,13 +147,44 @@ function parseScoreboard(data: any): ScoreboardGame[] {
     const competitors: any[] = comp?.competitors ?? [];
     const home = competitors.find((c) => c?.homeAway === 'home');
     const away = competitors.find((c) => c?.homeAway === 'away');
+    const state = stateOf(comp);
+
+    // ESPN reports possession as a team *id* on the situation block. Map it
+    // back to an abbreviation so downstream consumers can key by team code.
+    let possessionTeam: string | null = null;
+    let isRedZone = false;
+    let downDistance: string | null = null;
+    if (state === 'in') {
+      const sit = comp?.situation;
+      const possId = sit?.possession != null ? String(sit.possession) : null;
+      if (possId) {
+        for (const c of competitors) {
+          if (String(c?.team?.id ?? c?.id ?? '') === possId) {
+            possessionTeam = c?.team?.abbreviation ?? null;
+            break;
+          }
+        }
+      }
+      // Fall back to the text form some feeds use (already an abbreviation).
+      if (!possessionTeam && typeof sit?.possession === 'string') {
+        const ab = sit.possession.toUpperCase();
+        if (competitors.some((c) => c?.team?.abbreviation === ab)) possessionTeam = ab;
+      }
+      isRedZone = Boolean(sit?.isRedZone);
+      downDistance = sit?.downDistanceText ?? sit?.shortDownDistanceText ?? null;
+    }
+
     out.push({
       eventId: String(e.id),
       homeAbbrev: home?.team?.abbreviation ?? null,
       awayAbbrev: away?.team?.abbreviation ?? null,
       homeScore: num(home?.score),
       awayScore: num(away?.score),
-      state: stateOf(comp),
+      state,
+      possessionTeam,
+      statusDetail: comp?.status?.type?.shortDetail ?? null,
+      isRedZone,
+      downDistance,
     });
   }
   return out;
@@ -243,6 +294,8 @@ export async function getLiveWeekStats(
     players: new Map(),
     teamDefense: new Map(),
     teamState: new Map(),
+    possession: new Set(),
+    redZone: new Set(),
   };
   if (!isLiveSport(sport)) return result;
 
@@ -259,6 +312,10 @@ export async function getLiveWeekStats(
   for (const g of games) {
     if (g.homeAbbrev) result.teamState.set(g.homeAbbrev, g.state);
     if (g.awayAbbrev) result.teamState.set(g.awayAbbrev, g.state);
+    if (g.state === 'in' && g.possessionTeam) {
+      result.possession.add(g.possessionTeam);
+      if (g.isRedZone) result.redZone.add(g.possessionTeam);
+    }
   }
 
   await Promise.all(
@@ -289,9 +346,17 @@ export async function getLiveWeekStats(
       for (const pb of boxPlayers) {
         const ab: string | null = pb?.team?.abbreviation ?? null;
         const opp = ab === homeAbbrev ? awayAbbrev : ab === awayAbbrev ? homeAbbrev : null;
+        const hasPossession = Boolean(ab && state === 'in' && result.possession.has(ab));
+        const inRedZone = Boolean(ab && state === 'in' && result.redZone.has(ab));
         const players = extractNflPlayers(pb);
         for (const [name, stats] of players) {
-          result.players.set(name, { stats, opponent: opp, gameState: state });
+          result.players.set(name, {
+            stats,
+            opponent: opp,
+            gameState: state,
+            hasPossession,
+            isRedZone: inRedZone,
+          });
         }
       }
 
@@ -304,10 +369,15 @@ export async function getLiveWeekStats(
         if (!teamAb) continue;
         const own = teamStatsByAbbrev.get(teamAb) ?? [];
         const opp = oppAb ? teamStatsByAbbrev.get(oppAb) ?? [] : [];
+        // A D/ST is "in play" when the OPPONENT has the ball — that's when the
+        // defense is on the field and can actually score fantasy points.
+        const defOnField = Boolean(oppAb && state === 'in' && result.possession.has(oppAb));
         result.teamDefense.set(teamAb, {
           stats: extractNflTeamDefense(own, opp, ptsAllowed),
           opponent: oppAb,
           gameState: state,
+          hasPossession: defOnField,
+          isRedZone: Boolean(oppAb && state === 'in' && result.redZone.has(oppAb)),
         });
       }
     })

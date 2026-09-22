@@ -17,6 +17,7 @@ import MatchupBoard, {
   type WeeklyRoster as BoardRoster,
   type BoardMatchup,
 } from '@/components/dd/MatchupBoard';
+import { compareSlots } from '@/lib/dd/slot-order';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -82,7 +83,11 @@ function LineupEditor({
   roster: RosterPlayer[];
   onSaved: () => void;
 }) {
-  const starterSlots = (rosterConfig?.slots ?? []).filter((s) => s.isStarter && !s.eligible.includes('*'));
+  // Starter slots in canonical ESPN order (QB, RB, RB, WR, WR, TE, FLEX,
+  // FLEX+, D/ST, K) so the lineup editor reads the same as the matchup board.
+  const starterSlots = [...(rosterConfig?.slots ?? [])]
+    .filter((s) => s.isStarter && !s.eligible.includes('*'))
+    .sort((a, b) => compareSlots(a.slot, b.slot, sport));
 
   // Expand slots by count so every slot INSTANCE (RB1, RB2, WR1..WR3, FLEX1, FLEX2…)
   // gets its own independently editable row.
@@ -312,6 +317,9 @@ function SeasonInner({
     matchups: BoardMatchup[];
     liveGames: number;
     hasLiveData: boolean;
+    calendarWeek: number | null;
+    isFutureWeek: boolean;
+    isProjectedWeek: boolean;
   } | null>(null);
   const [odds, setOdds] = useState<{
     homeWinPct: number; awayWinPct: number; tiePct: number;
@@ -358,6 +366,9 @@ function SeasonInner({
           matchups: json.matchups ?? [],
           liveGames: Number(json.liveGames ?? 0),
           hasLiveData: Boolean(json.hasLiveData),
+          calendarWeek: json.calendarWeek ?? null,
+          isFutureWeek: Boolean(json.isFutureWeek),
+          isProjectedWeek: Boolean(json.isProjectedWeek),
         });
         // Keep polling while games are live.
         if (Number(json.liveGames ?? 0) > 0) {
@@ -626,6 +637,9 @@ function SeasonInner({
               currentMemberId={data.currentMemberId}
               liveGames={board.liveGames}
               hasLiveData={board.hasLiveData}
+              calendarWeek={board.calendarWeek}
+              isFutureWeek={board.isFutureWeek}
+              isProjectedWeek={board.isProjectedWeek}
             />
           )}
 
