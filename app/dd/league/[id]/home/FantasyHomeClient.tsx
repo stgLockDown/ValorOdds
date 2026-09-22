@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, ChevronLeft, ChevronRight, Sparkles, Trophy, Zap, Star,
-  MessageSquare, Send, X, BarChart3, Users, RefreshCw, Swords, TrendingUp,
+  MessageSquare, Send, X, BarChart3, Users, RefreshCw, Swords, TrendingUp, Radio,
 } from 'lucide-react';
 import { getPositionColor } from '@/lib/dd/position-colors';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
@@ -20,7 +20,8 @@ interface WeeklyStatEntry {
   stats: Record<string, number>;
   chips: { label: string; value: string }[];
   points: number;
-  source: 'actual' | 'projection';
+  source: 'live' | 'actual' | 'projection';
+  gameState?: 'pre' | 'in' | 'post';
 }
 interface WeeklyPlayerLine {
   playerName: string;
@@ -88,6 +89,9 @@ interface HomeData {
   myTeamName: string | null;
   isCommissioner: boolean;
   scoringName: string;
+  hasLiveData: boolean;
+  liveProgress: number | null;
+  liveGames: number;
   rosters: WeeklyRoster[];
   myRoster: WeeklyRoster | null;
   matchup: {
@@ -130,7 +134,24 @@ function PlayerRow({
   onHover: (p: WeeklyPlayerLine, el: HTMLElement) => void;
   onLeave: () => void;
 }) {
+  const isLive = player.week.source === 'live';
   const isActual = player.week.source === 'actual';
+  const isInGame = player.week.gameState === 'in';
+  const isFinalGame = player.week.gameState === 'post';
+  const sourceLabel = isLive
+    ? isInGame
+      ? 'Live'
+      : isFinalGame
+        ? 'Final'
+        : 'Scheduled'
+    : isActual
+      ? 'Actual'
+      : 'Proj';
+  const sourceColor = isInGame
+    ? 'text-brand-danger'
+    : isLive || isActual
+      ? 'text-brand-success'
+      : 'text-brand-muted';
   return (
     <div
       className="flex items-center gap-3 rounded-lg bg-brand-elevated/40 border border-brand-border px-3 py-2 hover:border-brand-primary/60 transition-colors cursor-pointer"
@@ -166,6 +187,15 @@ function PlayerRow({
           {player.opponent && (
             <span className="text-[10px] text-brand-muted flex-shrink-0">vs {player.opponent}</span>
           )}
+          {isInGame && (
+            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-brand-danger flex-shrink-0">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-danger opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-brand-danger" />
+              </span>
+              Live
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-1 mt-1">
           {player.week.chips.slice(0, 4).map((c, i) => (
@@ -184,8 +214,8 @@ function PlayerRow({
         <div className="text-sm font-bold text-brand-primaryText tabular-nums">
           {player.week.points.toFixed(1)}
         </div>
-        <div className={`text-[9px] uppercase tracking-wide ${isActual ? 'text-brand-success' : 'text-brand-muted'}`}>
-          {isActual ? 'Actual' : 'Proj'}
+        <div className={`text-[9px] uppercase tracking-wide ${sourceColor}`}>
+          {sourceLabel}
         </div>
       </div>
     </div>
@@ -429,6 +459,27 @@ function FantasyHomeInner({
     void load(null);
   }, [load]);
 
+  // Silent refresh — re-fetches the current week without the loading spinner so
+  // live scores and the odds meter update in place.
+  const refresh = useCallback(async () => {
+    try {
+      const qs = week ? `?week=${week}` : '';
+      const res = await fetch(`/api/dd/leagues/${leagueId}/home${qs}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      setData(json);
+    } catch {
+      /* keep the last good payload */
+    }
+  }, [leagueId, week]);
+
+  // Poll every 30s while any game is live so points tick up as real games play.
+  useEffect(() => {
+    if (!data?.liveGames) return;
+    const timer = setInterval(() => void refresh(), 30000);
+    return () => clearInterval(timer);
+  }, [data?.liveGames, refresh]);
+
   const changeWeek = (w: number) => {
     if (!data) return;
     const clamped = Math.max(1, Math.min(data.weeks, w));
@@ -511,6 +562,12 @@ function FantasyHomeInner({
           <p className="text-sm text-brand-muted mt-1">
             {data.myTeamName ? `${data.myTeamName} · ` : ''}Week {data.week} of {data.weeks} · {data.scoringName}
           </p>
+          {data.liveGames > 0 && (
+            <span className="inline-flex items-center gap-1.5 mt-2 text-[11px] font-bold uppercase tracking-wide text-brand-danger">
+              <Radio className="w-3.5 h-3.5" />
+              {data.liveGames} game{data.liveGames === 1 ? '' : 's'} live now
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setChatOpen(true)} className="btn-primary inline-flex items-center gap-2">
@@ -581,6 +638,16 @@ function FantasyHomeInner({
             <div className="mt-3 text-center text-xs text-brand-muted">
               {isFinal ? (
                 <span className="font-semibold uppercase tracking-wide text-brand-accent">Final</span>
+              ) : data.liveGames > 0 ? (
+                <span className="inline-flex items-center gap-1.5 font-bold uppercase tracking-wide text-brand-danger">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-danger opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-danger" />
+                  </span>
+                  Live — {data.liveGames} game{data.liveGames === 1 ? '' : 's'} in progress
+                </span>
+              ) : data.hasLiveData ? (
+                'Scoring from real game stats — updates as games play out'
               ) : (
                 'Live projections — updates as points are scored'
               )}

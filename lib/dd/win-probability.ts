@@ -95,10 +95,11 @@ export function computeWinProbability(input: WinProbabilityInput): WinProbabilit
   const remaining = 1 - progress;
 
   // ── Projected final score ──
-  // Already-scored points are locked in. The rest of each team's projection is
-  // scaled by how much of the week is left.
-  const homeRemaining = home.projectedStarterPoints * remaining;
-  const awayRemaining = away.projectedStarterPoints * remaining;
+  // Already-scored points are locked in. Each starter's remaining upside is
+  // scaled by their real game state when we have live data (a player whose
+  // game is final has nothing left to add), otherwise by the week progress.
+  const homeRemaining = remainingUpside(home, remaining);
+  const awayRemaining = remainingUpside(away, remaining);
   const homeProjected = home.starterPoints + homeRemaining;
   const awayProjected = away.starterPoints + awayRemaining;
 
@@ -152,15 +153,44 @@ export function computeWinProbability(input: WinProbabilityInput): WinProbabilit
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Estimate how many of a team's starters still have points to add. We don't
- * have per-player game times, so we approximate: at progress p, roughly
- * (1 − p) of the lineup is still to play, weighted toward the higher-variance
- * (higher-projection) players.
+ * Estimate how many of a team's starters still have points to add. When live
+ * game states are available we count players whose game is not yet final;
+ * otherwise we approximate from the week progress.
  */
 function countRemaining(roster: WeeklyRoster, progress: number): number {
   const total = roster.starters.length;
   if (total === 0) return 0;
+  const withState = roster.starters.filter((p) => p.week.gameState);
+  if (withState.length) {
+    return roster.starters.filter((p) => p.week.gameState !== 'post').length;
+  }
   return Math.max(0, Math.round(total * (1 - progress)));
+}
+
+/**
+ * Sum of the points still to come for a lineup. When live game states are
+ * available, a player whose game is final contributes nothing; a player whose
+ * game is live contributes a fraction of their projection; a player who hasn't
+ * played contributes their full projection. Without live data we fall back to
+ * scaling the whole lineup by the remaining week fraction.
+ */
+function remainingUpside(roster: WeeklyRoster, remaining: number): number {
+  const withState = roster.starters.filter((p) => p.week.gameState);
+  if (!withState.length) return roster.projectedStarterPoints * remaining;
+
+  let upside = 0;
+  for (const p of roster.starters) {
+    const state = p.week.gameState;
+    if (state === 'post') continue; // game over — nothing left to add
+    if (state === 'in') {
+      // Live game: assume ~half of the projection is still to come.
+      upside += (p.projectedPoints || 0) * 0.5;
+    } else {
+      // Not started yet: full projection still to come.
+      upside += p.projectedPoints || 0;
+    }
+  }
+  return upside;
 }
 
 /**
