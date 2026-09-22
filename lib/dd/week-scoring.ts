@@ -16,6 +16,7 @@
 import { query, queryOne, tx } from '@/lib/db';
 import { scoreH2HMatchup } from './scoring';
 import { emitNotification, emitLeagueNotification } from './notifications';
+import { awardXp } from './gamification';
 
 export interface ScoredMatchup {
   matchupId: string;
@@ -194,7 +195,50 @@ export async function scoreWeek(
     dedupeKey: `weekfinal:w${week}`,
   });
 
+  // ── Award XP for the week's results ──────────────────────────────────────
+  // Each manager earns XP for a win/tie (and a streak reset on a loss). Bots
+  // have no user account, so we only award to real users.
+  await awardMatchupXp(leagueId, scored);
+
   return { week, scored, skipped };
+}
+
+/**
+ * Award gamification XP to each real (non-bot) manager for a scored week.
+ * Best-effort: any failure here must never break scoring.
+ */
+async function awardMatchupXp(leagueId: bigint, scored: ScoredMatchup[]): Promise<void> {
+  try {
+    const members = await query<{ id: string; user_id: string | null; is_bot: boolean }>(
+      `SELECT m.id::text, m.user_id::text, (u.password_hash = 'bot_no_login') AS is_bot
+       FROM dd_league_members m
+       LEFT JOIN web_users u ON u.id = m.user_id
+       WHERE m.league_id = $1`,
+      [leagueId]
+    );
+    const userByMember = new Map<string, string>();
+    for (const m of members.rows) {
+      if (m.user_id && !m.is_bot) userByMember.set(m.id, m.user_id);
+    }
+
+    for (const s of scored) {
+      const pairs: [string, 'win' | 'loss' | 'tie'][] = [
+        [s.homeMemberId, s.isTie ? 'tie' : s.winnerMemberId === s.homeMemberId ? 'win' : 'loss'],
+        [s.awayMemberId, s.isTie ? 'tie' : s.winnerMemberId === s.awayMemberId ? 'win' : 'loss'],
+      ];
+      for (const [mid, result] of pairs) {
+        const userId = userByMember.get(mid);
+        if (!userId) continue;
+        const eventType = result === 'win' ? 'win_matchup' : result === 'tie' ? 'tie_matchup' : 'lose_matchup';
+        await awardXp(userId, eventType as any, {
+          leagueId: leagueId.toString(),
+          metadata: { week: s.week, matchupId: s.matchupId, result },
+        });
+      }
+    }
+  } catch {
+    // Gamification is a bonus — never let it break scoring.
+  }
 }
 
 /**
