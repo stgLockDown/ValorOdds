@@ -1,22 +1,28 @@
 /**
  * DiamondDraft — Weekly matchup scoring.
  *
- * Turns a scheduled week of head-to-head matchups into final results. Each
- * team's score is the sum of its *starting* lineup's projected points (players
- * in a non-'BN' slot). Ties are broken by the higher-scoring bench, then
- * declared a tie.
+ * Turns a week of head-to-head matchups into live and final results. Each
+ * team's score is the sum of its *starting* lineup's fantasy points, computed
+ * from **real game stats** (via the weekly-stats engine, which pulls live ESPN
+ * box scores) with a projection fallback for players whose games haven't
+ * started.
  *
- * Scoring is idempotent: a matchup already marked `completed` is skipped, and
- * the notifications it emits carry a dedupe key, so re-running a week is safe.
+ * A week is scored in two phases:
+ *   * `in_progress` — some starters' games are still live or upcoming. We
+ *     update the running scores so the odds meter and scoreboard move as
+ *     points are earned, but we do NOT declare a winner or award XP.
+ *   * `final` — every starter's game is over (or the sport has no live feed).
+ *     We lock the scores, break ties by bench points, emit notifications, and
+ *     award gamification XP.
  *
- * When a week is scored we emit:
- *   * a per-manager notification with their own result and score, and
- *   * a league-wide broadcast announcing the week is final.
+ * Scoring is idempotent: a matchup already `final` is skipped, and the
+ * notifications it emits carry a dedupe key, so re-running a week is safe.
  */
 import { query, queryOne, tx } from '@/lib/db';
 import { scoreH2HMatchup } from './scoring';
 import { emitNotification, emitLeagueNotification } from './notifications';
 import { awardXp } from './gamification';
+import { getWeeklyStats, type WeeklyRoster } from './weekly-stats';
 
 export interface ScoredMatchup {
   matchupId: string;
@@ -27,23 +33,19 @@ export interface ScoredMatchup {
   awayScore: number;
   winnerMemberId: string | null;
   isTie: boolean;
+  status: 'in_progress' | 'final';
 }
 
 export interface ScoreWeekResult {
   week: number;
   scored: ScoredMatchup[];
   skipped: number;
-}
-
-interface RosterRow {
-  member_id: string;
-  player_name: string;
-  slot: string;
-  projected_points: string | null;
+  /** True when every matchup in the week reached a final state. */
+  complete: boolean;
 }
 
 /**
- * Score every not-yet-completed matchup in a given week.
+ * Score every not-yet-final matchup in a given week from live game stats.
  */
 export async function scoreWeek(
   leagueId: bigint,
@@ -70,46 +72,66 @@ export async function scoreWeek(
 
   const pending = matchups.rows.filter((m) => m.status !== 'final');
   const skipped = matchups.rows.length - pending.length;
-  if (!pending.length) return { week, scored: [], skipped };
+  if (!pending.length) return { week, scored: [], skipped, complete: true };
 
-  // Every roster row in the league, with its projected points.
-  const rosters = await query<RosterRow>(
-    `SELECT r.member_id::text, r.player_name, r.slot, pp.projected_points
-     FROM dd_rosters r
-     LEFT JOIN dd_player_pool pp
-       ON pp.player_name = r.player_name AND pp.sport = r.sport
-     WHERE r.league_id = $1`,
-    [leagueId]
+  // Live weekly stats for every roster in the league.
+  const weekly = await getWeeklyStats(leagueId, week);
+  const rosterByMember = new Map<string, WeeklyRoster>();
+  for (const r of weekly.rosters) rosterByMember.set(r.memberId, r);
+
+  // A week is "complete" when no starter anywhere still has a game to play.
+  // `liveProgress` is non-null only when ESPN returned a real schedule for the
+  // week, so we can trust the per-player game states. If the sport has no live
+  // feed (or ESPN is unreachable) we treat the week as complete so
+  // projection-based leagues still finalize normally.
+  const anyLive = weekly.liveProgress != null;
+  const anyPending = weekly.rosters.some((r) =>
+    r.starters.some((p) => p.week.gameState && p.week.gameState !== 'post')
   );
-
-  // memberId → { starters, bench } point totals.
-  const totals = new Map<string, { starters: number; bench: number }>();
-  for (const r of rosters.rows) {
-    const pts = r.projected_points != null ? Number(r.projected_points) : 0;
-    const entry = totals.get(r.member_id) ?? { starters: 0, bench: 0 };
-    if (r.slot && r.slot !== 'BN') entry.starters += pts;
-    else entry.bench += pts;
-    totals.set(r.member_id, entry);
-  }
+  const complete = !anyLive || !anyPending;
 
   const scored: ScoredMatchup[] = [];
 
   await tx(async (client) => {
     for (const m of pending) {
-      const home = totals.get(m.home_member_id) ?? { starters: 0, bench: 0 };
-      const away = totals.get(m.away_member_id) ?? { starters: 0, bench: 0 };
+      const home = rosterByMember.get(m.home_member_id);
+      const away = rosterByMember.get(m.away_member_id);
+      const homeScore = round1(home?.starterPoints ?? 0);
+      const awayScore = round1(away?.starterPoints ?? 0);
 
-      const homeScore = round1(home.starters);
-      const awayScore = round1(away.starters);
+      if (!complete) {
+        // Live update only — no winner, no XP, no notifications.
+        await client.query(
+          `UPDATE dd_matchups
+           SET home_score = $1, away_score = $2, status = 'in_progress'
+           WHERE id = $3`,
+          [homeScore, awayScore, BigInt(m.id)]
+        );
+        scored.push({
+          matchupId: m.id,
+          week,
+          homeMemberId: m.home_member_id,
+          awayMemberId: m.away_member_id,
+          homeScore,
+          awayScore,
+          winnerMemberId: null,
+          isTie: false,
+          status: 'in_progress',
+        });
+        continue;
+      }
 
       const outcome = scoreH2HMatchup(homeScore, awayScore, 'h2h_points');
       let winnerMemberId: string | null = null;
       let isTie = false;
       if (outcome.winner === 'home') winnerMemberId = m.home_member_id;
       else if (outcome.winner === 'away') winnerMemberId = m.away_member_id;
-      else if (home.bench !== away.bench) {
+      else if ((home?.benchPoints ?? 0) !== (away?.benchPoints ?? 0)) {
         // Bench tiebreak (standard "total points" fallback).
-        winnerMemberId = home.bench > away.bench ? m.home_member_id : m.away_member_id;
+        winnerMemberId =
+          (home?.benchPoints ?? 0) > (away?.benchPoints ?? 0)
+            ? m.home_member_id
+            : m.away_member_id;
       } else {
         isTie = true;
       }
@@ -137,18 +159,23 @@ export async function scoreWeek(
         awayScore,
         winnerMemberId,
         isTie,
+        status: 'final',
       });
     }
   });
 
-  // ── Notify ────────────────────────────────────────────────────────────────
+  // Only notify / award XP for matchups that actually went final.
+  const finals = scored.filter((s) => s.status === 'final');
+  if (!finals.length) return { week, scored, skipped, complete };
+
+  // ── Notify ──────────────────────────────────────────────────────────────
   const names = await query<{ id: string; team_name: string }>(
     `SELECT id::text, team_name FROM dd_league_members WHERE league_id = $1`,
     [leagueId]
   );
   const nameById = new Map(names.rows.map((n) => [n.id, n.team_name]));
 
-  for (const s of scored) {
+  for (const s of finals) {
     const pairs: [string, number, string, number][] = [
       [s.homeMemberId, s.homeScore, s.awayMemberId, s.awayScore],
       [s.awayMemberId, s.awayScore, s.homeMemberId, s.homeScore],
@@ -189,18 +216,18 @@ export async function scoreWeek(
     leagueId,
     kind: 'matchup',
     title: `Week ${week} is final`,
-    body: `${scored.length} matchup${scored.length === 1 ? '' : 's'} scored in ${league.name}.`,
+    body: `${finals.length} matchup${finals.length === 1 ? '' : 's'} scored in ${league.name}.`,
     url: `/dd/league/${leagueId}/season`,
-    data: { week, count: scored.length },
+    data: { week, count: finals.length },
     dedupeKey: `weekfinal:w${week}`,
   });
 
-  // ── Award XP for the week's results ──────────────────────────────────────
+  // ── Award XP for the week's results ─────────────────────────────────────
   // Each manager earns XP for a win/tie (and a streak reset on a loss). Bots
   // have no user account, so we only award to real users.
-  await awardMatchupXp(leagueId, scored);
+  await awardMatchupXp(leagueId, finals);
 
-  return { week, scored, skipped };
+  return { week, scored, skipped, complete };
 }
 
 /**

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Loader2, ArrowLeft, Trophy, Crown, Users, Calendar, Save, Check,
   AlertCircle, Sparkles, ChevronLeft, ChevronRight, Swords, Medal,
-  UserPlus, Play,
+  UserPlus, Play, RotateCcw, Radio,
 } from 'lucide-react';
 import { getPositionColor } from '@/lib/dd/position-colors';
 import { ToastProvider, useToast } from '@/components/dd/ToastProvider';
@@ -301,6 +301,8 @@ function SeasonInner({
   const [tab, setTab] = useState<'matchup' | 'lineup' | 'standings' | 'waivers'>('matchup');
   const [week, setWeek] = useState(1);
   const [scoring, setScoring] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [live, setLive] = useState<{ hasLiveData: boolean; liveGames: number } | null>(null);
   const [odds, setOdds] = useState<{
     homeWinPct: number; awayWinPct: number; tiePct: number;
     homeProjected: number; awayProjected: number; confidence: number;
@@ -323,20 +325,38 @@ function SeasonInner({
 
   useEffect(() => { load(); }, [load]);
 
-  // Fetch the live win-probability for the selected week (drives the odds meter).
+  // Fetch the live win-probability for the selected week (drives the odds meter)
+  // plus the live-game signal. Polls every 30s while any game is in progress so
+  // scores and the odds meter move as real games play out.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchOdds = async () => {
       try {
         const res = await fetch(`/api/dd/leagues/${leagueId}/home?week=${week}`);
         if (!res.ok) return;
         const json = await res.json();
-        if (!cancelled) setOdds(json.odds ?? null);
+        if (cancelled) return;
+        setOdds(json.odds ?? null);
+        setLive({
+          hasLiveData: Boolean(json.hasLiveData),
+          liveGames: Number(json.liveGames ?? 0),
+        });
+        // Keep polling while games are live.
+        if (Number(json.liveGames ?? 0) > 0) {
+          timer = setTimeout(fetchOdds, 30000);
+        }
       } catch {
         /* odds are a nice-to-have */
       }
-    })();
-    return () => { cancelled = true; };
+    };
+
+    fetchOdds();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [leagueId, week]);
 
   // Deep-link support: /season?tab=waivers
@@ -372,6 +392,41 @@ function SeasonInner({
     }
   };
 
+  // Commissioner-only: un-final a week (or the whole season) so it can be
+  // re-scored from live game stats. Clears scores/winner, removes that week's
+  // score notifications, and reverses the XP those results awarded.
+  const resetWeeks = async (target: number | null) => {
+    const label = target == null ? 'the entire season' : `Week ${target}`;
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        `Reset ${label}? This clears scores and winners, removes score notifications, and reverses the XP awarded for those results. This cannot be undone.`
+      );
+      if (!ok) return;
+    }
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/dd/leagues/${leagueId}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(target == null ? {} : { week: target }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to reset');
+      push({
+        kind: 'league',
+        title: `${label} reset`,
+        body: `${json.matchupsReset ?? 0} matchup${json.matchupsReset === 1 ? '' : 's'} reopened${
+          json.xpEventsRemoved ? `, ${json.xpEventsRemoved} XP event${json.xpEventsRemoved === 1 ? '' : 's'} reversed` : ''
+        }.`,
+      });
+      await load();
+    } catch (e: any) {
+      push({ kind: 'league', title: 'Reset failed', body: e.message });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-brand-muted">
@@ -392,6 +447,8 @@ function SeasonInner({
   }
 
   const memberById = new Map(data.members.map((m) => [m.id, m]));
+  const isCommissioner =
+    data.members.find((m) => m.id === data.currentMemberId)?.isCommissioner === true;
   const myRoster = data.currentMemberId ? (data.rosters[data.currentMemberId] ?? []) : [];
   const weekMatchups = data.matchups.filter((m) => m.week === week);
   const myMatchup = weekMatchups.find(
@@ -501,6 +558,42 @@ function SeasonInner({
                 Score Week
               </button>
             )}
+            {live?.liveGames ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-danger ml-1">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-danger opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-danger" />
+                </span>
+                <Radio className="w-3.5 h-3.5" />
+                {live.liveGames} live
+              </span>
+            ) : null}
+            {isCommissioner && hasSeason && (
+              <>
+                <button
+                  onClick={() => resetWeeks(week)}
+                  disabled={resetting}
+                  className="btn-ghost inline-flex items-center gap-2 text-xs ml-2 text-brand-danger hover:bg-brand-danger/10"
+                  title="Commissioner: reopen this week so it can be re-scored from live stats"
+                >
+                  {resetting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  )}
+                  Reset Week
+                </button>
+                <button
+                  onClick={() => resetWeeks(null)}
+                  disabled={resetting}
+                  className="btn-ghost inline-flex items-center gap-2 text-xs text-brand-danger hover:bg-brand-danger/10"
+                  title="Commissioner: reopen every week in the season"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Reset Season
+                </button>
+              </>
+            )}
           </div>
 
           {/* My matchup */}
@@ -534,7 +627,19 @@ function SeasonInner({
                 }, [] as any[])}
               </div>
               <div className="text-center text-xs text-brand-muted mt-3">
-                {myMatchup.status === 'final' ? 'Final' : 'Scheduled'}
+                {myMatchup.status === 'final' ? (
+                  'Final'
+                ) : myMatchup.status === 'in_progress' ? (
+                  <span className="inline-flex items-center gap-1.5 font-bold text-brand-danger">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-danger opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-danger" />
+                    </span>
+                    Live
+                  </span>
+                ) : (
+                  'Scheduled'
+                )}
               </div>
             </div>
           ) : hasSeason && (

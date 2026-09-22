@@ -117,12 +117,17 @@ export async function GET(
 
     if (homeRoster && awayRoster) {
       const isFinal = myMatchup.status === 'final';
-      // Week progress: fraction of the week's games that have been played.
-      // We approximate from the league's scored weeks vs. total weeks.
+      // Week progress: prefer the real ESPN game-state signal (how much of the
+      // slate has actually been played). Fall back to the league's scored weeks
+      // vs. total weeks when we have no live data for the week.
       const scoredWeeks = new Set(
         matchupsRes.rows.filter((m) => m.status === 'final').map((m) => m.week_num)
       ).size;
-      const weekProgress = isFinal ? 1 : clamp(scoredWeeks / Math.max(1, weeks), 0, 0.95);
+      const weekProgress = isFinal
+        ? 1
+        : weekly.liveProgress != null
+          ? clamp(weekly.liveProgress, 0, 0.99)
+          : clamp(scoredWeeks / Math.max(1, weeks), 0, 0.95);
 
       odds = computeWinProbability({
         home: homeRoster,
@@ -136,8 +141,15 @@ export async function GET(
     }
   }
 
-  // AI analytics summary — deterministic, derived from the weekly projections.
-  const analytics = buildAnalytics(weekly.rosters, membership?.id ?? null, week);
+  // AI analytics summary — deterministic, derived from the weekly lines.
+  // Once real games are being played we rank by actual points; before that we
+  // rank by the AI projection.
+  const analytics = buildAnalytics(
+    weekly.rosters,
+    membership?.id ?? null,
+    week,
+    weekly.hasLiveData
+  );
 
   // Gamification profile.
   let gamification = null;
@@ -162,6 +174,9 @@ export async function GET(
     myTeamName: membership?.team_name ?? null,
     isCommissioner: membership?.is_commissioner ?? false,
     scoringName: weekly.scoringName,
+    hasLiveData: weekly.hasLiveData,
+    liveProgress: weekly.liveProgress,
+    liveGames: weekly.liveGames,
     rosters: weekly.rosters,
     myRoster: membership ? rosterById.get(membership.id) ?? null : null,
     matchup: myMatchup
@@ -208,13 +223,19 @@ interface Analytics {
 function buildAnalytics(
   rosters: { memberId: string; teamName: string; starterPoints: number; projectedStarterPoints: number }[],
   myMemberId: string | null,
-  week: number
+  week: number,
+  hasLiveData: boolean
 ): Analytics {
+  // Once real games are being played, rank by actual points scored this week.
+  // Before that, rank by the AI projection.
+  const valueOf = (r: { starterPoints: number; projectedStarterPoints: number }) =>
+    hasLiveData ? r.starterPoints : r.projectedStarterPoints;
+
   const teams: AnalyticsTeam[] = rosters
     .map((r) => ({
       memberId: r.memberId,
       teamName: r.teamName,
-      projected: round1(r.projectedStarterPoints),
+      projected: round1(valueOf(r)),
       rank: 0,
     }))
     .sort((a, b) => b.projected - a.projected);
@@ -232,15 +253,17 @@ function buildAnalytics(
     ? { teamName: teams[0].teamName, points: teams[0].projected }
     : null;
 
+  const metric = hasLiveData ? 'scored' : 'projected';
+
   let summary: string;
   if (!myTeam) {
-    summary = `Week ${week}: ${teams.length} teams are set. The AI projects ${topScorer?.teamName ?? 'the field'} as the strongest lineup at ${topScorer?.points ?? 0} points.`;
+    summary = `Week ${week}: ${teams.length} teams are set. The AI has ${topScorer?.teamName ?? 'the field'} leading at ${topScorer?.points ?? 0} points ${metric}.`;
   } else if (myRank === 1) {
-    summary = `The AI has you #1 in Week ${week} with a projected ${myTeam.projected} points — ${round1(myTeam.projected - leagueAvg)} above the league average.`;
+    summary = `The AI has you #1 in Week ${week} with ${myTeam.projected} points ${metric} — ${round1(myTeam.projected - leagueAvg)} above the league average.`;
   } else if (myRank != null && myRank <= Math.ceil(teams.length / 2)) {
-    summary = `You're projected #${myRank} of ${teams.length} in Week ${week} at ${myTeam.projected} points. ${topScorer?.teamName} leads at ${topScorer?.points}.`;
+    summary = `You're #${myRank} of ${teams.length} in Week ${week} at ${myTeam.projected} points ${metric}. ${topScorer?.teamName} leads at ${topScorer?.points}.`;
   } else {
-    summary = `The AI projects you #${myRank} of ${teams.length} in Week ${week} at ${myTeam.projected} points — ${round1(leagueAvg - myTeam.projected)} below the league average. Look for upside on your bench.`;
+    summary = `The AI has you #${myRank} of ${teams.length} in Week ${week} at ${myTeam.projected} points ${metric} — ${round1(leagueAvg - myTeam.projected)} below the league average. Look for upside on your bench.`;
   }
 
   return {

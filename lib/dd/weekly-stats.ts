@@ -23,6 +23,7 @@
 import { query } from '@/lib/db';
 import { scoreStatLine, type StatLine } from './scoring';
 import { getScoringPreset, type ScoringConfig, type Sport } from './presets';
+import { getLiveWeekStats, isLiveSport, type LiveWeekStats } from './live-stats';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -36,7 +37,9 @@ export interface WeeklyStatEntry {
   /** Fantasy points for the week under the league's scoring config. */
   points: number;
   /** Where the line came from. */
-  source: 'actual' | 'projection';
+  source: 'live' | 'actual' | 'projection';
+  /** Live game state when the line came from a real game. */
+  gameState?: 'pre' | 'in' | 'post';
 }
 
 export interface WeeklyPlayerLine {
@@ -74,6 +77,16 @@ export interface WeeklyStatsResult {
   sport: Sport;
   week: number;
   scoringName: string;
+  /** True when at least one player's line came from a real (live/final) game. */
+  hasLiveData: boolean;
+  /**
+   * 0..1 — how much of the week's real games have been played, derived from
+   * ESPN game states (final = 1, live = 0.5, not started = 0). Null when we
+   * have no live data for the week (fall back to a schedule-based estimate).
+   */
+  liveProgress: number | null;
+  /** Number of games in the week that are currently live (state === 'in'). */
+  liveGames: number;
   rosters: WeeklyRoster[];
 }
 
@@ -236,14 +249,16 @@ export async function getWeeklyStats(
     sport: string;
     scoring_preset: string;
     scoring_config: any;
+    season_year: number;
   }>(
-    `SELECT sport, scoring_preset, scoring_config FROM dd_leagues WHERE id = $1`,
+    `SELECT sport, scoring_preset, scoring_config, season_year FROM dd_leagues WHERE id = $1`,
     [leagueId]
   );
   const league = leagueRes.rows[0];
   if (!league) throw new Error('League not found');
 
   const sport = league.sport as Sport;
+  const seasonYear = Number(league.season_year) || new Date().getFullYear();
 
   // Resolve the scoring config: prefer the league's stored config, else preset.
   let scoring: ScoringConfig;
@@ -298,6 +313,30 @@ export async function getWeeklyStats(
     }
   }
 
+  // Live game stats for the week (the primary source once games are played).
+  let live: LiveWeekStats | null = null;
+  if (isLiveSport(sport)) {
+    try {
+      live = await getLiveWeekStats(sport, seasonYear, week);
+    } catch {
+      live = null;
+    }
+  }
+  const hasLiveData = Boolean(live && (live.players.size || live.teamDefense.size));
+
+  // Derive a real week-progress signal from the ESPN game states so the odds
+  // meter reflects how much of the slate has actually been played.
+  let liveProgress: number | null = null;
+  let liveGames = 0;
+  if (live && live.games.length) {
+    liveGames = live.games.filter((g) => g.state === 'in').length;
+    const played = live.games.reduce(
+      (s, g) => s + (g.state === 'post' ? 1 : g.state === 'in' ? 0.5 : 0),
+      0
+    );
+    liveProgress = played / live.games.length;
+  }
+
   const byMember = new Map<string, WeeklyRoster>();
 
   for (const r of rosterRes.rows) {
@@ -316,18 +355,52 @@ export async function getWeeklyStats(
       byMember.set(r.member_id, entry);
     }
 
-    const actual = actualByPlayer.get(r.player_name);
+    const isDefense = (r.position ?? '').toUpperCase() === 'DEF' || (r.position ?? '').toUpperCase() === 'D/ST';
+
+    // Resolution order: live game line → stored box score → projection.
     let stats: StatLine;
-    let source: 'actual' | 'projection';
-    if (actual && Object.keys(actual).length) {
-      stats = actual;
-      source = 'actual';
-    } else if (r.projection && Object.keys(r.projection).length) {
-      stats = projectionToWeekly(r.projection, r.player_name, week);
-      source = 'projection';
+    let source: 'live' | 'actual' | 'projection';
+    let gameState: 'pre' | 'in' | 'post' | undefined;
+    let opponent: string | null = null;
+
+    const liveEntry = live
+      ? isDefense
+        ? r.team
+          ? live.teamDefense.get(r.team)
+          : undefined
+        : live.players.get(r.player_name)
+      : undefined;
+
+    if (liveEntry && Object.keys(liveEntry.stats).length) {
+      stats = liveEntry.stats;
+      source = 'live';
+      gameState = liveEntry.gameState;
+      opponent = liveEntry.opponent;
     } else {
-      stats = {};
-      source = 'projection';
+      const actual = actualByPlayer.get(r.player_name);
+      if (actual && Object.keys(actual).length) {
+        stats = actual;
+        source = 'actual';
+      } else if (r.projection && Object.keys(r.projection).length) {
+        stats = projectionToWeekly(r.projection, r.player_name, week);
+        source = 'projection';
+      } else {
+        stats = {};
+        source = 'projection';
+      }
+      // Even without a live stat line, we know the player's team's game state
+      // from the scoreboard. This keeps "yet to play" players from being
+      // mistaken for finished ones when deciding whether a week is complete.
+      if (live && r.team) {
+        const ts = live.teamState.get(r.team);
+        if (ts) {
+          gameState = ts;
+          const g = live.games.find(
+            (gm) => gm.homeAbbrev === r.team || gm.awayAbbrev === r.team
+          );
+          if (g) opponent = g.homeAbbrev === r.team ? g.awayAbbrev : g.homeAbbrev;
+        }
+      }
     }
 
     const scored = scoreStatLine(sport, stats, scoring);
@@ -348,8 +421,9 @@ export async function getWeeklyStats(
         chips: chipsFor(sport, stats),
         points,
         source,
+        gameState,
       },
-      opponent: null,
+      opponent,
     };
 
     if (r.slot && r.slot !== 'BN') {
@@ -374,6 +448,9 @@ export async function getWeeklyStats(
     sport,
     week,
     scoringName: scoring.name,
+    hasLiveData,
+    liveProgress,
+    liveGames,
     rosters,
   };
 }
