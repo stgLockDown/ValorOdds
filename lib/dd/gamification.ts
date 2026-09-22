@@ -106,6 +106,7 @@ export const XP_AWARDS: Record<string, number> = {
   // Matchups
   win_matchup:          50,
   tie_matchup:          15,
+  lose_matchup:         0, // no XP, but still resets the win streak
   // Mock drafts
   complete_mock_draft:  30,
   // Season
@@ -233,7 +234,8 @@ export async function awardXp(
   } = {}
 ): Promise<XpAwardResult> {
   const xpAmount = options.amount ?? XP_AWARDS[eventType] ?? 0;
-  if (xpAmount === 0) {
+  // `lose_matchup` awards 0 XP but must still run so it can reset the streak.
+  if (xpAmount === 0 && eventType !== 'lose_matchup') {
     return {
       awarded: 0,
       newTotalXp: 0,

@@ -11,6 +11,8 @@ import { getPositionColor } from '@/lib/dd/position-colors';
 import { ToastProvider, useToast } from '@/components/dd/ToastProvider';
 import NotificationBell from '@/components/dd/NotificationBell';
 import WaiversPanel from '@/components/dd/WaiversPanel';
+import OddsMeter from '@/components/dd/OddsMeter';
+import CelebrationOverlay from '@/components/dd/CelebrationOverlay';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -62,6 +64,11 @@ function PosBadge({ sport, position }: { sport: string; position: string }) {
 // Lineup editor
 // ────────────────────────────────────────────────────────────────────────────
 
+function eligibleFor(def: RosterSlotDef, position: string | null): boolean {
+  const pos = position ?? '';
+  return def.eligible.includes('*') || def.eligible.includes(pos);
+}
+
 function LineupEditor({
   leagueId, sport, rosterConfig, roster, onSaved,
 }: {
@@ -73,7 +80,16 @@ function LineupEditor({
 }) {
   const starterSlots = (rosterConfig?.slots ?? []).filter((s) => s.isStarter && !s.eligible.includes('*'));
 
-  // assignments: playerName → slot
+  // Expand slots by count so every slot INSTANCE (RB1, RB2, WR1..WR3, FLEX1, FLEX2…)
+  // gets its own independently editable row.
+  const slotOptions: RosterSlotDef[] = [];
+  for (const s of starterSlots) {
+    for (let i = 0; i < (s.count ?? 0); i++) slotOptions.push(s);
+  }
+  const slotKeys = slotOptions.map((s, i) => `${s.slot}#${i}`);
+
+  // assignments: slotInstanceKey ("RB#0") → playerName. Keying by slot instance
+  // (not by player) is what lets each position be set individually.
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -81,23 +97,56 @@ function LineupEditor({
 
   useEffect(() => {
     const init: Record<string, string> = {};
+    const used = new Set<string>();
+    // First pass: honour the saved slot for each player, filling instances in order.
     for (const p of roster) {
-      if (p.slot && p.slot !== 'BN') init[p.playerName] = p.slot;
+      if (!p.slot || p.slot === 'BN') continue;
+      const idx = slotKeys.findIndex((k) => k.startsWith(`${p.slot}#`) && !init[k]);
+      if (idx >= 0) {
+        init[slotKeys[idx]] = p.playerName;
+        used.add(p.playerName);
+      }
+    }
+    // Second pass: any remaining starter instance gets the best available eligible player.
+    for (const key of slotKeys) {
+      if (init[key]) continue;
+      const def = slotOptions[slotKeys.indexOf(key)];
+      const candidate = roster
+        .filter((p) => !used.has(p.playerName) && eligibleFor(def, p.position))
+        .sort((a, b) => b.projectedPoints - a.projectedPoints)[0];
+      if (candidate) {
+        init[key] = candidate.playerName;
+        used.add(candidate.playerName);
+      }
     }
     setAssignments(init);
   }, [roster]);
 
-  const bench = roster.filter((p) => !assignments[p.playerName]);
+  const assignedNames = new Set(Object.values(assignments));
+  const bench = roster.filter((p) => !assignedNames.has(p.playerName));
 
-  const setSlot = (playerName: string, slot: string) => {
+  // Assign a player to a specific slot instance. If that player was already in
+  // another instance, that instance is emptied (not the whole position).
+  const setSlot = (slotKey: string, playerName: string) => {
     setAssignments((prev) => {
       const next = { ...prev };
-      // If another player already holds this slot, move them to bench.
-      for (const [name, s] of Object.entries(next)) {
-        if (s === slot && name !== playerName) delete next[name];
+      for (const [k, name] of Object.entries(next)) {
+        if (name === playerName && k !== slotKey) delete next[k];
       }
-      if (slot === 'BN') delete next[playerName];
-      else next[playerName] = slot;
+      if (playerName) next[slotKey] = playerName;
+      else delete next[slotKey];
+      return next;
+    });
+    setSaved(false);
+  };
+
+  // Move a player to the bench (clears whichever instance holds them).
+  const benchPlayer = (playerName: string) => {
+    setAssignments((prev) => {
+      const next = { ...prev };
+      for (const [k, name] of Object.entries(next)) {
+        if (name === playerName) delete next[k];
+      }
       return next;
     });
     setSaved(false);
@@ -107,10 +156,15 @@ function LineupEditor({
     setSaving(true);
     setError('');
     try {
+      // Convert slot-instance map → playerName → slot map for the API.
+      const payload: Record<string, string> = {};
+      for (const [key, name] of Object.entries(assignments)) {
+        if (name) payload[name] = key.split('#')[0];
+      }
       const res = await fetch(`/api/dd/leagues/${leagueId}/lineup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignments }),
+        body: JSON.stringify({ assignments: payload }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save lineup');
@@ -123,13 +177,7 @@ function LineupEditor({
     }
   };
 
-  // Expand slots by count for the picker.
-  const slotOptions: RosterSlotDef[] = [];
-  for (const s of starterSlots) {
-    for (let i = 0; i < (s.count ?? 0); i++) slotOptions.push(s);
-  }
-
-  const filledCount = Object.keys(assignments).length;
+  const filledCount = Object.values(assignments).filter(Boolean).length;
   const totalStarters = slotOptions.length;
 
   return (
@@ -150,13 +198,15 @@ function LineupEditor({
         </div>
       )}
 
-      {/* Starting slots */}
+      {/* Starting slots — one row per slot instance */}
       <div className="space-y-2">
         {slotOptions.map((s, i) => {
-          const holder = Object.entries(assignments).find(([, slot]) => slot === s.slot);
-          const player = holder ? roster.find((p) => p.playerName === holder[0]) : null;
+          const key = slotKeys[i];
+          const playerName = assignments[key];
+          const player = playerName ? roster.find((p) => p.playerName === playerName) : null;
+          const eligibleBench = bench.filter((p) => eligibleFor(s, p.position));
           return (
-            <div key={`${s.slot}-${i}`} className="flex items-center gap-2 rounded-lg bg-brand-elevated/50 border border-brand-border px-3 py-2">
+            <div key={key} className="flex items-center gap-2 rounded-lg bg-brand-elevated/50 border border-brand-border px-3 py-2">
               <span className="w-14 text-[10px] font-bold uppercase tracking-wide text-brand-muted flex-shrink-0">
                 {s.slot}
               </span>
@@ -166,7 +216,7 @@ function LineupEditor({
                   <span className="flex-1 text-sm text-brand-text truncate">{player.playerName}</span>
                   <span className="text-xs font-semibold text-brand-primaryText">{player.projectedPoints}</span>
                   <button
-                    onClick={() => setSlot(player.playerName, 'BN')}
+                    onClick={() => benchPlayer(player.playerName)}
                     className="text-xs text-brand-muted hover:text-brand-danger transition-colors"
                   >
                     Remove
@@ -175,20 +225,15 @@ function LineupEditor({
               ) : (
                 <select
                   value=""
-                  onChange={(e) => e.target.value && setSlot(e.target.value, s.slot)}
+                  onChange={(e) => setSlot(key, e.target.value)}
                   className="flex-1 bg-brand-surface border border-brand-border rounded px-2 py-1 text-sm text-brand-text"
                 >
                   <option value="">— Empty —</option>
-                  {bench
-                    .filter((p) => {
-                      const elig = [p.position ?? ''];
-                      return s.eligible.includes('*') || s.eligible.includes(p.position ?? '') || elig.some((e) => s.eligible.includes(e));
-                    })
-                    .map((p) => (
-                      <option key={p.playerName} value={p.playerName}>
-                        {p.playerName} ({p.position}) — {p.projectedPoints}
-                      </option>
-                    ))}
+                  {eligibleBench.map((p) => (
+                    <option key={p.playerName} value={p.playerName}>
+                      {p.playerName} ({p.position}) — {p.projectedPoints}
+                    </option>
+                  ))}
                 </select>
               )}
             </div>
@@ -199,15 +244,28 @@ function LineupEditor({
       {/* Bench */}
       {bench.length > 0 && (
         <div>
-          <div className="text-xs font-semibold text-brand-muted mb-2">Bench ({bench.length})</div>
+          <div className="text-xs font-semibold text-brand-muted mb-2">
+            Bench ({bench.length}) — click a player to slot them in
+          </div>
           <div className="flex flex-wrap gap-1.5">
-            {bench.map((p) => (
-              <span key={p.playerName} className="inline-flex items-center gap-1.5 rounded-lg bg-brand-elevated/50 border border-brand-border px-2 py-1 text-xs text-brand-muted">
-                <PosBadge sport={sport} position={p.position ?? ''} />
-                {p.playerName}
-                <span className="text-brand-primaryText font-semibold">{p.projectedPoints}</span>
-              </span>
-            ))}
+            {bench.map((p) => {
+              const openKey = slotKeys.find((k) => !assignments[k] && eligibleFor(slotOptions[slotKeys.indexOf(k)], p.position));
+              return (
+                <button
+                  key={p.playerName}
+                  type="button"
+                  disabled={!openKey}
+                  onClick={() => openKey && setSlot(openKey, p.playerName)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg bg-brand-elevated/50 border border-brand-border px-2 py-1 text-xs text-brand-muted transition-colors ${
+                    openKey ? 'hover:border-brand-primary hover:text-brand-text cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                  }`}
+                >
+                  <PosBadge sport={sport} position={p.position ?? ''} />
+                  {p.playerName}
+                  <span className="text-brand-primaryText font-semibold">{p.projectedPoints}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -243,6 +301,11 @@ function SeasonInner({
   const [tab, setTab] = useState<'matchup' | 'lineup' | 'standings' | 'waivers'>('matchup');
   const [week, setWeek] = useState(1);
   const [scoring, setScoring] = useState(false);
+  const [odds, setOdds] = useState<{
+    homeWinPct: number; awayWinPct: number; tiePct: number;
+    homeProjected: number; awayProjected: number; confidence: number;
+    reason: string; favored: 'home' | 'away' | 'even';
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -259,6 +322,22 @@ function SeasonInner({
   }, [leagueId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Fetch the live win-probability for the selected week (drives the odds meter).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/dd/leagues/${leagueId}/home?week=${week}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled) setOdds(json.odds ?? null);
+      } catch {
+        /* odds are a nice-to-have */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [leagueId, week]);
 
   // Deep-link support: /season?tab=waivers
   useEffect(() => {
@@ -343,6 +422,9 @@ function SeasonInner({
         </div>
         <div className="flex items-center gap-2">
           <NotificationBell leagueId={leagueId} />
+          <Link href={`/dd/league/${leagueId}/home`} className="btn-primary inline-flex items-center gap-2">
+            <Sparkles className="w-4 h-4" /> Fantasy Home
+          </Link>
           <Link href={`/dd/league/${leagueId}/grades`} className="btn-secondary inline-flex items-center gap-2">
             <Sparkles className="w-4 h-4" /> AI Grades
           </Link>
@@ -461,6 +543,33 @@ function SeasonInner({
             </div>
           )}
 
+          {/* Odds meter — live win probability for my matchup */}
+          {myMatchup && odds && (() => {
+            const isHome = myMatchup.homeMemberId === data.currentMemberId;
+            const myWin = isHome ? odds.homeWinPct : odds.awayWinPct;
+            const oppWin = isHome ? odds.awayWinPct : odds.homeWinPct;
+            const myProj = isHome ? odds.homeProjected : odds.awayProjected;
+            const oppProj = isHome ? odds.awayProjected : odds.homeProjected;
+            const oppId = isHome ? myMatchup.awayMemberId : myMatchup.homeMemberId;
+            const favored: 'me' | 'opp' | 'even' =
+              odds.favored === 'even' ? 'even' : (odds.favored === 'home') === isHome ? 'me' : 'opp';
+            return (
+              <OddsMeter
+                myWinPct={myWin}
+                oppWinPct={oppWin}
+                tiePct={odds.tiePct}
+                myProjected={myProj}
+                oppProjected={oppProj}
+                confidence={odds.confidence}
+                reason={odds.reason}
+                favored={favored}
+                myTeamName={memberById.get(data.currentMemberId ?? '')?.teamName ?? 'You'}
+                oppTeamName={memberById.get(oppId)?.teamName ?? 'Opponent'}
+                isFinal={myMatchup.status === 'final'}
+              />
+            );
+          })()}
+
           {/* All matchups this week */}
           {weekMatchups.length > 0 && (
             <div className="card">
@@ -564,6 +673,30 @@ function SeasonInner({
           </div>
         </div>
       )}
+
+      {/* ── Celebration on a final matchup ── */}
+      {myMatchup && myMatchup.status === 'final' && (() => {
+        const isHome = myMatchup.homeMemberId === data.currentMemberId;
+        const myScore = (isHome ? myMatchup.homeScore : myMatchup.awayScore) ?? 0;
+        const oppScore = (isHome ? myMatchup.awayScore : myMatchup.homeScore) ?? 0;
+        const oppId = isHome ? myMatchup.awayMemberId : myMatchup.homeMemberId;
+        const result: 'win' | 'loss' | 'tie' = myMatchup.isTie
+          ? 'tie'
+          : myMatchup.winnerMemberId === data.currentMemberId
+          ? 'win'
+          : 'loss';
+        return (
+          <CelebrationOverlay
+            celebrationKey={`season-matchup-${myMatchup.id}-${myMatchup.week}`}
+            result={result}
+            myTeamName={memberById.get(data.currentMemberId ?? '')?.teamName ?? 'You'}
+            oppTeamName={memberById.get(oppId)?.teamName ?? 'Opponent'}
+            myScore={myScore}
+            oppScore={oppScore}
+            xpAwarded={result === 'win' ? 50 : result === 'tie' ? 15 : undefined}
+          />
+        );
+      })()}
     </div>
   );
 }
