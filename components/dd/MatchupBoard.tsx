@@ -380,6 +380,8 @@ function TeamColumn({
   isWinner,
   isFinal,
   isFutureWeek,
+  isProjectedWeek,
+  liveGames,
   sport,
   pinned,
   flashes,
@@ -396,6 +398,8 @@ function TeamColumn({
   isWinner: boolean;
   isFinal: boolean;
   isFutureWeek: boolean;
+  isProjectedWeek: boolean;
+  liveGames: number;
   sport: string;
   pinned: Set<string>;
   flashes: Record<string, number>;
@@ -458,7 +462,13 @@ function TeamColumn({
             {animatedTotal.toFixed(1)}
           </div>
           <div className="text-[9px] uppercase tracking-wide text-brand-muted">
-            {isFutureWeek ? 'Projected' : isFinal ? 'Final' : 'Live total'}
+            {isFutureWeek || isProjectedWeek
+              ? 'Projected'
+              : isFinal
+                ? 'Final'
+                : liveGames > 0
+                  ? 'Live total'
+                  : 'Total'}
           </div>
         </div>
       </div>
@@ -767,7 +777,28 @@ export default function MatchupBoard({
   const [flashes, setFlashes] = useState<Record<string, number>>({});
   const [feed, setFeed] = useState<BigPlay[]>([]);
 
+  // Reset the big-play baseline + feed whenever the week changes. Without this,
+  // switching weeks compares the new week's lines against the previous week's
+  // values and fires false "big plays" from projection deltas.
   useEffect(() => {
+    prevPointsRef.current = new Map();
+    setFeed([]);
+    setFlashes({});
+  }, [week]);
+
+  useEffect(() => {
+    // Big plays only happen while real games are in progress. On a future or
+    // projected week (or any week with no live games) there is nothing to
+    // detect — just keep the baseline current so the first live poll is clean.
+    if (isFutureWeek || isProjectedWeek || liveGames <= 0) {
+      const baseline = new Map<string, number>();
+      for (const r of rosters) {
+        for (const p of [...r.starters, ...r.bench]) baseline.set(p.playerName, p.week.points);
+      }
+      prevPointsRef.current = baseline;
+      return;
+    }
+
     const prev = prevPointsRef.current;
     const next = new Map<string, number>();
     const newPlays: BigPlay[] = [];
@@ -807,7 +838,7 @@ export default function MatchupBoard({
       }, 1700);
       return () => clearTimeout(t);
     }
-  }, [rosters]);
+  }, [rosters, week, liveGames, isFutureWeek, isProjectedWeek]);
 
   const latestPlay = feed[0] ?? null;
 
@@ -845,7 +876,10 @@ export default function MatchupBoard({
   const homeMember = memberById.get(focus.homeMemberId);
   const awayMember = memberById.get(focus.awayMemberId);
   const isFinal = focus.status === 'final';
-  const isLive = focus.status === 'in_progress';
+  // Only call a matchup "Live" when real games are actually in progress — the
+  // DB status can be `in_progress` for the current week even when no games have
+  // kicked off yet (e.g. midweek), which must not read as "being played".
+  const isLive = focus.status === 'in_progress' && liveGames > 0;
 
   return (
     <div className="space-y-4">
@@ -907,7 +941,7 @@ export default function MatchupBoard({
         )}
 
         <div className="ml-auto flex items-center gap-2 text-[11px] text-brand-muted">
-          {isFutureWeek ? (
+          {isFutureWeek || isProjectedWeek ? (
             <span className="inline-flex items-center gap-1.5 font-semibold text-brand-primaryText">
               <Activity className="w-3.5 h-3.5" /> Projected — not yet played
             </span>
@@ -932,7 +966,7 @@ export default function MatchupBoard({
       </div>
 
       {/* Future-week notice — these numbers are estimates, never earned points. */}
-      {isFutureWeek && (
+      {(isFutureWeek || isProjectedWeek) && (
         <div className="flex items-start gap-2.5 rounded-lg border border-brand-primary/30 bg-brand-primary/10 px-3 py-2.5 text-xs">
           <Activity className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-brand-primaryText" />
           <p className="leading-relaxed text-brand-muted">
@@ -989,6 +1023,8 @@ export default function MatchupBoard({
               </span>
               Live
             </span>
+          ) : isFutureWeek || isProjectedWeek ? (
+            <span className="font-semibold uppercase tracking-wide text-brand-primaryText">Projected</span>
           ) : (
             'Scheduled'
           )}
@@ -1004,6 +1040,8 @@ export default function MatchupBoard({
           isWinner={focus.winnerMemberId === focus.homeMemberId}
           isFinal={isFinal}
           isFutureWeek={isFutureWeek}
+          isProjectedWeek={isProjectedWeek}
+          liveGames={liveGames}
           sport={sport}
           pinned={pinned}
           flashes={flashes}
@@ -1021,6 +1059,8 @@ export default function MatchupBoard({
           isWinner={focus.winnerMemberId === focus.awayMemberId}
           isFinal={isFinal}
           isFutureWeek={isFutureWeek}
+          isProjectedWeek={isProjectedWeek}
+          liveGames={liveGames}
           sport={sport}
           pinned={pinned}
           flashes={flashes}
@@ -1070,7 +1110,7 @@ export default function MatchupBoard({
                     {a?.teamName ?? '?'}
                     {g.awayMemberId === currentMemberId && <span className="ml-1 text-[10px] text-brand-accent">(You)</span>}
                   </span>
-                  {g.status === 'in_progress' && (
+                  {g.status === 'in_progress' && liveGames > 0 && (
                     <span className="relative flex h-2 w-2 flex-shrink-0">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-danger opacity-75" />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-danger" />

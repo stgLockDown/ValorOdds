@@ -37,8 +37,9 @@ export async function GET(
     is_public: boolean;
     season_year: number;
     settings: any;
+    roster_config: any;
   }>(
-    `SELECT id::text, name, sport, status, is_public, season_year, settings
+    `SELECT id::text, name, sport, status, is_public, season_year, settings, roster_config
      FROM dd_leagues WHERE id = $1`,
     [leagueId]
   );
@@ -57,6 +58,10 @@ export async function GET(
 
   const settings =
     typeof league.settings === 'string' ? JSON.parse(league.settings) : (league.settings ?? {});
+  const rosterConfig =
+    typeof league.roster_config === 'string'
+      ? JSON.parse(league.roster_config)
+      : (league.roster_config ?? null);
   const weeks = Number(settings?.seasonWeeks) || defaultSeasonWeeks(league.sport);
 
   // Matchups drive the current week + the caller's opponent.
@@ -166,6 +171,8 @@ export async function GET(
       sport: league.sport,
       status: league.status,
       seasonYear: league.season_year,
+      lineupSetting: settings?.lineupSetting ?? 'daily',
+      rosterConfig,
     },
     week,
     weeks,
