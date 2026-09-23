@@ -228,13 +228,17 @@ async function fetchUpcomingGamesBestOddsFallback(
   let oddsRows: any[] = [];
   try {
     const odds = await query(
+  const oddsIdx = filter.params.length + 1;
+  let oddsRows: any[] = [];
+  try {
+    const odds = await query(
       `SELECT game_id, market_type, outcome_name, outcome_price, outcome_point
        FROM odds_snapshots
        WHERE ${filter.clause}
          AND game_id = ANY($${oddsIdx})
          AND outcome_price != 0
-         AND ABS(outcome_price) <= ${MAX_VALID_AMERICAN_ODDS}`,
-      [...filter.params, gameIds],
+         AND ABS(outcome_price) <= $${oddsIdx + 1}`,
+      [...filter.params, gameIds, MAX_VALID_AMERICAN_ODDS],
     );
     oddsRows = odds.rows as any[];
   } catch {
