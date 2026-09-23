@@ -25,7 +25,7 @@ import { scoreStatLine, type StatLine } from './scoring';
 import { getScoringPreset, type ScoringConfig, type Sport } from './presets';
 import { getLiveWeekStats, isLiveSport, type LiveWeekStats } from './live-stats';
 import { sortBySlotOrder } from './slot-order';
-import { getFantasyWeekInfo } from './week-calendar';
+import { getFantasyWeekInfo, getWeekWindow } from './week-calendar';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -335,9 +335,12 @@ export async function getWeeklyStats(
   // NOTE: `player_stats` has no `week` column and `game_date` is frequently
   // NULL, so a single stored box score would otherwise be replayed as the
   // "actual" result for EVERY week, including ones that haven't happened.
-  // We therefore only consult it for the current or a past week.
+  // We therefore only consult it for the current or a past week, and we scope
+  // each row to the requested week's Wed→Tue window so a stale prior-season
+  // box score (or a NULL-dated row) can never surface as this week's "actual".
   const names = [...new Set(rosterRes.rows.map((r) => r.player_name))];
   const actualByPlayer = new Map<string, StatLine>();
+  const weekWindow = getWeekWindow(sport, seasonYear, week);
   if (names.length && !isFuture) {
     try {
       const actualRes = await query<{
@@ -348,8 +351,11 @@ export async function getWeeklyStats(
          FROM player_stats
          WHERE sport = $1 AND player_name = ANY($2::text[])
            AND stats_json IS NOT NULL
+           AND game_date IS NOT NULL
+           AND ($3::timestamptz IS NULL
+                OR (game_date >= $3::timestamptz AND game_date <= $4::timestamptz))
          ORDER BY player_name, game_date DESC NULLS LAST, recorded_at DESC`,
-        [sport, names]
+        [sport, names, weekWindow?.start ?? null, weekWindow?.end ?? null]
       );
       for (const row of actualRes.rows) {
         if (!row.stats_json) continue;

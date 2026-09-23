@@ -23,6 +23,8 @@ interface WeeklyStatEntry {
   points: number;
   source: 'live' | 'actual' | 'projection';
   gameState?: 'pre' | 'in' | 'post';
+  /** True when the line is a forward-looking estimate (week not yet played). */
+  isProjected?: boolean;
 }
 interface WeeklyPlayerLine {
   playerName: string;
@@ -143,20 +145,26 @@ function PlayerRow({
   const isActual = player.week.source === 'actual';
   const isInGame = player.week.gameState === 'in';
   const isFinalGame = player.week.gameState === 'post';
-  const sourceLabel = isLive
-    ? isInGame
-      ? 'Live'
-      : isFinalGame
-        ? 'Final'
-        : 'Scheduled'
-    : isActual
-      ? 'Actual'
-      : 'Proj';
-  const sourceColor = isInGame
-    ? 'text-brand-danger'
-    : isLive || isActual
-      ? 'text-brand-success'
-      : 'text-brand-muted';
+  // A projected week (not yet played) must never read as "Actual" — mirror
+  // MatchupBoard.sourceMeta so the label/colour agree with the scoreboard.
+  const sourceLabel = player.week.isProjected
+    ? 'Proj'
+    : isLive
+      ? isInGame
+        ? 'Live'
+        : isFinalGame
+          ? 'Final'
+          : 'Scheduled'
+      : isActual
+        ? 'Actual'
+        : 'Proj';
+  const sourceColor = player.week.isProjected
+    ? 'text-brand-muted'
+    : isInGame
+      ? 'text-brand-danger'
+      : isLive || isActual
+        ? 'text-brand-success'
+        : 'text-brand-muted';
   return (
     <div
       className="flex items-center gap-3 rounded-lg bg-brand-elevated/40 border border-brand-border px-3 py-2 hover:border-brand-primary/60 transition-colors cursor-pointer"

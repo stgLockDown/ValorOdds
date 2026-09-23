@@ -204,6 +204,27 @@ export function isFutureWeek(
   return week > info.currentWeek;
 }
 
+/**
+ * The Wed→Tue scoring window for a *specific* fantasy week, as ISO strings.
+ *
+ * `getFantasyWeekInfo` only describes the current week; this lets callers
+ * (e.g. the weekly-stats engine) scope a stored box score to the exact week it
+ * belongs to. Returns null for sports without a weekly calendar or an invalid
+ * week/season, so callers can fall back to their existing behaviour.
+ */
+export function getWeekWindow(
+  sport: string | null | undefined,
+  seasonYear: number,
+  week: number
+): { start: string; end: string } | null {
+  if (!isWeeklySport(sport) || !Number.isFinite(seasonYear) || seasonYear < 2000) return null;
+  if (!Number.isFinite(week) || week < 1) return null;
+  const wk1 = nflWeekOneStart(seasonYear);
+  const start = new Date(wk1.getTime() + (week - 1) * 7 * MS_PER_DAY);
+  const end = new Date(start.getTime() + 7 * MS_PER_DAY - 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 /** Human copy for the waiver wire banner. */
 export function waiverStatusText(info: FantasyWeekInfo): string {
   if (info.isWaiverProcessingDay) {
