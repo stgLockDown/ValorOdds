@@ -10,6 +10,16 @@ const DiscordIcon = () => (
   </svg>
 );
 
+function isSafeRedirectUrl(url?: string | null) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(String(url).replace(/[\t\n\r]/g, ''), window.location.origin);
+    return parsed.origin === window.location.origin && (parsed.protocol === 'http:' || parsed.protocol === 'https:');
+  } catch {
+    return false;
+  }
+}
+
 export default function SignUpForm({ next }: { next: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,7 +63,8 @@ export default function SignUpForm({ next }: { next: string }) {
         setLoading(null);
         return;
       }
-      window.location.href = s?.url ?? next;
+      const dest = s?.url ?? next;
+      window.location.href = isSafeRedirectUrl(dest) ? dest : '/';
     } catch {
       setError('Network error. Please try again.');
       setLoading(null);
