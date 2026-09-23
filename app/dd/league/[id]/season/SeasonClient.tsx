@@ -5,11 +5,12 @@ import Link from 'next/link';
 import {
   Loader2, ArrowLeft, Trophy, Crown, Users, Calendar,
   AlertCircle, Sparkles, ChevronLeft, ChevronRight, Swords, Medal,
-  UserPlus, Play, RotateCcw, Radio,
+  UserPlus, Play, RotateCcw, Radio, ArrowLeftRight,
 } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/dd/ToastProvider';
 import NotificationBell from '@/components/dd/NotificationBell';
 import WaiversPanel from '@/components/dd/WaiversPanel';
+import TradeCenter from '@/components/dd/TradeCenter';
 import OddsMeter from '@/components/dd/OddsMeter';
 import CelebrationOverlay from '@/components/dd/CelebrationOverlay';
 import MatchupBoard, {
@@ -77,7 +78,7 @@ function SeasonInner({
   const [data, setData] = useState<SeasonData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'matchup' | 'lineup' | 'standings' | 'waivers'>('matchup');
+  const [tab, setTab] = useState<'matchup' | 'lineup' | 'standings' | 'waivers' | 'trades'>('matchup');
   const [week, setWeek] = useState(1);
   const [scoring, setScoring] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -160,7 +161,7 @@ function SeasonInner({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t === 'waivers' || t === 'lineup' || t === 'standings' || t === 'matchup') {
+    if (t === 'waivers' || t === 'lineup' || t === 'standings' || t === 'matchup' || t === 'trades') {
       setTab(t);
     }
   }, []);
@@ -305,6 +306,7 @@ function SeasonInner({
           ['lineup', 'Set Lineup', Users],
           ['waivers', 'Waivers', UserPlus],
           ['standings', 'Standings', Trophy],
+          ['trades', 'Trades', ArrowLeftRight],
         ] as const).map(([key, label, Icon]) => (
           <button
             key={key}
@@ -593,6 +595,23 @@ function SeasonInner({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Trades tab ── */}
+      {tab === 'trades' && (
+        <div className="card">
+          <h3 className="font-semibold text-brand-text mb-4 flex items-center gap-2">
+            <ArrowLeftRight className="w-5 h-5 text-brand-primaryText" /> Trade Center
+          </h3>
+          <TradeCenter
+            leagueId={leagueId}
+            sport={data.league.sport}
+            members={data.members}
+            rosters={data.rosters}
+            currentMemberId={data.currentMemberId}
+            onChanged={load}
+          />
         </div>
       )}
 
