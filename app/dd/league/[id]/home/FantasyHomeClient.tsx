@@ -10,6 +10,7 @@ import { getPositionColor } from '@/lib/dd/position-colors';
 import { PlayerInfoCard } from '@/components/dd/PlayerInfoCard';
 import OddsMeter from '@/components/dd/OddsMeter';
 import CelebrationOverlay from '@/components/dd/CelebrationOverlay';
+import LineupEditor from '@/components/dd/LineupEditor';
 import { ToastProvider, useToast } from '@/components/dd/ToastProvider';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -81,7 +82,11 @@ interface Gamification {
   xpToNext: { current: number; needed: number; pct: number };
 }
 interface HomeData {
-  league: { id: string; name: string; sport: string; status: string; seasonYear: number };
+  league: {
+    id: string; name: string; sport: string; status: string; seasonYear: number;
+    lineupSetting?: string;
+    rosterConfig?: { slots: { slot: string; label: string; count: number; eligible: string[]; isStarter: boolean }[]; name?: string } | null;
+  };
   week: number;
   weeks: number;
   currentWeek: number;
@@ -432,6 +437,7 @@ function FantasyHomeInner({
   const [error, setError] = useState('');
   const [week, setWeek] = useState<number | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [editLineup, setEditLineup] = useState(false);
   const [hovered, setHovered] = useState<{ player: WeeklyPlayerLine; top: number; left: number } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -702,10 +708,34 @@ function FantasyHomeInner({
               <div className="flex items-center gap-2 text-sm font-semibold text-brand-text">
                 <Users className="w-4 h-4 text-brand-primaryText" /> My Starters
               </div>
-              <div className="text-xs text-brand-muted">
-                {myRoster.starterPoints.toFixed(1)} pts · proj {myRoster.projectedStarterPoints.toFixed(1)}
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-brand-muted">
+                  {myRoster.starterPoints.toFixed(1)} pts · proj {myRoster.projectedStarterPoints.toFixed(1)}
+                </div>
+                {data.league.rosterConfig?.slots?.length ? (
+                  <button
+                    onClick={() => setEditLineup((v) => !v)}
+                    className="btn-secondary text-xs inline-flex items-center gap-1.5"
+                  >
+                    {editLineup ? <X className="w-3.5 h-3.5" /> : <Swords className="w-3.5 h-3.5" />}
+                    {editLineup ? 'Done' : 'Edit Lineup'}
+                  </button>
+                ) : null}
               </div>
             </div>
+
+            {editLineup && data.league.rosterConfig ? (
+              <LineupEditor
+                leagueId={leagueId}
+                sport={sport}
+                rosterConfig={data.league.rosterConfig}
+                roster={[...myRoster.starters, ...myRoster.bench]}
+                onSaved={() => {
+                  void refresh();
+                  push({ kind: 'league', title: 'Lineup saved' });
+                }}
+              />
+            ) : (
             <div className="space-y-2">
               {myRoster.starters.map((p) => (
                 <PlayerRow
@@ -719,10 +749,11 @@ function FantasyHomeInner({
               ))}
               {myRoster.starters.length === 0 && (
                 <p className="text-sm text-brand-muted text-center py-4">
-                  No starters set. Head to the Head-to-Head tab to set your lineup.
+                  No starters set. Use “Edit Lineup” above to set your lineup.
                 </p>
               )}
             </div>
+            )}
 
             {myRoster.bench.length > 0 && (
               <div className="mt-4">

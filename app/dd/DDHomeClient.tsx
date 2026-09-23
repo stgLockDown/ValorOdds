@@ -198,9 +198,16 @@ export default function DDHomeClient({
       )
     : 0;
 
-  const LeagueCard = ({ league, isMock = false }: { league: League; isMock?: boolean }) => (
+  const LeagueCard = ({ league, isMock = false }: { league: League; isMock?: boolean }) => {
+    // In-season / playoff leagues open straight into the Head-to-Head matchup
+    // board — the primary in-season surface. Everything else (mock drafts,
+    // pre-draft, recruiting) opens the league overview.
+    const inSeason =
+      !isMock && (league.status === 'in_season' || league.status === 'playoffs');
+    const href = inSeason ? `/dd/league/${league.id}/season` : `/dd/league/${league.id}`;
+    return (
     <Link
-      href={`/dd/league/${league.id}`}
+      href={href}
       className="card card-interactive block group"
     >
       <div className="flex items-center justify-between gap-4">
@@ -238,7 +245,8 @@ export default function DDHomeClient({
         </div>
       </div>
     </Link>
-  );
+    );
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
